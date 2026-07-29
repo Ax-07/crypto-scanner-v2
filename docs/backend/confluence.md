@@ -117,3 +117,11 @@ Les signaux structurés `IndicatorSignal` (rsi/macd/bollinger/stochastic, +sma/e
 Compatibilité: `indicator_signals` est additif partout (nouveau champ optionnel avec `default_factory=dict`), aucun champ historique n'a été retiré ou renommé. Les tests anti-look-ahead (`tests/test_backtesting_domain.py::test_future_mutation_cannot_change_indicator_signals`) confirment que la mutation de bougies futures ne change pas les `indicator_signals` calculés, au même titre que les autres champs de `SignalObservation`.
 
 L'export CSV (`app.exporters.csv_exporter`) n'inclut pas `indicator_signals` (décision documentée dans le code: structure imbriquée, pas de consommateur identifié à ce stade).
+
+## Distinction entre confluence et filtres structurés
+
+La Phase 5.7 ajoute un moteur de filtres versionné, indépendant du calcul de
+confluence. Il lit les mêmes `IndicatorSignal`, mais ne change aucun facteur,
+poids, score ou grade. Les règles `all`/`any`, le statut disponible implicite et
+le fallback legacy par indicateur sont documentés dans
+[structured-signal-filters.md](structured-signal-filters.md).

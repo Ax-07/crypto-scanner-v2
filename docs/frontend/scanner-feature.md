@@ -57,6 +57,21 @@ verticalement ; sur desktop, il devient un panneau latéral large. Le scroll
 horizontal historique de la table reste actif. L'ouverture n'écrit ni dans
 Zustand ni dans l'URL et n'interfère pas avec le lien marché.
 
+## Configuration des filtres structurés — Phase 5.7
+
+Le formulaire conserve React Hook Form, Zod et les primitives `Field`. La
+section des filtres édite désormais `structured_signal_filters.version=1`.
+MACD cible la direction ; Bollinger propose états et événements ; Stochastique
+propose séparément la classe/événement et l'état courant. Chaque indicateur
+offre « Toutes les conditions » (`all`) ou « Au moins une condition » (`any`).
+
+Lorsqu'une configuration legacy est ouverte pour édition, ses valeurs sont
+converties dans l'état local du formulaire. La soumission envoie le contrat
+structuré tout en conservant les trois champs historiques. Le backend donne la
+priorité au groupe structuré par indicateur et utilise le legacy seulement pour
+une clé structurée absente. Le store ne migre pas les snapshots des jobs
+historiques : leur configuration et leurs résultats restent affichés tels quels.
+
 ## Échecs à connaître
 
 - Une erreur de configuration initiale met le store en `failed`.
@@ -66,3 +81,6 @@ Zustand ni dans l'URL et n'interfère pas avec le lien marché.
 - Une erreur backend terminal utilise `job.error` lorsqu’il est présent.
 
 Le détail du cycle serveur est décrit dans la [documentation du flux scanner backend](../backend/scanner-flow.md) et son [contrat WebSocket](../backend/websockets.md#progression-du-scanner).
+
+L'inventaire des colonnes historiques, filtres et blocages de dépréciation est
+dans l'[audit transversal des signaux](structured-signals-migration-audit.md).

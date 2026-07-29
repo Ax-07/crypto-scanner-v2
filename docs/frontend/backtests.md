@@ -62,3 +62,6 @@ largeur sur mobile et devient un panneau latéral large sur desktop. Radix gère
 Échap, piège de focus et retour au bouton. Décisions, statuts, gains ou pertes ne
 reposent jamais uniquement sur une couleur. Les raisons longues restent dans le
 DOM et la pagination possède un `nav` nommé.
+
+L'inventaire des champs persistés, de l'export observations et des conditions de
+dépréciation est dans l'[audit transversal](structured-signals-migration-audit.md).

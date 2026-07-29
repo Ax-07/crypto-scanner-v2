@@ -1,6 +1,9 @@
 # État actuel des signaux
 
-État vérifié le 24 juillet 2026. Ce document décrit le code actif, pas l’intention historique.
+État revérifié le 29 juillet 2026. Ce document décrit le code actif, pas l’intention historique.
+
+L'audit frontend transversal, l'inventaire legacy et le plan de dépréciation sont
+dans [`frontend/structured-signals-migration-audit.md`](frontend/structured-signals-migration-audit.md).
 
 ## Sources canoniques
 
@@ -107,7 +110,8 @@ la bibliothèque visuelle partagée, sans recalcul.
 
 ## Tests
 
-Backend final : 248 tests passés + 22 subtests. Les fichiers clés sont :
+Backend relancé en Phase 5.6 : 366 tests passés, 1 ignoré et 22 subtests
+passés, avec un avertissement pandas préexistant. Les fichiers clés sont :
 
 - `test_indicators_math.py` : séries connues, warm-up, custom, constantes, NaN ;
 - `test_signal_classification.py` : bornes/égalités, croisements, grades, confluence ;
@@ -116,9 +120,23 @@ Backend final : 248 tests passés + 22 subtests. Les fichiers clés sont :
 - `test_phase1_contracts.py` : Pydantic/OpenAPI ;
 - `test_phase2_signal_coherence.py` : disponibilité, snapshots, profil et parité.
 
-Frontend final après la Phase 5.1 : 88 tests sur 20 fichiers, dont contrats
-structurés, frontières marché/scanner/backtest, stores, sockets, profils et rendu
-historique.
+Le frontend possède des tests dédiés aux contrats structurés, frontières
+marché/scanner/backtest, stores, sockets, profils, helpers transversaux et rendus
+historiques. Validation Phase 5.6 : 37 fichiers et 213 tests réussis, sans test
+ignoré ou échoué ; typecheck, lint et build réussis.
+
+## Phase 5.7 — filtres structurés
+
+`ScanConfig` accepte le champ additif `structured_signal_filters`, explicitement
+versionné en v1. Le moteur pur combine les valeurs d'une condition en OR, les
+conditions selon `all` ou `any` et les indicateurs en AND. Sans condition de
+statut, un signal doit être `available`.
+
+La priorité est locale à chaque indicateur : groupe structuré présent, sinon
+fallback legacy. Un groupe vide est une neutralisation explicite sans fallback.
+`check_signal_filters` reste inchangée pour un payload entièrement legacy. La
+matrice exhaustive et la nuance Stochastique sont dans
+[`backend/structured-signal-filters.md`](backend/structured-signal-filters.md).
 
 ## Limites prioritaires
 

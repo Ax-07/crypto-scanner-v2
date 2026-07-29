@@ -23,6 +23,11 @@ dans le détail des observations du backtest.
 
 Le barrel `index.ts` exporte aussi `INDICATOR_CONFIG`, `INDICATOR_LABELS`,
 `INDICATOR_ORDER`, les tables de libellés et les fonctions pures de formatage.
+Depuis la Phase 5.6, il exporte également le résumé pur, l'état de collection,
+les messages contextuels et `IndicatorStrengthNote`.
+
+L'audit complet et la matrice de dépréciation sont dans
+[`structured-signals-migration-audit.md`](structured-signals-migration-audit.md).
 
 ## Métadonnées et libellés
 
@@ -142,7 +147,7 @@ Les états de payload sont volontairement distincts :
 
 - champ absent : « Les signaux structurés ne sont pas disponibles pour ce
   résultat. » ;
-- objet vide : « Aucun signal structuré n'a été produit. » ;
+- objet vide : « Aucun signal structuré n'a été produit pour ce résultat. » ;
 - dictionnaire partiel : seuls les indicateurs présents sont rendus, dans l'ordre
   canonique ;
 - statut indisponible : la carte reçue affiche `insufficient_data`,

@@ -1,9 +1,13 @@
 # État complet de `scanner_crypto` pour contexte IA
 
 Ce document est la source de reprise principale après l'audit des signaux structurés des
-Phases 1 à 4 puis des Phases 5.1 à 5.5. Il décrit le code réellement présent,
+Phases 1 à 4 puis des Phases 5.1 à 5.6. Il décrit le code réellement présent,
 pas une cible. Les contrats et composants frontend sont intégrés ; le scanner,
 le marché temps réel et le backtest affichent désormais ces composants.
+
+L'inventaire transversal des composants, champs historiques, filtres, exports et
+conditions de dépréciation est maintenu dans
+[`docs/frontend/structured-signals-migration-audit.md`](frontend/structured-signals-migration-audit.md).
 
 ## 1. Métadonnées de génération
 
@@ -241,6 +245,20 @@ Defaults techniques principaux : timeframe `4h`, RSI 14/seuil 35, SMA et EMA
 confluence minimale 60. Les validateurs imposent notamment périodes ordonnées et
 uniques, fast < slow, seuil oversold < overbought et au moins une famille MA si
 `use_ma=True`.
+
+## 11 bis. Filtres structurés Phase 5.7
+
+Le scanner accepte maintenant `structured_signal_filters.version=1` pour
+`macd`, `bollinger` et `stochastic`, sans retirer les trois filtres legacy. La
+priorité est structurée par indicateur, le fallback legacy reste local et un
+groupe vide neutralise explicitement le fallback. Le formulaire produit le
+nouveau contrat après conversion non destructive d'une ancienne configuration ;
+les stores et résultats historiques ne sont pas transformés.
+
+Le moteur, l'adaptateur, la matrice exacte (dont la nuance Stochastique), les
+statuts et les exemples JSON sont documentés dans
+[`docs/backend/structured-signal-filters.md`](backend/structured-signal-filters.md).
+Le CSV, le marché et les intégrations frontend du backtest restent inchangés.
 
 ## 12. Flux d'un scan
 
@@ -936,6 +954,21 @@ Validation Phase 5.5 :
 | `.\venv\Scripts\python.exe -m pytest -q tests/test_backtesting_domain.py tests/test_backtest_engine.py tests/test_backtest_api.py` depuis `backend/` | 0 | 12 tests passés |
 | `.\venv\Scripts\python.exe -m pytest -q` depuis `backend/` | 0 | 366 passés, 1 ignoré, 22 subtests, 2 warnings |
 
+Validation Phase 5.6 :
+
+| Commande | Code | Résultat |
+|---|---:|---|
+| `$env:CI='true'; pnpm install --frozen-lockfile` | 0 | lockfile à jour, 335 paquets réutilisés, 0 téléchargé |
+| `pnpm exec vitest run src/components/indicator-signals` | 0 | 6 fichiers, 68 tests passés |
+| `pnpm exec vitest run src/features/scanner` | 0 | 3 fichiers, 21 tests passés |
+| `pnpm exec vitest run src/features/market` | 0 | 8 fichiers, 31 tests passés |
+| `pnpm exec vitest run src/features/backtests` | 0 | 5 fichiers, 21 tests passés |
+| `pnpm run typecheck` | 0 | TypeScript réussi |
+| `pnpm run lint` | 0 | ESLint, 0 warning |
+| `pnpm run test` | 0 | 37 fichiers, 213 tests passés |
+| `pnpm run build` | 0 | 2 054 modules transformés, build Vite réussi |
+| `.\venv\Scripts\python.exe -m pytest -q` depuis `backend/` | 0 | 366 passés, 1 ignoré, 22 subtests, 1 warning |
+
 ## 33. Commandes de développement
 
 ```powershell
@@ -1080,11 +1113,13 @@ backend et le rejet éventuel. Les décisions restent `accepted`/`rejected` :
 aucune entrée, sortie, position ou performance réalisée n'est inventée. Les
 payloads absents, vides et partiels ainsi que les états réseau sont couverts.
 
-### 5.6 — Nettoyage progressif
+### 5.6 — Audit transversal et préparation de la dépréciation — terminée
 
-Inventorier l'usage des champs legacy après instrumentation. Ne rien supprimer sans
-dépréciation, version de schéma et migration explicites. Synchroniser docs/tests.
-Acceptation : zéro suppression dans cette étape, liste de candidats documentée.
+Les trois intégrations ont été vérifiées dans le code. Les compteurs et états de
+collection réellement communs sont factorisés, la convention d'intensité est
+partagée, et l'inventaire versionné est documenté dans
+[`structured-signals-migration-audit.md`](frontend/structured-signals-migration-audit.md).
+Aucun champ historique, contrat backend ou format CSV n'a été supprimé ou modifié.
 
 ### 5.7 — Validation finale
 
@@ -1134,7 +1169,10 @@ distinction confirmed/provisional et l'exclusion SMA/EMA de la confluence march�
 - Phase 5.5, backtest frontend : implémentée ; observations paginées, décisions
   `accepted`/`rejected`, résumé et détail structurés, compatibilité historique et
   séparation explicite entre signal, outcome futur et simulation de portefeuille.
+- Phase 5.6, audit transversal : implémentée ; helpers de résumé/état et note
+  d'intensité communs, inventaire legacy et plan de dépréciation sans suppression.
 
 Conclusion : la donnée structurée arrive jusqu'aux stores et les trois interfaces
-la présentent sans recalcul. La suite recommandée est la Phase 5.6 de nettoyage
-progressif, sans suppression de champ legacy sans dépréciation explicite.
+la présentent sans recalcul. La suite recommandée est la migration versionnée et
+rétrocompatible des filtres historiques ; aucune suppression de champ ne doit
+précéder cette migration.

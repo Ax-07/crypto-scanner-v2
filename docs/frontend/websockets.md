@@ -132,3 +132,6 @@ sans inventer de métrique. Une erreur utilise une alerte et conserve les dernie
 snapshots, avec l'indication qu'ils peuvent être figés. Seul le court libellé du
 statut est en `aria-live="polite"` afin de ne pas annoncer chaque variation de
 marché.
+
+La comparaison transversale des contrats, états legacy/vide et consommateurs est
+dans l'[audit de migration](structured-signals-migration-audit.md).

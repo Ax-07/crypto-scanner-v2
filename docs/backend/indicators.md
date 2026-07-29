@@ -71,6 +71,14 @@ publiées comme `raw_value`.
 
 Le changement relatif du prix doit atteindre `DIVERGENCE_PRICE_MIN_CHANGE`. Le RSI exige en plus un écart d'indicateur de 2 ; le MACD utilise 0. En temps réel, un marqueur n'est émis que lorsque le pivot vient d'être confirmé par les bougies de droite.
 
+## Filtres structurés v1
+
+Le scanner peut filtrer `macd`, `bollinger` et `stochastic` sur `direction`,
+`signal`, `state` et `status`. Le contrat versionné, la matrice exacte de
+migration et la priorité sur les filtres historiques sont décrits dans
+[structured-signal-filters.md](structured-signal-filters.md). Les trois champs
+legacy restent acceptés.
+
 ## Valeurs absentes et prudence
 
 Un indicateur désactivé n'est pas calculé. Un historique insuffisant peut laisser ses champs à `null`; lorsque le scanner considère cette valeur indispensable (RSI ou historique principal), le symbole est compté en erreur. Les filtres ne sont pas des recommandations.

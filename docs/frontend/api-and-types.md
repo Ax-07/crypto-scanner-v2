@@ -68,8 +68,10 @@ de préserver leurs champs historiques; les vues et messages marché connus sont
 stricts. `strength` est une intensité technique, pas une probabilité de réussite
 ni une prévision de gain.
 
-La Phase 5.1 conserve ces données jusqu'aux stores. Aucun composant ne les affiche
-encore; leur présentation appartient à la Phase 5.2.
+Les trois stores conservent ces données et les interfaces scanner, marché et
+backtest les affichent avec la bibliothèque commune. L'état réel, les champs
+legacy et les conditions de dépréciation sont détaillés dans
+[`structured-signals-migration-audit.md`](structured-signals-migration-audit.md).
 
 Depuis la Phase 5.5, `backtestApi.observations(id, offset, limit)` transmet la
 pagination native de `GET /api/backtests/{id}/observations`. Le store conserve la
@@ -83,6 +85,18 @@ Le type `SignalObservation` expose aussi les champs backend utilisés par le dé
 d'entrée/sortie.
 
 Utiliser l’union `message.type` pour réduire un message WebSocket. Éviter les copies locales partielles de ces contrats : elles dérivent rapidement du backend. Les exemples complets de payloads sont dans la [documentation WebSocket](websockets.md).
+
+## Contrat des filtres structurés
+
+`src/types/structured-signal-filters.ts` est la source TypeScript canonique de
+la v1 et `src/schemas/structured-signal-filters.ts` sa validation Zod stricte.
+`ScanConfig.structured_signal_filters` reste optionnel et nullable pour les
+anciens payloads. Le schéma refuse versions, indicateurs, champs et clés
+inconnus, listes de valeurs vides ou dupliquées, directions et statuts invalides.
+
+`scannerApi.start` sérialise le champ dans le POST existant. Les snapshots de
+jobs valident additivement ce sous-contrat ; l'absence du champ reste valide.
+Aucun endpoint, appel réseau ou store supplémentaire n'est introduit.
 
 ## Évolution du contrat
 
