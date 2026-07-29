@@ -75,9 +75,15 @@ export const backtestApi = {
   async cancel(id: string): Promise<BacktestJob> {
     return parseJob(await apiRequest<unknown>(`/api/backtests/${id}`, { method: "DELETE" }))
   },
-  async observations(id: string): Promise<{ items: SignalObservation[]; total: number }> {
+  async observations(
+    id: string,
+    offset = 0,
+    limit = 50,
+  ): Promise<{ items: SignalObservation[]; total: number }> {
     return parseSignalObservationPage(
-      await apiRequest<unknown>(`/api/backtests/${id}/observations?limit=50`),
+      await apiRequest<unknown>(
+        `/api/backtests/${id}/observations?offset=${offset}&limit=${limit}`,
+      ),
     )
   },
   websocketUrl(id: string): string {

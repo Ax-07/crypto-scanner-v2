@@ -6,13 +6,20 @@ import type { BacktestConfig, BacktestJob, SignalObservation } from "@/types/bac
 type State = {
   job: BacktestJob | null
   observations: SignalObservation[]
+  observationsTotal: number
+  observationsOffset: number
+  observationsLoading: boolean
+  observationsError: string | null
   busy: boolean
   error: string | null
   start: (config: BacktestConfig) => Promise<void>
   cancel: () => Promise<void>
   load: (id: string) => Promise<void>
   resume: () => Promise<void>
+  loadObservationsPage: (offset: number) => Promise<void>
 }
+
+export const BACKTEST_OBSERVATION_PAGE_SIZE = 50
 
 let socket: WebSocket | null = null
 function closeSocket() {
@@ -22,7 +29,42 @@ function closeSocket() {
   socket = null
 }
 
-function watchJob(job: BacktestJob, set: (patch: Partial<State>) => void) {
+type StateSetter = (patch: Partial<State>) => void
+type StateGetter = () => State
+
+async function loadObservationPage(
+  jobId: string,
+  offset: number,
+  set: StateSetter,
+  get: StateGetter,
+) {
+  const safeOffset = Math.max(0, offset)
+  set({ observationsLoading: true, observationsError: null })
+  try {
+    const page = await backtestApi.observations(
+      jobId,
+      safeOffset,
+      BACKTEST_OBSERVATION_PAGE_SIZE,
+    )
+    if (get().job?.id !== jobId) return
+    set({
+      observations: page.items,
+      observationsTotal: page.total,
+      observationsOffset: safeOffset,
+      observationsLoading: false,
+    })
+  } catch (error) {
+    if (get().job?.id !== jobId) return
+    set({
+      observationsLoading: false,
+      observationsError: error instanceof Error
+        ? error.message
+        : "Chargement des observations impossible",
+    })
+  }
+}
+
+function watchJob(job: BacktestJob, set: StateSetter, get: StateGetter) {
   const current = new WebSocket(backtestApi.websocketUrl(job.id))
   socket = current
   current.onmessage = async (event) => {
@@ -32,8 +74,7 @@ function watchJob(job: BacktestJob, set: (patch: Partial<State>) => void) {
       const terminal = ["completed", "failed", "cancelled", "interrupted"].includes(next.status)
       set({ job: next, busy: !terminal, error: next.error })
       if (["completed", "cancelled"].includes(next.status)) {
-        const page = await backtestApi.observations(next.id)
-        if (socket === current) set({ observations: page.items })
+        await loadObservationPage(next.id, 0, set, get)
       }
       if (terminal) closeSocket()
     } catch {
@@ -45,14 +86,28 @@ function watchJob(job: BacktestJob, set: (patch: Partial<State>) => void) {
 }
 
 export const useBacktestStore = create<State>()((set, get) => ({
-  job: null, observations: [], busy: false, error: null,
+  job: null,
+  observations: [],
+  observationsTotal: 0,
+  observationsOffset: 0,
+  observationsLoading: false,
+  observationsError: null,
+  busy: false,
+  error: null,
   start: async (config) => {
     closeSocket()
-    set({ busy: true, error: null, observations: [] })
+    set({
+      busy: true,
+      error: null,
+      observations: [],
+      observationsTotal: 0,
+      observationsOffset: 0,
+      observationsError: null,
+    })
     try {
       const job = await backtestApi.start(config)
       set({ job })
-      watchJob(job, set)
+      watchJob(job, set, get)
     } catch (error) {
       set({ busy: false, error: error instanceof Error ? error.message : "Backtest impossible" })
       throw error
@@ -64,18 +119,26 @@ export const useBacktestStore = create<State>()((set, get) => ({
     const cancelled = await backtestApi.cancel(job.id)
     set({ job: cancelled, busy: false })
     closeSocket()
+    await loadObservationPage(cancelled.id, 0, set, get)
   },
   load: async (id) => {
     closeSocket()
-    set({ busy: true, error: null, observations: [] })
+    set({
+      busy: true,
+      error: null,
+      observations: [],
+      observationsTotal: 0,
+      observationsOffset: 0,
+      observationsError: null,
+    })
     try {
       const job = await backtestApi.get(id)
       const terminal = ["completed", "failed", "cancelled", "interrupted"].includes(job.status)
-      const page = job.status === "completed"
-        ? await backtestApi.observations(job.id)
-        : { items: [] as SignalObservation[] }
-      set({ job, observations: page.items, busy: !terminal })
-      if (!terminal) watchJob(job, set)
+      set({ job, busy: !terminal })
+      if (["completed", "cancelled"].includes(job.status)) {
+        await loadObservationPage(job.id, 0, set, get)
+      }
+      if (!terminal) watchJob(job, set, get)
     } catch (error) {
       set({ busy: false, error: error instanceof Error ? error.message : "Chargement impossible" })
     }
@@ -88,9 +151,14 @@ export const useBacktestStore = create<State>()((set, get) => ({
     try {
       const job = await backtestApi.resume(current.id)
       set({ job })
-      watchJob(job, set)
+      watchJob(job, set, get)
     } catch (error) {
       set({ busy: false, error: error instanceof Error ? error.message : "Reprise impossible" })
     }
+  },
+  loadObservationsPage: async (offset) => {
+    const job = get().job
+    if (!job) return
+    await loadObservationPage(job.id, offset, set, get)
   },
 }))

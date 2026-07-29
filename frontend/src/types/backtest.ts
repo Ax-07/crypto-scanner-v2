@@ -74,15 +74,22 @@ export type SignalObservation = {
   confluence_score: number | null
   confluence_grade: ConfluenceGrade | null
   confluence_factors: Record<string, number | null>
+  confluence_breakdown?: Record<string, number>
   availability: Record<string, Availability>
   indicator_signals?: IndicatorSignals
+  filter_trace?: Array<{ stage: string; passed: boolean; reason: string | null }>
   algorithm_version: string
   profile_id: string
   profile_fingerprint: string | null
   dataset_version: string
+  calculation_mode?: "canonical"
+  schema_version?: number
+  created_at?: string | null
+  source_open_time?: string | null
   source_ohlcv: Record<string, number>
   raw_values: Record<string, unknown>
   classes: Record<string, string | null>
+  trend_net_score?: number | null
   configured_weights: Record<string, number>
   effective_weights: Record<string, number>
   divergences: Array<Record<string, unknown>>

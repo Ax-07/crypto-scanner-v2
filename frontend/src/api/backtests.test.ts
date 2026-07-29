@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { backtestJobSchema, parseSignalObservationPage } from "@/api/backtests"
+import { backtestApi, backtestJobSchema, parseSignalObservationPage } from "@/api/backtests"
 
 const payload = {
   id: "job-1",
@@ -101,5 +101,26 @@ describe("backtest structured signal boundary", () => {
       }],
       total: 1,
     })).toThrow()
+  })
+})
+
+describe("backtest observations pagination", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("transmet offset et limite sans modifier le payload", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [],
+      total: 125,
+      offset: 50,
+      limit: 25,
+    }), { status: 200, headers: { "Content-Type": "application/json" } }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const page = await backtestApi.observations("job-1", 50, 25)
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/api/backtests/job-1/observations?offset=50&limit=25",
+    )
+    expect(page).toMatchObject({ items: [], total: 125, offset: 50, limit: 25 })
   })
 })

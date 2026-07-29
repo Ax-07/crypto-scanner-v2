@@ -14,8 +14,9 @@ import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { backtestFormSchema, parseHorizons, type BacktestFormValues } from "@/features/backtests/backtest-schema";
+import { BacktestObservationsTable } from "@/features/backtests/components/backtest-observations-table";
 import { useBacktestStore } from "@/stores/backtest-store";
-import type { BacktestConfig, BacktestJob, BacktestSummary, SignalObservation } from "@/types/backtest";
+import type { BacktestConfig, BacktestJob, BacktestSummary } from "@/types/backtest";
 import type { ScanConfig } from "@/types/scanner";
 
 const now = new Date();
@@ -44,7 +45,13 @@ const defaults: BacktestFormValues = {
 export function BacktestsPage() {
   const [profile, setProfile] = useState<ScanConfig | null>(null);
   const [history, setHistory] = useState<BacktestJob[]>([]);
-  const { job, observations, busy, error, start, cancel, load, resume } = useBacktestStore();
+  const job = useBacktestStore((state) => state.job);
+  const busy = useBacktestStore((state) => state.busy);
+  const error = useBacktestStore((state) => state.error);
+  const start = useBacktestStore((state) => state.start);
+  const cancel = useBacktestStore((state) => state.cancel);
+  const load = useBacktestStore((state) => state.load);
+  const resume = useBacktestStore((state) => state.resume);
   
   const form = useForm<BacktestFormValues>({
     resolver: zodResolver(backtestFormSchema) as Resolver<BacktestFormValues>,
@@ -221,7 +228,7 @@ export function BacktestsPage() {
           </Button>
         </div>
       ) : null}
-      {job ? <Results job={job} observations={observations} /> : null}
+      {job ? <Results job={job} /> : null}
     </div>
   );
 }
@@ -312,7 +319,7 @@ function ToggleCard({
     </div>
   );
 }
-function Results({ job, observations }: { job: BacktestJob; observations: SignalObservation[] }) {
+function Results({ job }: { job: BacktestJob }) {
   const summary = job.summary;
   return (
     <div className="space-y-5">
@@ -357,6 +364,9 @@ function Results({ job, observations }: { job: BacktestJob; observations: Signal
           <Card>
             <CardHeader>
               <CardTitle>Exports reproductibles</CardTitle>
+              <CardDescription>
+                L’export des observations inclut les signaux structurés au format JSON.
+              </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
               <Button asChild variant="outline">
@@ -371,44 +381,7 @@ function Results({ job, observations }: { job: BacktestJob; observations: Signal
           </Card>
         </>
       ) : null}
-      {observations.length ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Observations</CardTitle>
-            <CardDescription>Première page, incluant les rejets et leur étape.</CardDescription>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Symbole</TableHead>
-                  <TableHead>Décision</TableHead>
-                  <TableHead>RSI</TableHead>
-                  <TableHead>Confluence</TableHead>
-                  <TableHead>Motif</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {observations.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>{new Date(item.decision_time).toLocaleString()}</TableCell>
-                    <TableCell>{item.symbol}</TableCell>
-                    <TableCell>
-                      <Badge variant={item.accepted ? "default" : "secondary"}>
-                        {item.accepted ? "acceptée" : "rejetée"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{item.rsi?.toFixed(2) ?? "—"}</TableCell>
-                    <TableCell>{item.confluence_score?.toFixed(2) ?? "—"}</TableCell>
-                    <TableCell>{item.rejection_stage ?? "—"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      ) : null}
+      <BacktestObservationsTable job={job} />
     </div>
   );
 }
