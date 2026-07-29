@@ -2,6 +2,13 @@
 
 État vérifié le 24 juillet 2026.
 
+> La simulation de portefeuille v1 est conçue dans
+> [`BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md`](BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md)
+> et résumée par
+> [`adr/ADR-portfolio-backtest-v1.md`](adr/ADR-portfolio-backtest-v1.md).
+> **Le simulateur de portefeuille est conçu mais pas encore implémenté.**
+> Le replay et les contrats décrits ci-dessous restent le comportement réel.
+
 ## Architecture et causalité
 
 Le moteur `BacktestEngine` est indépendant de FastAPI et ne télécharge jamais de

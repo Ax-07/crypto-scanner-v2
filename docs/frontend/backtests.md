@@ -1,5 +1,10 @@
 # Interface des backtests
 
+> La future interface de simulation est conçue dans
+> [`../BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md`](../BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md).
+> **Le simulateur de portefeuille est conçu mais pas encore implémenté.**
+> Aucune section de trades, capital ou equity n'existe encore dans l'application.
+
 ## Nature du module
 
 Le « backtest » est un replay causal de signaux, pas une simulation de portefeuille.

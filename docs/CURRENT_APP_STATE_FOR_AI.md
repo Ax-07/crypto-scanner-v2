@@ -35,6 +35,14 @@ Le produit ne passe aucun ordre. Il ne gère ni portefeuille, capital, taille de
 position, equity curve, stop-loss ni chevauchement de trades. Le « backtest » est un
 replay de signaux avec outcomes forward, pas un simulateur de portefeuille.
 
+La Phase 6.1 a produit la conception
+[`BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md`](BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md)
+et l'ADR proposé
+[`adr/ADR-portfolio-backtest-v1.md`](adr/ADR-portfolio-backtest-v1.md).
+**Le simulateur de portefeuille est conçu mais pas encore implémenté.** Ces
+documents décrivent une cible additive; ils ne modifient pas l'état runtime
+présenté ici.
+
 ## 3. État Git
 
 - Branche déclarée : `main`.
