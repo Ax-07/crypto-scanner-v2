@@ -7,6 +7,8 @@ from typing import Literal, get_args
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.models.structured_signal_filters import StructuredSignalFilters
+
 Timeframe = Literal[
     "1m",
     "3m",
@@ -171,6 +173,7 @@ class ScanConfig(BaseModel):
     filter_macd_signal: list[MacdSignal] | None = None
     filter_bb_position: list[BollingerPosition] | None = None
     filter_stoch_signal: list[StochasticSignal] | None = None
+    structured_signal_filters: StructuredSignalFilters | None = None
 
     @field_validator("quote")
     @classmethod

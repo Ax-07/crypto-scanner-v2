@@ -20,6 +20,12 @@ from app.domain.analysis import AnalysisOutcome, AnalysisStatus
 from app.domain.candles import Candle, timeframe_milliseconds
 from app.domain.limits import ma_ohlcv_limit, primary_ohlcv_limit
 from app.domain.signal_evaluation import evaluate_signal_snapshot
+from app.domain.indicator_bundle import build_indicator_signals
+from app.domain.signal_filters import (
+    check_structured_signal_filters,
+    include_disabled_filter_signals,
+    resolve_effective_signal_filters,
+)
 from app.models.scanner import ScanProgress, ScanResult
 from app.services.exchange import create_exchange, load_filtered_symbols
 from app.domain.indicators import (
@@ -306,19 +312,31 @@ class ScannerService:
         multi = self._analyze_multi_indicators(base_frame)
         bollinger_invalid = bool(multi.pop("_bollinger_invalid", False))
         stochastic_invalid = bool(multi.pop("_stochastic_invalid", False))
+        indicator_signals = cast(
+            dict[str, Any],
+            multi.pop("_indicator_signals"),
+        )
+        structured_indicators = (
+            set(config.structured_signal_filters.indicators)
+            if config.structured_signal_filters is not None
+            else set()
+        )
         unavailable_filter = (
             (
                 config.use_macd
+                and "macd" not in structured_indicators
                 and config.filter_macd_signal
                 and multi.get("macd_signal_type") is None
             )
             or (
                 config.use_bollinger
+                and "bollinger" not in structured_indicators
                 and config.filter_bb_position
                 and multi.get("bb_position") is None
             )
             or (
                 config.use_stochastic
+                and "stochastic" not in structured_indicators
                 and config.filter_stoch_signal
                 and multi.get("stoch_signal") is None
             )
@@ -328,14 +346,42 @@ class ScannerService:
                 AnalysisStatus.ERROR,
                 error="Indicateur requis par un filtre indisponible",
             )
-        if not check_signal_filters(
-            macd_signal=multi.get("macd_signal_type"),
-            bb_position=multi.get("bb_position"),
-            stoch_signal=multi.get("stoch_signal"),
-            filter_macd=config.filter_macd_signal if config.use_macd else None,
-            filter_bb=config.filter_bb_position if config.use_bollinger else None,
-            filter_stoch=config.filter_stoch_signal if config.use_stochastic else None,
-        ):
+        if config.structured_signal_filters is None:
+            signal_filters_pass = check_signal_filters(
+                macd_signal=multi.get("macd_signal_type"),
+                bb_position=multi.get("bb_position"),
+                stoch_signal=multi.get("stoch_signal"),
+                filter_macd=config.filter_macd_signal if config.use_macd else None,
+                filter_bb=config.filter_bb_position if config.use_bollinger else None,
+                filter_stoch=config.filter_stoch_signal if config.use_stochastic else None,
+            )
+        else:
+            effective_filters = resolve_effective_signal_filters(
+                structured_filters=config.structured_signal_filters.model_dump(mode="python"),
+                filter_macd=config.filter_macd_signal if config.use_macd else None,
+                filter_bb=config.filter_bb_position if config.use_bollinger else None,
+                filter_stoch=config.filter_stoch_signal if config.use_stochastic else None,
+            )
+            signal_filters_pass = (
+                True
+                if effective_filters is None
+                else check_structured_signal_filters(
+                    indicator_signals=include_disabled_filter_signals(
+                        indicator_signals=indicator_signals,
+                        disabled_indicators=[
+                            name
+                            for name, enabled in (
+                                ("macd", config.use_macd),
+                                ("bollinger", config.use_bollinger),
+                                ("stochastic", config.use_stochastic),
+                            )
+                            if not enabled
+                        ],
+                    ),
+                    filters=effective_filters,
+                )
+            )
+        if not signal_filters_pass:
             return AnalysisOutcome(AnalysisStatus.FILTERED)
 
         confluence_score: float | None = None
@@ -548,21 +594,24 @@ class ScannerService:
         """Calcule MACD, Bollinger et Stochastique lorsqu'ils sont activés."""
         config = self.config
         result: dict[str, Any] = {}
+        macd_data: dict[str, pd.Series] | None = None
+        bands: dict[str, pd.Series] | None = None
+        stochastic_data: dict[str, pd.Series] | None = None
 
         if config.use_macd:
-            data = calculate_macd(
+            macd_data = calculate_macd(
                 frame["close"],
                 config.macd_fast_period,
                 config.macd_slow_period,
                 config.macd_signal_period,
             )
-            valid = pd.concat(data, axis=1).dropna()
+            valid = pd.concat(macd_data, axis=1).dropna()
             if not valid.empty:
                 result.update(
-                    macd=round(float(data["macd"].dropna().iloc[-1]), 10),
-                    macd_signal=round(float(data["signal"].dropna().iloc[-1]), 10),
-                    macd_histogram=round(float(data["histogram"].dropna().iloc[-1]), 10),
-                    macd_signal_type=detect_macd_signal(data),
+                    macd=round(float(macd_data["macd"].dropna().iloc[-1]), 10),
+                    macd_signal=round(float(macd_data["signal"].dropna().iloc[-1]), 10),
+                    macd_histogram=round(float(macd_data["histogram"].dropna().iloc[-1]), 10),
+                    macd_signal_type=detect_macd_signal(macd_data),
                 )
 
         if config.use_bollinger:
@@ -584,20 +633,20 @@ class ScannerService:
                     result["bb_position"] = detect_bollinger_signal(frame["close"], bands)
 
         if config.use_stochastic:
-            stochastic = calculate_stochastic(
+            stochastic_data = calculate_stochastic(
                 frame["high"],
                 frame["low"],
                 frame["close"],
                 config.stochastic_k_period,
                 config.stochastic_d_period,
             )
-            valid = pd.concat(stochastic, axis=1).dropna()
+            valid = pd.concat(stochastic_data, axis=1).dropna()
             if not valid.empty:
                 result.update(
-                    stoch_k=round(float(stochastic["k"].dropna().iloc[-1]), 2),
-                    stoch_d=round(float(stochastic["d"].dropna().iloc[-1]), 2),
+                    stoch_k=round(float(stochastic_data["k"].dropna().iloc[-1]), 2),
+                    stoch_d=round(float(stochastic_data["d"].dropna().iloc[-1]), 2),
                     stoch_signal=detect_stochastic_signal(
-                        stochastic,
+                        stochastic_data,
                         config.stochastic_oversold,
                         config.stochastic_overbought,
                     ),
@@ -605,4 +654,16 @@ class ScannerService:
             elif len(frame) >= config.stochastic_k_period:
                 result["_stochastic_invalid"] = True
 
+        result["_indicator_signals"] = build_indicator_signals(
+            close=frame["close"],
+            use_rsi=False,
+            macd_data=macd_data,
+            use_macd=config.use_macd,
+            bollinger_bands=bands,
+            use_bollinger=config.use_bollinger,
+            stochastic_data=stochastic_data,
+            use_stochastic=config.use_stochastic,
+            stochastic_oversold=config.stochastic_oversold,
+            stochastic_overbought=config.stochastic_overbought,
+        )
         return result

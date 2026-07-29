@@ -46,6 +46,80 @@ def minimal_config(**changes: object) -> ScanConfig:
 
 
 class ScannerIndicatorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_structured_filter_can_match_a_disabled_indicator_status(self) -> None:
+        service = ScannerService(
+            minimal_config(
+                structured_signal_filters={
+                    "version": 1,
+                    "indicators": {
+                        "macd": {
+                            "match": "all",
+                            "conditions": [{"field": "status", "values": ["disabled"]}],
+                        }
+                    },
+                },
+            )
+        )
+        with patch(
+            "app.services.scanner.fetch_ohlcv",
+            new=AsyncMock(return_value=candle_frame()),
+        ):
+            status, result = await service.analyze_symbol(object(), "BTC/USDC")
+
+        self.assertEqual(status, "success")
+        self.assertIsNotNone(result)
+        self.assertNotIn("macd", result.indicator_signals if result else {})
+
+    async def test_structured_macd_filter_has_priority_over_legacy(self) -> None:
+        service = ScannerService(
+            minimal_config(
+                use_macd=True,
+                filter_macd_signal=["bearish"],
+                structured_signal_filters={
+                    "version": 1,
+                    "indicators": {
+                        "macd": {
+                            "match": "all",
+                            "conditions": [{"field": "direction", "values": ["bullish"]}],
+                        }
+                    },
+                },
+            )
+        )
+        with patch(
+            "app.services.scanner.fetch_ohlcv",
+            new=AsyncMock(return_value=candle_frame()),
+        ):
+            status, result = await service.analyze_symbol(object(), "BTC/USDC")
+
+        self.assertEqual(status, "success")
+        self.assertIsNotNone(result)
+
+    async def test_structured_macd_filter_can_reject_legacy_match(self) -> None:
+        service = ScannerService(
+            minimal_config(
+                use_macd=True,
+                filter_macd_signal=["bullish"],
+                structured_signal_filters={
+                    "version": 1,
+                    "indicators": {
+                        "macd": {
+                            "match": "all",
+                            "conditions": [{"field": "direction", "values": ["bearish"]}],
+                        }
+                    },
+                },
+            )
+        )
+        with patch(
+            "app.services.scanner.fetch_ohlcv",
+            new=AsyncMock(return_value=candle_frame()),
+        ):
+            status, result = await service.analyze_symbol(object(), "BTC/USDC")
+
+        self.assertEqual(status, "filtered")
+        self.assertIsNone(result)
+
     async def test_disabled_rsi_is_not_calculated_or_filtered(self) -> None:
         service = ScannerService(minimal_config(rsi_threshold=0))
         with (

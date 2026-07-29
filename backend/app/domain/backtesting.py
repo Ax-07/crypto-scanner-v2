@@ -15,6 +15,11 @@ import pandas as pd
 from app.core.settings import ScanConfig
 from app.domain.candles import Candle, candles_to_frame
 from app.domain.indicator_bundle import build_indicator_signals
+from app.domain.signal_filters import (
+    check_structured_signal_filters,
+    include_disabled_filter_signals,
+    resolve_effective_signal_filters,
+)
 from app.domain.indicators import (
     Availability,
     ConfluenceGrade,
@@ -227,7 +232,10 @@ def evaluate_information_set(
         name: cast(float | None, details.get("factor"))
         for name, details in (confluence["details"] if confluence else {}).items()
     }
-    profile_payload = config.model_dump(mode="json")
+    profile_payload = config.model_dump(
+        mode="json",
+        exclude={"structured_signal_filters"} if config.structured_signal_filters is None else None,
+    )
     profile_fingerprint = (
         "sha256:"
         + hashlib.sha256(
@@ -266,14 +274,41 @@ def evaluate_information_set(
     record("rsi", rsi_pass, None if rsi_pass else "rsi_indisponible_ou_seuil")
     trend_pass = not config.use_ma or trend_score >= config.min_trend_score
     record("trend", trend_pass, None if trend_pass else "tendance_sous_seuil")
-    signal_pass = check_signal_filters(
-        macd_signal=macd_signal,
-        bb_position=bb_position,
-        stoch_signal=stoch_signal,
-        filter_macd=config.filter_macd_signal if config.use_macd else None,
-        filter_bb=config.filter_bb_position if config.use_bollinger else None,
-        filter_stoch=config.filter_stoch_signal if config.use_stochastic else None,
-    )
+    if config.structured_signal_filters is None:
+        signal_pass = check_signal_filters(
+            macd_signal=macd_signal,
+            bb_position=bb_position,
+            stoch_signal=stoch_signal,
+            filter_macd=config.filter_macd_signal if config.use_macd else None,
+            filter_bb=config.filter_bb_position if config.use_bollinger else None,
+            filter_stoch=config.filter_stoch_signal if config.use_stochastic else None,
+        )
+    else:
+        effective_filters = resolve_effective_signal_filters(
+            structured_filters=config.structured_signal_filters.model_dump(mode="python"),
+            filter_macd=config.filter_macd_signal if config.use_macd else None,
+            filter_bb=config.filter_bb_position if config.use_bollinger else None,
+            filter_stoch=config.filter_stoch_signal if config.use_stochastic else None,
+        )
+        signal_pass = (
+            True
+            if effective_filters is None
+            else check_structured_signal_filters(
+                indicator_signals=include_disabled_filter_signals(
+                    indicator_signals=indicator_signals,
+                    disabled_indicators=[
+                        name
+                        for name, enabled in (
+                            ("macd", config.use_macd),
+                            ("bollinger", config.use_bollinger),
+                            ("stochastic", config.use_stochastic),
+                        )
+                        if not enabled
+                    ],
+                ),
+                filters=effective_filters,
+            )
+        )
     record("signal_filters", signal_pass, None if signal_pass else "classe_non_autorisee")
     confluence_pass = not config.use_confluence_score or (
         score is not None and score >= config.min_confluence_score

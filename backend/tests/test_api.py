@@ -65,7 +65,38 @@ class ApiTests(unittest.TestCase):
         config = self.client.get("/api/scanner/config")
         self.assertEqual(config.status_code, 200)
         self.assertEqual(config.json()["exchange_id"], "binance")
+        self.assertIsNone(config.json()["structured_signal_filters"])
         self.assertEqual(self.client.get("/api/scanner/jobs/missing").status_code, 404)
+
+    def test_structured_filter_contract_is_validated_and_preserved(self) -> None:
+        payload = {
+            "max_pairs": 1,
+            "filter_macd_signal": ["bearish"],
+            "structured_signal_filters": {
+                "version": 1,
+                "indicators": {
+                    "macd": {
+                        "match": "all",
+                        "conditions": [{"field": "direction", "values": ["bullish"]}],
+                    }
+                },
+            },
+        }
+        response = self.client.post("/api/scanner/jobs", json=payload)
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json()["config"]["filter_macd_signal"], ["bearish"])
+        self.assertEqual(
+            response.json()["config"]["structured_signal_filters"],
+            payload["structured_signal_filters"],
+        )
+        invalid = self.client.post(
+            "/api/scanner/jobs",
+            json={
+                "max_pairs": 1,
+                "structured_signal_filters": {"version": 2, "indicators": {}},
+            },
+        )
+        self.assertEqual(invalid.status_code, 422)
 
     def test_results_too_early_and_cancellation(self) -> None:
         pending = ScanJob(id="pending", config=ScanConfig())
