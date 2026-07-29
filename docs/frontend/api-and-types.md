@@ -97,6 +97,8 @@ inconnus, listes de valeurs vides ou dupliquées, directions et statuts invalide
 `scannerApi.start` sérialise le champ dans le POST existant. Les snapshots de
 jobs valident additivement ce sous-contrat ; l'absence du champ reste valide.
 Aucun endpoint, appel réseau ou store supplémentaire n'est introduit.
+Les exemples JSON et la politique de changement v1 sont regroupés dans le
+[rapport de stabilisation backend](../backend/structured-signal-filters-v1-stability.md).
 
 ## Évolution du contrat
 

@@ -350,7 +350,8 @@ nécessaire.
 
 ## 17. Risques restants
 
-- double calcul adaptateur/canonique du scanner, hors périmètre frontend ;
+- assemblages scanner/replay distincts, maintenus en parité par des oracles de
+  tests depuis la suppression du double passage Phase 5.8 ;
 - absence de modèle Pydantic public pour le snapshot marché ;
 - synchronisation manuelle obligatoire lors d'un septième indicateur ;
 - divergence possible entre vocabulaire de filtre historique et futurs
@@ -407,10 +408,11 @@ Un champ historique ne peut être supprimé que si :
 
 ## 20. Recommandation de phase suivante
 
-L'intégration marché étant présente, la suite frontend la plus logique est la
-migration versionnée des trois filtres historiques vers un contrat structuré
-compatible. Le double calcul de parité du scanner est une dette backend séparée
-et ne doit pas être mêlé à cette migration frontend.
+La v1 des filtres est désormais stabilisée sans dépréciation. La suite doit être
+choisie à partir de mesures d'usage réelles : préparer v2, organiser une
+dépréciation formelle ou poursuivre une optimisation interne prouvée. Le détail
+des garanties est dans le
+[rapport Phase 5.8](../backend/structured-signal-filters-v1-stability.md).
 
 ## 21. Validation de la Phase 5.6
 

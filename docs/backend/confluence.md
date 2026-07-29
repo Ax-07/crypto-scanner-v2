@@ -67,7 +67,7 @@ Les poids n'ont pas besoin de totaliser 100 et les poids nuls sont autorisés. L
 
 ## Mode structuré (`indicator_signals`)
 
-`calculate_confluence_score()` accepte un paramètre optionnel `indicator_signals`, une table `{nom_indicateur: IndicatorSignal}` (voir `docs/backend/indicators.md`). Ce mode rétrocompatible est branché sur le moteur canonique partagé par le scanner et le backtest ainsi que sur le snapshot marché. Le marché exclut volontairement les clés structurées `sma`/`ema` de son appel de confluence afin de conserver son facteur historique `trend`.
+`calculate_confluence_score()` accepte un paramètre optionnel `indicator_signals`, une table `{nom_indicateur: IndicatorSignal}` (voir `docs/backend/indicators.md`). Ce mode rétrocompatible est branché sur le moteur canonique du replay et sur le snapshot marché. Le scanner construit les mêmes signaux dans son passage unique ; sa parité de score est contrôlée en tests. Le marché exclut volontairement les clés structurées `sma`/`ema` de son appel de confluence afin de conserver son facteur historique `trend`.
 
 Clés reconnues: `rsi`, `sma`, `ema` (agrégées en un facteur `trend` unique), `macd`, `bollinger`, `stochastic`.
 
@@ -110,8 +110,8 @@ En mode structuré, `details[nom]` gagne quatre champs supplémentaires (`None` 
 
 Les signaux structurés `IndicatorSignal` (rsi/macd/bollinger/stochastic, +sma/ema selon le service) sont désormais construits via un builder commun, `app.domain.indicator_bundle.build_indicator_signals(...)`, et exposés dans les trois services:
 
-- **Moteur canonique** (`app.domain.backtesting.evaluate_information_set`, réutilisé par le scanner ET le backtest): appelle `build_indicator_signals(...)` sans `sma`/`ema` (la tendance reste gérée en multi-timeframe historique via `trend_states`/`trend_score`), passe le résultat à `calculate_confluence_score(indicator_signals=...)`, et l'expose via le nouveau champ `SignalObservation.indicator_signals: dict[str, IndicatorSignalModel]`.
-- **`ScannerService.analyze_symbol`**: propage `canonical.indicator_signals` (calculé par le moteur canonique ci-dessus) dans `ScanResult.indicator_signals` (nouveau champ additif).
+- **Moteur canonique** (`app.domain.backtesting.evaluate_information_set`, utilisé par le backtest et les oracles): appelle `build_indicator_signals(...)` sans `sma`/`ema` (la tendance reste gérée en multi-timeframe historique via `trend_states`/`trend_score`), passe le résultat à `calculate_confluence_score(indicator_signals=...)`, et l'expose via le nouveau champ `SignalObservation.indicator_signals: dict[str, IndicatorSignalModel]`.
+- **`ScannerService.analyze_symbol`**: construit une seule fois les mêmes signaux à partir de ses séries déjà nécessaires aux champs legacy, puis les place dans `ScanResult.indicator_signals`.
 - **`market_stream.calculate_market_snapshot`** (mono-timeframe): construit en plus des signaux structurés `sma`/`ema` (séries disponibles localement, contrairement au moteur canonique). Ces clés sont exposées dans la sortie `indicator_signals` du snapshot mais **volontairement exclues** de l'appel à `calculate_confluence_score`, car `calculate_trend_signal_factor` (moyenne simple des facteurs sma/ema) peut diverger subtilement de `detect_trend`/`trend_states` (règle de blending par état) sur des cas limites; le score de confluence continue donc d'utiliser le mode historique pour la tendance dans ce service, comme avant ce câblage.
 
 Compatibilité: `indicator_signals` est additif partout (nouveau champ optionnel avec `default_factory=dict`), aucun champ historique n'a été retiré ou renommé. Les tests anti-look-ahead (`tests/test_backtesting_domain.py::test_future_mutation_cannot_change_indicator_signals`) confirment que la mutation de bougies futures ne change pas les `indicator_signals` calculés, au même titre que les autres champs de `SignalObservation`.
@@ -125,3 +125,5 @@ confluence. Il lit les mêmes `IndicatorSignal`, mais ne change aucun facteur,
 poids, score ou grade. Les règles `all`/`any`, le statut disponible implicite et
 le fallback legacy par indicateur sont documentés dans
 [structured-signal-filters.md](structured-signal-filters.md).
+La mesure de parité et la suppression du second passage scanner sont détaillées
+dans [structured-signal-filters-v1-stability.md](structured-signal-filters-v1-stability.md).

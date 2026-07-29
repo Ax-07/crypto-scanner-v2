@@ -111,10 +111,10 @@ versions sont seulement bornées par des minima dans `requirements.txt`, pas fig
 
 Le domaine des indicateurs est pur vis-à-vis de FastAPI et CCXT. Le builder commun
 assemble les séries déjà calculées. `domain.signal_evaluation.evaluate_signal_snapshot`
-est la façade canonique et délègue à
-`domain.backtesting.evaluate_information_set`. Scanner et moteur de replay
-l'appellent. Le scanner conserve en parallèle un adaptateur historique dont il
-compare la décision à la décision canonique.
+est la façade canonique du replay et délègue à
+`domain.backtesting.evaluate_information_set`. Depuis la Phase 5.8, le scanner
+effectue un seul passage dans son adaptateur historique ; la parité avec le
+moteur canonique est contrôlée par un oracle de service en tests.
 
 Le marché live reste un adaptateur mono-timeframe distinct : il réutilise les mêmes
 primitives d'indicateurs, le builder et la confluence, mais ne passe pas son snapshot
@@ -258,6 +258,8 @@ les stores et résultats historiques ne sont pas transformés.
 Le moteur, l'adaptateur, la matrice exacte (dont la nuance Stochastique), les
 statuts et les exemples JSON sont documentés dans
 [`docs/backend/structured-signal-filters.md`](backend/structured-signal-filters.md).
+La stabilisation v1, la matrice exhaustive et les compteurs d'appels sont dans
+[`docs/backend/structured-signal-filters-v1-stability.md`](backend/structured-signal-filters-v1-stability.md).
 Le CSV, le marché et les intégrations frontend du backtest restent inchangés.
 
 ## 12. Flux d'un scan
@@ -269,19 +271,17 @@ Le CSV, le marché et les intégrations frontend du backtest restent inchangés.
    filtres puis confluence ; il ne calcule pas un indicateur désactivé.
 5. Les timeframes MA réutilisent le primaire si possible, sinon font un fetch
    cache par symbole/timeframe. Aucun fetch n'est ajouté par les signaux structurés.
-6. Le résultat candidat est ensuite réévalué via `evaluate_signal_snapshot` avec
-   les mêmes bougies closes.
-7. Une divergence accepted/rejected entre adaptateur et canonique devient une
-   erreur interne.
-8. Les champs de décision du `ScanResult` sont remplacés par ceux de
-   `SignalObservation`, dont `indicator_signals`.
-9. Tri : confluence décroissante, sinon RSI croissant, sinon tendance
+6. Le builder assemble `indicator_signals` à partir des séries déjà calculées.
+7. La parité accepted/rejected avec `evaluate_information_set` est vérifiée
+   hors production par les tests de service.
+8. Tri : confluence décroissante, sinon RSI croissant, sinon tendance
    décroissante, sinon symbole ; symbole départage toujours.
-10. REST/WS expose le résultat ; CSV utilise une liste de colonnes figée.
+9. REST/WS expose le résultat ; CSV utilise une liste de colonnes figée.
 
-Dette : l'adaptateur historique et le moteur canonique recalculent les indicateurs
-activés. Les règles sont donc encore dupliquées, même si la décision canonique est
-imposée et contrôlée. Le builder lui-même ne fait aucun fetch ni recalcul.
+Le second calcul complet scanner/canonique a été retiré en Phase 5.8 après
+instrumentation. Chaque indicateur actif est calculé une fois par passage scanner,
+sans fetch supplémentaire. Les deux assemblages restent distincts et leur
+équivalence est conservée par les tests de parité.
 
 ## 13. Marché temps réel
 
@@ -640,9 +640,10 @@ confirmées et qualité. Les données insuffisantes ne sont pas imputées.
 
 ## 22. Câblage scanner
 
-Le scanner appelle réellement `evaluate_signal_snapshot`, compare son booléen
-`accepted` à l'adaptateur et copie `canonical.indicator_signals` vers
-`ScanResult.indicator_signals`. Les anciens champs restent présents. Les filtres
+Le scanner construit `ScanResult.indicator_signals` dans son passage unique à
+partir des séries déjà nécessaires aux champs legacy. Un oracle de test exécute
+séparément `evaluate_information_set` sur les mêmes bougies et compare décision,
+classes et signaux. Les anciens champs restent présents. Les filtres
 MACD/Bollinger/Stochastique lisent toujours `macd_signal_type`, `bb_position` et
 `stoch_signal`. Les signaux structurés n'ajoutent aucun appel OHLCV.
 
@@ -969,6 +970,21 @@ Validation Phase 5.6 :
 | `pnpm run build` | 0 | 2 054 modules transformés, build Vite réussi |
 | `.\venv\Scripts\python.exe -m pytest -q` depuis `backend/` | 0 | 366 passés, 1 ignoré, 22 subtests, 1 warning |
 
+Validation Phase 5.8 :
+
+| Commande | Code | Résultat |
+|---|---:|---|
+| `.\venv\Scripts\python.exe -m pytest -q` | 0 | 540 passés, 1 ignoré, 27 subtests, 2 warnings |
+| `.\venv\Scripts\python.exe -m compileall -q app` | 0 | aucune erreur |
+| `.\venv\Scripts\python.exe -m black --check app tests` | 0 | 100 fichiers inchangés |
+| `.\venv\Scripts\python.exe -m flake8 app tests` | 0 | aucune erreur |
+| `.\venv\Scripts\python.exe -m mypy app` | 0 | 66 fichiers, aucune erreur |
+| `$env:CI='true'; pnpm install --frozen-lockfile` | 0 | lockfile à jour, 335 paquets réutilisés, 0 téléchargé |
+| `pnpm run typecheck` | 0 | TypeScript réussi |
+| `pnpm run lint` | 0 | ESLint, 0 warning |
+| `pnpm run test` | 0 | 41 fichiers, 251 tests passés |
+| `pnpm run build` | 0 | 2 056 modules transformés, build Vite réussi |
+
 ## 33. Commandes de développement
 
 ```powershell
@@ -1002,7 +1018,8 @@ Le code backend lit `os.getenv`; charger explicitement `.env` ou utiliser
 
 - Dépôt Git initialisé avec un historique récent ; `safe.directory` reste requis
   dans cet environnement Windows.
-- Scanner : adaptateur historique complet + recalcul canonique.
+- Scanner : adaptateur historique en un passage ; assemblage replay distinct
+  maintenu en parité par les tests.
 - Marché : pas de modèle Pydantic public.
 - Builder : `disabled` signifie omission, contrairement à une phrase obsolète de
   sa docstring de module à corriger si ce contrat change.
@@ -1015,9 +1032,9 @@ Le code backend lit `os.getenv`; charger explicitement `.env` ou utiliser
 
 ## 36. Problèmes connus
 
-Deux warnings pandas sur les nanosecondes. Les chemins historiques de scanner et
-canonique pourraient diverger lors d'une évolution de règle ; le code transforme
-alors la paire en erreur plutôt qu'en résultat silencieusement incohérent.
+Deux warnings pandas sur les nanosecondes. Les chemins scanner et replay
+pourraient diverger lors d'une évolution de règle ; les oracles de domaine et de
+service doivent donc rester bloquants.
 
 Corrections réalisées pendant cet audit :
 
@@ -1153,8 +1170,8 @@ distinction confirmed/provisional et l'exclusion SMA/EMA de la confluence march�
 - Phase 1, contrat et qualité : implémentée ; garde-fous non-finis complétés lors
   de cet audit.
 - Phase 2, indicateurs structurés et confluence : implémentée et couverte.
-- Phase 3, builder/moteur canonique/parité : implémentée ; duplication scanner
-  explicitement restante.
+- Phase 3, builder/moteur canonique/parité : implémentée ; le double passage
+  scanner a été retiré en Phase 5.8 et remplacé par des oracles de tests.
 - Phase 4, câblage scanner/marché/backtest : implémentée côté backend et modèles,
   tests causaux présents.
 - Phase 5.1, contrats frontend : implémentée ; types, schémas, frontières et stores
@@ -1171,8 +1188,12 @@ distinction confirmed/provisional et l'exclusion SMA/EMA de la confluence march�
   séparation explicite entre signal, outcome futur et simulation de portefeuille.
 - Phase 5.6, audit transversal : implémentée ; helpers de résumé/état et note
   d'intensité communs, inventaire legacy et plan de dépréciation sans suppression.
+- Phase 5.7, filtres structurés : implémentée ; contrat v1 additif, priorité
+  locale et fallback legacy.
+- Phase 5.8, stabilisation : contrat JSON figé, parité exhaustive, fingerprints
+  et compteurs d'appels ; aucun champ legacy déprécié.
 
 Conclusion : la donnée structurée arrive jusqu'aux stores et les trois interfaces
-la présentent sans recalcul. La suite recommandée est la migration versionnée et
-rétrocompatible des filtres historiques ; aucune suppression de champ ne doit
-précéder cette migration.
+la présentent sans recalcul. La suite doit être choisie à partir de mesures
+d'usage réelles : v2, dépréciation formelle ou nouvelle optimisation prouvée.
+Aucune suppression de champ ne doit précéder cette décision.

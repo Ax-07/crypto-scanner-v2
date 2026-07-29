@@ -16,9 +16,9 @@ dans [`frontend/structured-signals-migration-audit.md`](frontend/structured-sign
 
 `backend/indicators.py` ne contient pas de logique : il réexporte les primitives pour compatibilité.
 
-Depuis la Phase 4, un builder commun `app.domain.indicator_bundle.build_indicator_signals` construit les signaux structurés `IndicatorSignal` (rsi/sma/ema/macd/bollinger/stochastique) et est réutilisé par le moteur canonique de replay (`app.domain.backtesting.evaluate_information_set`, lui-même appelé par le scanner), et par `market_stream`. Ces signaux structurés sont exposés en plus des champs legacy via `ScanResult.indicator_signals` et `SignalObservation.indicator_signals` (additifs, sans rupture de compatibilité). La tendance (SMA/EMA) reste gérée par la logique historique multi-timeframe côté scanner/replay; seul `market_stream` (mono-timeframe) calcule aussi des signaux structurés sma/ema, exposés mais exclus du calcul de confluence pour éviter une divergence avec `detect_trend`.
+Depuis la Phase 4, un builder commun `app.domain.indicator_bundle.build_indicator_signals` construit les signaux structurés `IndicatorSignal` (rsi/sma/ema/macd/bollinger/stochastique). Il est utilisé par le moteur canonique de replay (`app.domain.backtesting.evaluate_information_set`), par le passage unique du scanner et par `market_stream`. Ces signaux structurés sont exposés en plus des champs legacy via `ScanResult.indicator_signals` et `SignalObservation.indicator_signals` (additifs, sans rupture de compatibilité). La tendance (SMA/EMA) reste gérée par la logique historique multi-timeframe côté scanner/replay; seul `market_stream` (mono-timeframe) calcule aussi des signaux structurés sma/ema, exposés mais exclus du calcul de confluence pour éviter une divergence avec `detect_trend`.
 
-Risque restant : l’assemblage des filtres/disponibilité conserve encore des chemins dupliqués entre scanner, marché et replay au-delà du calcul des indicateurs eux-mêmes. La parité est testée sur des cas ciblés (dont un test anti-look-ahead dédié à `indicator_signals`), pas prouvée pour tous les payloads.
+Risque restant : l’assemblage des filtres/disponibilité conserve encore des chemins distincts entre scanner, marché et replay. La matrice legacy est exhaustive et un oracle de service compare scanner/replay ; tout nouveau vocabulaire structuré doit encore compléter ces garde-fous.
 
 ## Données et clôtures
 
@@ -110,8 +110,8 @@ la bibliothèque visuelle partagée, sans recalcul.
 
 ## Tests
 
-Backend relancé en Phase 5.6 : 366 tests passés, 1 ignoré et 22 subtests
-passés, avec un avertissement pandas préexistant. Les fichiers clés sont :
+Backend relancé en Phase 5.8 : 540 tests passés, 1 ignoré et 27 subtests
+passés, avec deux avertissements pandas préexistants. Les fichiers clés sont :
 
 - `test_indicators_math.py` : séries connues, warm-up, custom, constantes, NaN ;
 - `test_signal_classification.py` : bornes/égalités, croisements, grades, confluence ;
@@ -119,10 +119,13 @@ passés, avec un avertissement pandas préexistant. Les fichiers clés sont :
 - `test_phase1_data_quality.py` : minimum final et clôtures temporelles ;
 - `test_phase1_contracts.py` : Pydantic/OpenAPI ;
 - `test_phase2_signal_coherence.py` : disponibilité, snapshots, profil et parité.
+- `test_structured_signal_filters_v1_contract.py` : JSON v1, matrice legacy,
+  statuts, priorité et fingerprints.
+- `test_scanner_service.py` : oracle scanner/replay et compteurs d'appels.
 
 Le frontend possède des tests dédiés aux contrats structurés, frontières
 marché/scanner/backtest, stores, sockets, profils, helpers transversaux et rendus
-historiques. Validation Phase 5.6 : 37 fichiers et 213 tests réussis, sans test
+historiques. Validation Phase 5.8 : 41 fichiers et 251 tests réussis, sans test
 ignoré ou échoué ; typecheck, lint et build réussis.
 
 ## Phase 5.7 — filtres structurés
@@ -137,11 +140,13 @@ fallback legacy. Un groupe vide est une neutralisation explicite sans fallback.
 `check_signal_filters` reste inchangée pour un payload entièrement legacy. La
 matrice exhaustive et la nuance Stochastique sont dans
 [`backend/structured-signal-filters.md`](backend/structured-signal-filters.md).
+Les règles figées, fingerprints, oracles et compteurs Phase 5.8 sont dans
+[`backend/structured-signal-filters-v1-stability.md`](backend/structured-signal-filters-v1-stability.md).
 
 ## Limites prioritaires
 
-1. factoriser l’évaluation complète scanner/live/replay (le calcul des signaux structurés par indicateur est désormais factorisé via `build_indicator_signals`; l’assemblage/disponibilité/filtres restants ne le sont pas encore) ;
-2. ajouter davantage de parité de payload et filtres, pas seulement valeurs d’indicateurs ;
+1. conserver la parité des assemblages scanner/replay sans réintroduire de double calcul runtime ;
+2. compléter les oracles lors de toute nouvelle valeur de `signal` ou `state` ;
 3. intégrer causalement les divergences au replay avant toute mesure ;
 4. traiter/signaliser les trous dans scanner/live ;
 5. décider si la tendance marché doit exposer l’agrégation multi-TF ;

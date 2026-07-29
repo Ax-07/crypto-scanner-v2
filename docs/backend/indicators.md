@@ -77,7 +77,9 @@ Le scanner peut filtrer `macd`, `bollinger` et `stochastic` sur `direction`,
 `signal`, `state` et `status`. Le contrat versionné, la matrice exacte de
 migration et la priorité sur les filtres historiques sont décrits dans
 [structured-signal-filters.md](structured-signal-filters.md). Les trois champs
-legacy restent acceptés.
+legacy restent acceptés. Les règles figées et les compteurs de calcul Phase 5.8
+sont dans
+[structured-signal-filters-v1-stability.md](structured-signal-filters-v1-stability.md).
 
 ## Valeurs absentes et prudence
 

@@ -112,9 +112,15 @@ legacy_filters_to_structured(
 ) -> dict[str, object] | None
 ```
 
-Le scanner et le moteur canonique partagé avec le replay utilisent les signaux
-déjà calculés. Cette migration n'ajoute aucun appel OHLCV et ne modifie ni
-calcul d'indicateur, ni score de confluence, ni export CSV.
+Le scanner et le moteur canonique du replay utilisent les signaux déjà calculés.
+Depuis la Phase 5.8, le scanner ne relance plus le moteur canonique uniquement
+pour contrôler la parité : ce contrôle est conservé dans les tests. Cette
+migration n'ajoute aucun appel OHLCV et ne modifie ni score de confluence, ni
+export CSV.
+
+Le contrat figé, les matrices complètes, fingerprints et compteurs d'appels sont
+documentés dans
+[structured-signal-filters-v1-stability.md](structured-signal-filters-v1-stability.md).
 
 ## Exemples
 
@@ -164,7 +170,6 @@ L'équivalent strict du legacy
 
 ## Dépréciation progressive
 
-La v1 est additive. Aucun calendrier de suppression n'est annoncé. La prochaine
-étape doit mesurer les nouveaux jobs et la parité avant de choisir entre
-stabilisation, migration de presets éventuels, versionnement d'API ou réduction
-du double calcul scanner/canonique.
+La v1 est additive. Aucun calendrier de suppression n'est annoncé. Toute rupture
+exige une nouvelle version ; `strength` et `raw_value` restent hors v1. La
+prochaine étape doit être choisie à partir de mesures d'usage réelles.

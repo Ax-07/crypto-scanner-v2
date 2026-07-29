@@ -72,6 +72,10 @@ priorité au groupe structuré par indicateur et utilise le legacy seulement pou
 une clé structurée absente. Le store ne migre pas les snapshots des jobs
 historiques : leur configuration et leurs résultats restent affichés tels quels.
 
+Le contrat JSON v1 est figé par une suite Zod dédiée. La matrice de parité
+backend, les règles de changement et les fingerprints sont documentés dans le
+[rapport de stabilisation](../backend/structured-signal-filters-v1-stability.md).
+
 ## Échecs à connaître
 
 - Une erreur de configuration initiale met le store en `failed`.
