@@ -23,7 +23,11 @@ Les messages d’un ancien job sont ignorés grâce à une comparaison d’insta
 
 ## Résultats
 
-`ScannerResultsTable` construit ses colonnes à partir des indicateurs activés dans le snapshot de configuration du job. La première cellule couvre toutes les colonnes lorsqu’il n’y a aucun résultat ; le nombre est toujours calculé comme un entier défini afin de ne jamais transmettre `NaN` à `colSpan`.
+`ScannerResultsTable` construit ses colonnes historiques à partir des indicateurs
+activés dans le snapshot de configuration du job et ajoute toujours la colonne
+non triable `Signaux`. La première cellule couvre toutes les colonnes lorsqu’il
+n’y a aucun résultat ; le nombre est toujours calculé comme un entier défini afin
+de ne jamais transmettre `NaN` à `colSpan`.
 
 Chaque ligne propose un lien vers :
 
@@ -32,6 +36,26 @@ Chaque ligne propose un lien vers :
 ```
 
 L’export CSV est une navigation directe vers l’URL produite par `scannerApi.exportUrl`. Elle utilise la même origine API que les appels JSON.
+
+### Signaux structurés
+
+Chaque ligne possède son propre `Sheet` Shadcn/Radix, piloté par un état React
+local. La cellule affiche un résumé descriptif compact : nombre disponible,
+nombre indisponible et décompte des directions effectivement calculées. Le bouton
+« Voir les signaux » est nommé avec le symbole et le timeframe pour les lecteurs
+d'écran.
+
+Le panneau réutilise `IndicatorSignalsPanel` pour les cartes détaillées et affiche
+le score/grade de confluence sous le libellé distinct « Contexte historique ». Il
+rappelle que l'intensité technique n'est pas une probabilité de gain. Le champ
+absent d'un ancien payload et l'objet moderne vide possèdent des messages
+différents. Un dictionnaire partiel n'est pas complété artificiellement et les
+statuts indisponibles restent ceux du backend.
+
+Sur mobile, le panneau utilise toute la largeur et son contenu défile
+verticalement ; sur desktop, il devient un panneau latéral large. Le scroll
+horizontal historique de la table reste actif. L'ouverture n'écrit ni dans
+Zustand ni dans l'URL et n'interfère pas avec le lien marché.
 
 ## Échecs à connaître
 

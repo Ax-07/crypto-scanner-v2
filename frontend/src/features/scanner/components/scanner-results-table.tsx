@@ -2,14 +2,15 @@ import { Link, createSearchParams } from "react-router-dom";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ScannerResultSignals } from "@/features/scanner/components/scanner-result-signals";
 import type { ScanConfig, ScanResult } from "@/types/scanner";
 import { marketProfileFromScan, serializeMarketProfile } from "@/features/market/market-profile";
 
 /** Affiche des colonnes dérivées de la configuration figée du job exécuté. */
 export function ScannerResultsTable({ results, config }: { results: ScanResult[]; config: ScanConfig | null }) {
-  // Deux colonnes sont fixes ; filter(Boolean).length produit toujours un entier fini.
+  // Trois colonnes sont fixes ; filter(Boolean).length produit toujours un entier fini.
   const columnCount =
-    2 +
+    3 +
     [
       config?.use_rsi,
       config?.use_ma,
@@ -37,6 +38,7 @@ export function ScannerResultsTable({ results, config }: { results: ScanResult[]
                 {config?.use_bollinger && <TableHead>Bollinger</TableHead>}
                 {config?.use_stochastic && <TableHead>Stochastique</TableHead>}
                 {config?.use_confluence_score && <TableHead>Confluence</TableHead>}
+                <TableHead>Signaux</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -90,6 +92,9 @@ export function ScannerResultsTable({ results, config }: { results: ScanResult[]
                       </details>
                     </TableCell>
                   )}
+                  <TableCell>
+                    <ScannerResultSignals result={result} />
+                  </TableCell>
                 </TableRow>
               ))}
               {!results.length && (

@@ -1,9 +1,9 @@
 # État complet de `scanner_crypto` pour contexte IA
 
 Ce document est la source de reprise principale après l'audit des signaux structurés des
-Phases 1 à 4 puis des Phases 5.1 et 5.2. Il décrit le code réellement présent,
-pas une cible. Les contrats et composants frontend sont intégrés, mais aucune page
-n'affiche encore ces composants.
+Phases 1 à 4 puis des Phases 5.1 à 5.3. Il décrit le code réellement présent,
+pas une cible. Les contrats et composants frontend sont intégrés et le scanner
+affiche désormais ces composants ; le marché et le backtest restent non migrés.
 
 ## 1. Métadonnées de génération
 
@@ -33,18 +33,13 @@ replay de signaux avec outcomes forward, pas un simulateur de portefeuille.
 
 ## 3. État Git
 
-- Branche déclarée : `master`.
-- Commit courant : aucun ; `HEAD` n'existe pas (`fatal: Needed a single revision`).
-- Tous les fichiers sont non suivis (`git status --short` affiche les racines du
-  projet en `??`).
-- `git diff` et `git diff --stat` ne peuvent donc pas fournir de base historique.
+- Branche déclarée : `main`.
+- Commit initial de la Phase 5.3 : `7afd857` (« Ajout du fichier README.md avec la
+  documentation du projet et des instructions de développement »).
+- Le dépôt possède désormais un `HEAD` et l'arbre était propre avant la Phase 5.3.
 - Git exige aussi `safe.directory` dans cet environnement à cause d'une différence
   de propriétaire Windows ; l'audit a utilisé `git -c safe.directory=...` sans
   modifier la configuration globale.
-
-Conséquence : il est impossible d'attribuer automatiquement les changements à une
-phase ou de distinguer les modifications antérieures de celles de cet audit. Les
-fichiers touchés pendant cet audit sont listés en section 36.
 
 ## 4. Arborescence principale
 
@@ -134,8 +129,9 @@ le champ optionnel pendant la migration. Un schéma Zod commun valide statuts,
 directions, clés connues, nombres finis et force entre 0 et 1. Les frontières REST
 scanner/backtest valident ce champ sans retirer leurs champs historiques ; le schéma
 marché le conserve dans les vues racine, confirmée et provisoire. Les trois stores
-Zustand stockent les objets complets. La bibliothèque Phase 5.2 peut les afficher,
-mais aucun composant de page ne l'utilise encore.
+Zustand stockent les objets complets. La bibliothèque Phase 5.2 est montée par la
+table scanner depuis la Phase 5.3 ; aucun composant marché ou backtest ne l'utilise
+encore.
 
 ## 8. Routes REST
 
@@ -730,8 +726,8 @@ sont actuellement pas inclus dans l'export CSV du scanner. L'export CSV
 
 - `types/indicator-signals.ts` centralise `IndicatorSignal`, les unions et le
   dictionnaire partiel ; scanner, marché et backtest l'importent.
-- Le tableau scanner affiche symbole, RSI, tendance, signaux historiques,
-  confluence et prix, pas les événements structurés.
+- Le tableau scanner affiche symbole, prix, RSI, tendance, signaux historiques,
+  confluence et une colonne additive `Signaux` avec résumé et détail structuré.
 - `market-metrics` affiche prix, RSI, tendance, MACD, Bollinger, Stochastique,
   confluence et disponibilité historiques.
 - La table backtest affiche décision, RSI, confluence et rejet, sans détail des
@@ -742,10 +738,10 @@ sont actuellement pas inclus dans l'export CSV du scanner. L'export CSV
 - L'API backtest valide les observations et le store conserve le champ.
 - Les payloads historiques sans champ restent valides et aucun fallback n'est créé.
 
-Le module métier isolé `components/indicator-signals/` sait désormais afficher
-statut, direction, événement, état, `strength`, raison et `raw_value`. Il est
-testé et exporté localement, mais aucun composant de page, tableau, route ou
-graphique ne l'importe encore.
+Le module métier isolé `components/indicator-signals/` affiche statut, direction,
+événement, état, `strength`, raison et `raw_value`. Le scanner le compose via des
+composants dédiés sous `features/scanner/components/`; le marché, le backtest et
+le graphique ne l'importent pas encore.
 
 ## 28. Contrats TypeScript ajoutés en Phase 5.1
 
@@ -800,6 +796,26 @@ emploie une grille responsive. Voir `docs/frontend/indicator-signals-ui.md`.
 
 La Phase 5.2 n'a modifié ni contrats, ni schémas Zod, ni API, ni stores. Scanner,
 marché et backtest conservent leur interface historique.
+
+## 29 bis. Intégration scanner Phase 5.3
+
+`ScannerResultsTable` conserve les colonnes historiques conditionnées par
+`job.config` et ajoute `Signaux`. `ScannerResultSignalsSummary` décrit les entrées
+reçues sans agréger les intensités ni produire une recommandation.
+`ScannerResultSignals` gère un `Sheet` local par ligne et
+`ScannerResultSignalsDetails` réutilise `IndicatorSignalsPanel`.
+
+Le `Sheet` est pleine largeur et scrollable sur mobile, puis latéral large sur
+desktop. Son bouton inclut symbole/timeframe dans son nom accessible ; Radix gère
+focus, Échap et retour au déclencheur. Une fermeture visible en français est
+également fournie.
+
+Un champ absent affiche l'indisponibilité d'un payload historique, tandis que `{}`
+indique qu'aucun signal moderne n'a été produit. Les dictionnaires partiels restent
+partiels et les cartes affichent directement les statuts indisponibles reçus. Aucun
+objet `disabled` n'est synthétisé depuis la configuration. Le score/grade de
+confluence reste affiché comme contexte historique distinct et n'est jamais
+recalculé. L'ouverture ne touche ni Zustand, ni URL, ni ordre des résultats.
 
 ## 30. Gestion de l'état frontend
 
@@ -858,6 +874,18 @@ métadonnées ; la relance autorisée en mode CI a confirmé le lockfile à jour
 les dépendances déjà installées. TypeScript, ESLint, les tests et le build ont
 ensuite tous réussi.
 
+Validation Phase 5.3 :
+
+| Commande | Code | Résultat |
+|---|---:|---|
+| `$env:CI='true'; pnpm install --frozen-lockfile` | 0 | lockfile à jour, 335 paquets réutilisés |
+| `pnpm exec vitest run src/features/scanner` | 0 | 3 fichiers, 21 tests passés |
+| `pnpm run typecheck` | 0 | TypeScript réussi |
+| `pnpm run lint` | 0 | ESLint, 0 warning |
+| `pnpm run test` | 0 | 26 fichiers, 154 tests passés |
+| `pnpm run build` | 0 | 2045 modules transformés, build Vite réussi |
+| `python -m pytest -q` depuis `backend/` | 0 | 366 passés, 1 ignoré, 22 subtests, 3 warnings |
+
 ## 33. Commandes de développement
 
 ```powershell
@@ -894,11 +922,11 @@ Le code backend lit `os.getenv`; charger explicitement `.env` ou utiliser
 - Marché : pas de modèle Pydantic public.
 - Builder : `disabled` signifie omission, contrairement à une phrase obsolète de
   sa docstring de module à corriger si ce contrat change.
-- Frontend : bibliothèque Phase 5.2 prête et testée, mais pas encore intégrée aux pages.
+- Frontend : scanner intégré en Phase 5.3 ; marché et backtest non migrés.
 - Backtest : pas de simulation de capital/positions.
 - Versions Python non figées exactement.
-- Artefacts lourds présents localement et `.gitignore` incomplet pour `dist`,
-  `venv`, caches, logs, base et `.env`.
+- Artefacts lourds présents localement mais ignorés : `dist`, `node_modules`,
+  environnements virtuels, caches, logs, bases locales et `.env`.
 
 ## 36. Problèmes connus
 
@@ -973,12 +1001,13 @@ configuration et formatters centralisés, mode compact, grille responsive,
 accessibilité et tests Testing Library. Aucun branchement page/store/API n'a été
 ajouté.
 
-### 5.3 — Scanner
+### 5.3 — Scanner — terminée
 
-Fichiers : résultat table/workspace et tests. Ajouter panneau de détail par ligne
-ou colonne compacte, tout en conservant les colonnes historiques. Responsive :
-résumé en table, détail en Card/Sheet. Test ancien payload et mapping complet.
-Acceptation : aucun champ historique retiré, six signaux possibles affichables.
+Colonne compacte ajoutée sans retirer les colonnes historiques. Un `Sheet`
+responsive par ligne affiche `IndicatorSignalsPanel`, distingue payload absent,
+objet vide et dictionnaire partiel, et conserve les statuts indisponibles.
+L'ouverture est locale, accessible et sans effet sur le tri, les filtres, le store
+ou le lien marché.
 
 ### 5.4 — Marché
 
@@ -1021,12 +1050,12 @@ distinction confirmed/provisional et l'exclusion SMA/EMA de la confluence march�
 | Fonctionnalité | Scanner | Marché backend | Backtest | CSV scanner | Frontend actuel |
 |---|---:|---:|---:|---:|---:|
 | Anciens signaux | oui | oui | oui | oui | oui |
-| Signaux structurés | oui | oui | oui | non | typés/conservés, composants prêts mais non intégrés |
+| Signaux structurés | oui | oui | oui | non | affichés dans le scanner seulement |
 | Confluence structurée | oui, sauf trend | oui, sauf SMA/EMA | oui, sauf trend | résultat legacy | non affichée |
 | SMA/EMA structurés | non | oui | non | non | non |
 | Tendance multi-timeframes | oui | non | oui | score/trends | scanner seulement |
 | `raw_value` | JSON | JSON backend | JSON | non | conservé, formatter UI prêt |
-| Affichage utilisateur | legacy | legacy | résumé legacy | téléchargement | composants non montés dans les pages |
+| Affichage utilisateur | legacy + structuré | legacy | résumé legacy | téléchargement | scanner migré ; marché/backtest non migrés |
 
 ## 43. Statut des Phases 1 à 4
 
@@ -1040,8 +1069,10 @@ distinction confirmed/provisional et l'exclusion SMA/EMA de la confluence march�
 - Phase 5.1, contrats frontend : implémentée ; types, schémas, frontières et stores
   couverts, sans modification visuelle.
 - Phase 5.2, composants frontend : implémentée ; bibliothèque métier, formatters,
-  accessibilité et tests présents, sans intégration aux pages.
+  accessibilité et tests présents.
+- Phase 5.3, scanner frontend : implémentée ; résumé compact, détail en `Sheet`,
+  compatibilité historique et colonnes existantes préservées.
 
-Conclusion : la donnée structurée arrive jusqu'aux stores et sa bibliothèque de
-présentation est prête. La suite est la Phase 5.3 : intégration scanner
-progressive, responsive et compatible avec les colonnes historiques.
+Conclusion : la donnée structurée arrive jusqu'aux stores et le scanner l'affiche
+de façon responsive et compatible avec les colonnes historiques. La suite est la
+Phase 5.4, limitée à l'intégration du marché temps réel.

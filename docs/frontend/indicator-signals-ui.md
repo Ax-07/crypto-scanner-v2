@@ -3,7 +3,8 @@
 La Phase 5.2 fournit une bibliothèque de présentation réutilisable dans
 `frontend/src/components/indicator-signals/`. Elle consomme les contrats canoniques
 de `src/types/indicator-signals.ts`, sans store, appel API ou recalcul métier.
-Aucune page ne l'utilise encore.
+Depuis la Phase 5.3, le scanner la compose dans son tableau de résultats. Le marché
+et le backtest ne l'utilisent pas encore.
 
 ## API publique
 
@@ -119,9 +120,37 @@ import {
 <IndicatorSignalsPanel signals={signals} />
 ```
 
-## Intégration future
+## Intégration dans le scanner — Phase 5.3
 
-La Phase 5.3 pourra employer le mode compact dans les résultats scanner et ouvrir
-un détail responsive par ligne, tout en conservant les colonnes historiques.
-Les phases suivantes intégreront séparément les vues marché puis backtest. Les
-contrats réseau, stores, graphiques, routes et pages restent inchangés en Phase 5.2.
+`features/scanner/components/scanner-results-table.tsx` conserve ses colonnes
+historiques et ajoute une colonne non triable `Signaux`. Chaque cellule compose :
+
+- `ScannerResultSignalsSummary`, qui décrit le nombre de signaux calculables,
+  les indisponibilités et les directions reçues, sans recommandation globale ;
+- `ScannerResultSignals`, qui porte uniquement l'état React local d'ouverture ;
+- `ScannerResultSignalsDetails`, qui réutilise `IndicatorSignalsPanel` et affiche
+  séparément le contexte historique de confluence.
+
+Le bouton porte un nom tel que « Voir les signaux de BTC/USDC en 4h ». Il ouvre un
+`Sheet` Radix/Shadcn avec titre et description accessibles, fermeture visible,
+retour du focus et prise en charge d'Échap. Le panneau occupe toute la largeur sur
+mobile, devient un panneau latéral large sur desktop et possède son propre scroll
+vertical. La table conserve son scroll horizontal et la cellule reste compacte.
+
+Les états de payload sont volontairement distincts :
+
+- champ absent : « Les signaux structurés ne sont pas disponibles pour ce
+  résultat. » ;
+- objet vide : « Aucun signal structuré n'a été produit. » ;
+- dictionnaire partiel : seuls les indicateurs présents sont rendus, dans l'ordre
+  canonique ;
+- statut indisponible : la carte reçue affiche `insufficient_data`,
+  `invalid_data` ou `disabled` sans inventer un signal absent.
+
+Le résumé n'utilise que `result.indicator_signals`. Il ne reconstruit aucun objet
+depuis `job.config`, ne recalcule ni intensité ni confluence, et n'assimile jamais
+l'intensité à une contribution ou une probabilité.
+
+Les phases suivantes intégreront séparément le marché puis le backtest. La Phase
+5.3 ne modifie ni leurs pages, ni leurs composants, ni les stores, routes, contrats
+réseau ou graphiques.
