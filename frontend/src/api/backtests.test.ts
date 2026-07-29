@@ -1,0 +1,105 @@
+import { describe, expect, it } from "vitest"
+
+import { backtestJobSchema, parseSignalObservationPage } from "@/api/backtests"
+
+const payload = {
+  id: "job-1",
+  status: "running",
+  config: {},
+  progress: {
+    processed: 2, total: 10, observations: 2, current_symbol: "BTC/USDC",
+    phase: "replay", percent: 20,
+  },
+  summary: null,
+  correlations: null,
+  ablations: null,
+  warnings: [],
+  error: null,
+  created_at: "2026-01-01T00:00:00Z",
+  started_at: "2026-01-01T00:00:01Z",
+  completed_at: null,
+}
+
+describe("backtestJobSchema", () => {
+  it("accepte un message WebSocket complet", () => {
+    expect(backtestJobSchema.parse(payload).progress.percent).toBe(20)
+  })
+
+  it("rejette un statut, un compteur ou un résumé mal formé", () => {
+    expect(() => backtestJobSchema.parse({ ...payload, status: "unknown" })).toThrow()
+    expect(() => backtestJobSchema.parse({
+      ...payload, progress: { ...payload.progress, processed: "2" },
+    })).toThrow()
+    expect(() => backtestJobSchema.parse({ ...payload, summary: { observation_count: 1 } })).toThrow()
+  })
+})
+
+describe("backtest structured signal boundary", () => {
+  const observation = {
+    id: 1,
+    job_id: "job-1",
+    symbol: "BTC/USDC",
+    timeframe: "1h",
+    decision_time: "2026-07-29T00:00:00Z",
+    snapshot_status: "confirmed",
+    accepted: true,
+    rejection_stage: null,
+    rejection_reason: null,
+    close: 100,
+    rsi: 31.4,
+    trend_score: 1,
+    trend_states: {},
+    macd_signal: null,
+    bollinger_position: null,
+    stochastic_signal: null,
+    confluence_score: null,
+    confluence_grade: null,
+    confluence_factors: {},
+    availability: {},
+    algorithm_version: "signal-evaluation-v2",
+    profile_id: "inline",
+    profile_fingerprint: null,
+    dataset_version: "test",
+    source_ohlcv: {},
+    raw_values: {},
+    classes: {},
+    configured_weights: {},
+    effective_weights: {},
+    divergences: [],
+    quality: {},
+  }
+  const signal = {
+    status: "available",
+    direction: "bullish",
+    signal: "exit_oversold",
+    state: "near_oversold",
+    strength: 0.75,
+    reason: "Sortie de survente",
+    raw_value: 31.4,
+  } as const
+
+  it("accepte une observation historique sans signaux", () => {
+    expect(parseSignalObservationPage({ items: [observation], total: 1 }).items[0]
+      .indicator_signals).toBeUndefined()
+  })
+
+  it("préserve des signaux partiels sans modifier les autres données", () => {
+    const parsed = parseSignalObservationPage({
+      items: [{ ...observation, indicator_signals: { rsi: signal } }],
+      total: 1,
+    }).items[0]
+    expect(parsed.indicator_signals).toEqual({ rsi: signal })
+    expect(parsed.close).toBe(100)
+    expect(parsed.accepted).toBe(true)
+  })
+
+  it("rejette un signal invalide", () => {
+    expect(() => parseSignalObservationPage({
+      items: [{
+        ...observation,
+        indicator_signals: { rsi: { ...signal, raw_value: Number.NEGATIVE_INFINITY } },
+      }],
+      total: 1,
+    })).toThrow()
+  })
+})
