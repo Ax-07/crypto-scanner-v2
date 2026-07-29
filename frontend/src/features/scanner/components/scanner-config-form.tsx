@@ -18,8 +18,18 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { formatTechnicalLabel } from "@/components/indicator-signals";
 import { parsePeriodList, scanConfigSchema, TIMEFRAMES } from "@/features/scanner/scan-config-schema";
+import {
+  migrateLegacySignalFilters,
+  setStructuredFilterMatch,
+  toggleStructuredFilterValue,
+} from "@/features/scanner/structured-signal-filter-migration";
 import type { ScanConfig } from "@/types/scanner";
+import type {
+  StructuredSignalFilterField,
+  StructuredSignalFilterIndicator,
+} from "@/types/structured-signal-filters";
 
 type Props = { config: ScanConfig; busy: boolean; onSubmit: (config: ScanConfig) => Promise<void> };
 
@@ -27,10 +37,10 @@ type Props = { config: ScanConfig; busy: boolean; onSubmit: (config: ScanConfig)
 export function ScannerConfigForm({ config, busy, onSubmit }: Props) {
   const form = useForm<ScanConfig>({
     resolver: zodResolver(scanConfigSchema) as Resolver<ScanConfig>,
-    defaultValues: config,
+    defaultValues: migrateLegacySignalFilters(config),
     mode: "onChange",
   });
-  useEffect(() => form.reset(config), [config, form]);
+  useEffect(() => form.reset(migrateLegacySignalFilters(config)), [config, form]);
   const values = useWatch({ control: form.control }) as ScanConfig;
   const active = [
     values.use_rsi && "RSI",
@@ -303,28 +313,69 @@ export function ScannerConfigForm({ config, busy, onSubmit }: Props) {
         <CardHeader>
           <CardTitle>Filtres avancés</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-5 lg:grid-cols-3">
-          <SignalField
-            control={form.control}
-            name="filter_macd_signal"
-            label="Signaux MACD"
-            values={["bullish", "bearish", "neutral"]}
-            disabled={busy || !values.use_macd}
-          />
-          <SignalField
-            control={form.control}
-            name="filter_bb_position"
-            label="Positions Bollinger"
-            values={["oversold", "near_oversold", "neutral", "near_overbought", "overbought"]}
-            disabled={busy || !values.use_bollinger}
-          />
-          <SignalField
-            control={form.control}
-            name="filter_stoch_signal"
-            label="Signaux stochastiques"
-            values={["oversold", "overbought", "bullish_cross", "bearish_cross", "neutral"]}
-            disabled={busy || !values.use_stochastic}
-          />
+        <CardContent className="space-y-5">
+          <FieldDescription>
+            Les nouveaux filtres utilisent les signaux structurés. Les anciens filtres restent
+            acceptés pour les configurations existantes.
+          </FieldDescription>
+          <div className="grid gap-5 lg:grid-cols-3">
+            <StructuredSignalField
+              control={form.control}
+              indicator="macd"
+              label="MACD"
+              options={[
+                { field: "direction", value: "bullish", label: "Direction haussière" },
+                { field: "direction", value: "bearish", label: "Direction baissière" },
+                { field: "direction", value: "neutral", label: "Direction neutre" },
+              ]}
+              disabled={busy || !values.use_macd}
+            />
+            <StructuredSignalField
+              control={form.control}
+              indicator="bollinger"
+              label="Bollinger"
+              options={[
+                ...["oversold", "near_oversold", "neutral", "near_overbought", "overbought"].map(
+                  (value) => ({
+                    field: "state" as const,
+                    value,
+                    label: formatTechnicalLabel(value),
+                  }),
+                ),
+                ...[
+                  "lower_band_breakout",
+                  "lower_band_reentry",
+                  "upper_band_breakout",
+                  "upper_band_reentry",
+                ].map((value) => ({
+                  field: "signal" as const,
+                  value,
+                  label: formatTechnicalLabel(value),
+                })),
+              ]}
+              disabled={busy || !values.use_bollinger}
+            />
+            <StructuredSignalField
+              control={form.control}
+              indicator="stochastic"
+              label="Stochastique"
+              options={[
+                ...["bullish_cross", "bearish_cross", "oversold", "overbought", "neutral"].map(
+                  (value) => ({
+                    field: "signal" as const,
+                    value,
+                    label: `Événement / classe : ${formatTechnicalLabel(value)}`,
+                  }),
+                ),
+                ...["oversold", "neutral", "overbought"].map((value) => ({
+                  field: "state" as const,
+                  value,
+                  label: `État actuel : ${formatTechnicalLabel(value)}`,
+                })),
+              ]}
+              disabled={busy || !values.use_stochastic}
+            />
+          </div>
         </CardContent>
       </Card>
       <div className="sticky bottom-3 flex flex-wrap justify-end gap-2 rounded-lg border bg-background/95 p-3 backdrop-blur">
@@ -332,7 +383,7 @@ export function ScannerConfigForm({ config, busy, onSubmit }: Props) {
           type="button"
           variant="outline"
           disabled={!form.formState.isDirty || form.formState.isSubmitting}
-          onClick={() => form.reset(config)}
+          onClick={() => form.reset(migrateLegacySignalFilters(config))}
         >
           Annuler les modifications
         </Button>
@@ -530,40 +581,81 @@ function PeriodField({
     />
   );
 }
-function SignalField({
+type StructuredOption = {
+  field: StructuredSignalFilterField;
+  value: string;
+  label: string;
+};
+
+function StructuredSignalField({
   control,
-  name,
+  indicator,
   label,
-  values,
+  options,
   disabled,
 }: {
   control: Control<ScanConfig>;
-  name: "filter_macd_signal" | "filter_bb_position" | "filter_stoch_signal";
+  indicator: StructuredSignalFilterIndicator;
   label: string;
-  values: string[];
+  options: StructuredOption[];
   disabled: boolean;
 }) {
   return (
     <Controller
-      name={name}
+      name="structured_signal_filters"
       control={control}
       render={({ field, fieldState }) => {
-        const selected = Array.isArray(field.value) ? field.value.map(String) : [];
+        const group = field.value?.indicators[indicator];
+        const isSelected = (option: StructuredOption) =>
+          group?.conditions
+            .find((condition) => condition.field === option.field)
+            ?.values.map(String)
+            .includes(option.value) ?? false;
         return (
           <FieldSet>
             <FieldLegend>{label}</FieldLegend>
+            <Field>
+              <FieldLabel htmlFor={`${indicator}-filter-match`}>Correspondance</FieldLabel>
+              <select
+                id={`${indicator}-filter-match`}
+                className="h-9 rounded-md border bg-background px-3"
+                disabled={disabled}
+                value={group?.match ?? "any"}
+                onChange={(event) =>
+                  field.onChange(
+                    setStructuredFilterMatch(
+                      field.value,
+                      indicator,
+                      event.target.value === "all" ? "all" : "any",
+                    ),
+                  )
+                }
+              >
+                <option value="any">Au moins une condition</option>
+                <option value="all">Toutes les conditions</option>
+              </select>
+            </Field>
             <div className="grid gap-2">
-              {values.map((value) => (
-                <label key={value} className="flex items-center gap-2 text-sm">
+              {options.map((option) => (
+                <label
+                  key={`${option.field}-${option.value}`}
+                  className="flex items-center gap-2 text-sm"
+                >
                   <Checkbox
                     disabled={disabled}
-                    checked={selected.includes(value)}
-                    onCheckedChange={() => {
-                      const next = toggle(selected, value);
-                      field.onChange(next.length ? next : null);
-                    }}
+                    checked={isSelected(option)}
+                    onCheckedChange={() =>
+                      field.onChange(
+                        toggleStructuredFilterValue(
+                          field.value,
+                          indicator,
+                          option.field,
+                          option.value,
+                        ),
+                      )
+                    }
                   />
-                  {value.replaceAll("_", " ")}
+                  {option.label}
                 </label>
               ))}
             </div>

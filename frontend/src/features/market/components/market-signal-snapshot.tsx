@@ -1,6 +1,11 @@
 import { CircleCheck, Clock3 } from "lucide-react"
 
-import { IndicatorSignalsPanel } from "@/components/indicator-signals"
+import {
+  IndicatorSignalsPanel,
+  IndicatorStrengthNote,
+  formatIndicatorSignalsCollectionMessage,
+  getIndicatorSignalsCollectionState,
+} from "@/components/indicator-signals"
 import { Badge } from "@/components/ui/badge"
 import {
   Card,
@@ -40,6 +45,9 @@ export function MarketSignalSnapshot({
   const provisional = kind === "provisional"
   const title = provisional ? "Signaux provisoires" : "Signaux confirmés"
   const timestamp = formatTimestamp(snapshot?.timestamp)
+  const collectionState = getIndicatorSignalsCollectionState(
+    snapshot?.indicator_signals,
+  )
 
   return (
     <Card
@@ -108,16 +116,17 @@ export function MarketSignalSnapshot({
                 </div>
               ) : null}
             </dl>
-            {snapshot.indicator_signals === undefined ? (
+            {collectionState !== "available" || snapshot.indicator_signals === undefined ? (
               <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                Les signaux structurés ne sont pas disponibles dans ce snapshot.
+                {formatIndicatorSignalsCollectionMessage({
+                  state: collectionState,
+                  context: "ce snapshot",
+                })}
               </p>
             ) : (
-              <IndicatorSignalsPanel
-                signals={snapshot.indicator_signals}
-                emptyMessage="Aucun signal structuré n’a été produit pour ce snapshot."
-              />
+              <IndicatorSignalsPanel signals={snapshot.indicator_signals} />
             )}
+            <IndicatorStrengthNote />
             <p className="rounded-md bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
               Les signaux SMA et EMA sont affichés individuellement. Le facteur « Tendance »
               de la confluence conserve le calcul historique du marché.

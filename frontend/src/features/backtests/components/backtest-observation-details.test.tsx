@@ -61,6 +61,11 @@ describe("BacktestObservationDetails", () => {
     expect(screen.getByText(/Un signal technique décrit l’état du marché/i)).toBeVisible()
     expect(screen.getByText(/Aucun trade n’est associé/i)).toBeVisible()
     expect(screen.getByText(/prix d’entrée théorique est cette clôture/i)).toBeVisible()
+    expect(screen.getByText(
+      /L’intensité représente la force technique.*ne représente pas une probabilité de gain/i,
+    )).toBeVisible()
+    expect(screen.queryByText(/taux de réussite|confiance|fiabilité|chance de gain/i))
+      .not.toBeInTheDocument()
   })
 
   it("distingue le prix observé du prix next_open", () => {

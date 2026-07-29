@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { parseScannerJob } from "@/api/scanner"
+import { parseScannerJob, scannerApi } from "@/api/scanner"
+import { createScanConfig } from "@/test/scanner-fixtures"
 
 const signal = {
   status: "available",
@@ -58,6 +59,8 @@ const job = {
 }
 
 describe("scanner structured signal boundary", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
   it("accepte un résultat historique sans fabriquer de signaux", () => {
     expect(parseScannerJob(job).results?.[0].indicator_signals).toBeUndefined()
   })
@@ -84,5 +87,53 @@ describe("scanner structured signal boundary", () => {
         indicator_signals: { rsi: { ...signal, strength: 1.1 } },
       }],
     })).toThrow()
+  })
+
+  it("préserve une configuration structurée et rejette sa version inconnue", () => {
+    const structured = {
+      version: 1,
+      indicators: {
+        macd: {
+          match: "all",
+          conditions: [{ field: "direction", values: ["bullish"] }],
+        },
+      },
+    } as const
+    expect(parseScannerJob({
+      ...job,
+      config: { structured_signal_filters: structured },
+    }).config.structured_signal_filters).toEqual(structured)
+    expect(() => parseScannerJob({
+      ...job,
+      config: { structured_signal_filters: { version: 2, indicators: {} } },
+    })).toThrow()
+  })
+
+  it("scannerApi.start sérialise le nouveau contrat et les champs legacy", async () => {
+    const config = createScanConfig({
+      filter_macd_signal: ["bearish"],
+      structured_signal_filters: {
+        version: 1,
+        indicators: {
+          macd: {
+            match: "all",
+            conditions: [{ field: "direction", values: ["bullish"] }],
+          },
+        },
+      },
+    })
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ...job,
+      config,
+    }), { status: 202, headers: { "Content-Type": "application/json" } }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await scannerApi.start(config)
+
+    const request = fetchMock.mock.calls[0][1] as RequestInit
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      filter_macd_signal: ["bearish"],
+      structured_signal_filters: config.structured_signal_filters,
+    })
   })
 })

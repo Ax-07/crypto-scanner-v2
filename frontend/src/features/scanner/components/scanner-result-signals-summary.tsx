@@ -1,72 +1,51 @@
 import {
   IndicatorDirectionBadge,
-  INDICATOR_ORDER,
+  INDICATOR_DIRECTION_ORDER,
+  formatIndicatorDirectionCount,
+  getIndicatorSignalsCollectionState,
+  summarizeIndicatorSignals,
 } from "@/components/indicator-signals"
-import type {
-  IndicatorSignalDirection,
-  IndicatorSignals,
-} from "@/types/indicator-signals"
+import type { IndicatorSignals } from "@/types/indicator-signals"
 
 interface ScannerResultSignalsSummaryProps {
   signals: IndicatorSignals | undefined
 }
 
-const DIRECTION_ORDER = ["bullish", "neutral", "bearish"] as const
-
-const DIRECTION_COUNT_LABELS: Record<
-  IndicatorSignalDirection,
-  { singular: string; plural: string }
-> = {
-  bullish: { singular: "haussier", plural: "haussiers" },
-  neutral: { singular: "neutre", plural: "neutres" },
-  bearish: { singular: "baissier", plural: "baissiers" },
-}
-
 export function ScannerResultSignalsSummary({
   signals,
 }: ScannerResultSignalsSummaryProps) {
+  const state = getIndicatorSignalsCollectionState(signals)
   if (signals === undefined) {
     return <p className="text-xs text-muted-foreground">Non disponibles</p>
   }
 
-  const presentSignals = INDICATOR_ORDER.flatMap((indicator) => {
-    const signal = signals[indicator]
-    return signal ? [signal] : []
-  })
-
-  if (presentSignals.length === 0) {
+  if (state === "empty") {
     return <p className="text-xs text-muted-foreground">Aucun signal produit</p>
   }
 
-  const availableSignals = presentSignals.filter(
-    (signal) => signal.status === "available",
-  )
-  const unavailableCount = presentSignals.length - availableSignals.length
-  const directionCounts = DIRECTION_ORDER.flatMap((direction) => {
-    const count = availableSignals.filter(
-      (signal) => signal.direction === direction,
-    ).length
+  const summary = summarizeIndicatorSignals(signals)
+  const directionCounts = INDICATOR_DIRECTION_ORDER.flatMap((direction) => {
+    const count = summary[direction]
     return count > 0 ? [{ direction, count }] : []
   })
 
   return (
     <div className="min-w-44 max-w-56 space-y-1.5 whitespace-normal">
       <p className="text-xs font-medium">
-        {availableSignals.length} disponible
-        {availableSignals.length > 1 ? "s" : ""}
-        {unavailableCount > 0
-          ? ` · ${unavailableCount} indisponible${unavailableCount > 1 ? "s" : ""}`
+        {summary.available} disponible
+        {summary.available > 1 ? "s" : ""}
+        {summary.unavailable > 0
+          ? ` · ${summary.unavailable} indisponible${summary.unavailable > 1 ? "s" : ""}`
           : ""}
       </p>
       {directionCounts.length > 0 ? (
         <div className="flex flex-wrap gap-1" aria-label="Directions disponibles">
           {directionCounts.map(({ direction, count }) => {
-            const labels = DIRECTION_COUNT_LABELS[direction]
             return (
               <span key={direction} className="inline-flex items-center gap-1">
                 <IndicatorDirectionBadge direction={direction} compact />
                 <span className="text-xs text-muted-foreground">
-                  {count} {count === 1 ? labels.singular : labels.plural}
+                  {formatIndicatorDirectionCount(direction, count)}
                 </span>
               </span>
             )

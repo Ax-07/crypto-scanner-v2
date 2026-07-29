@@ -1,6 +1,11 @@
 import { useState } from "react"
 
-import { IndicatorSignalsPanel } from "@/components/indicator-signals"
+import {
+  IndicatorSignalsPanel,
+  IndicatorStrengthNote,
+  formatIndicatorSignalsCollectionMessage,
+  getIndicatorSignalsCollectionState,
+} from "@/components/indicator-signals"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -36,6 +41,9 @@ export function BacktestObservationDetails({
   const [open, setOpen] = useState(false)
   const date = new Date(observation.decision_time).toLocaleString("fr-FR")
   const accessibleName = `Voir les signaux de l’observation du ${date}`
+  const collectionState = getIndicatorSignalsCollectionState(
+    observation.indicator_signals,
+  )
   const factorNames = Array.from(new Set([
     ...Object.keys(observation.confluence_factors),
     ...Object.keys(observation.confluence_breakdown ?? {}),
@@ -146,16 +154,17 @@ export function BacktestObservationDetails({
             <h3 id="observation-signals-title" className="font-semibold">
               Signaux techniques
             </h3>
-            {observation.indicator_signals === undefined ? (
+            {collectionState !== "available" || observation.indicator_signals === undefined ? (
               <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                Les signaux structurés ne sont pas disponibles pour cette observation.
+                {formatIndicatorSignalsCollectionMessage({
+                  state: collectionState,
+                  context: "cette observation",
+                })}
               </p>
             ) : (
-              <IndicatorSignalsPanel
-                signals={observation.indicator_signals}
-                emptyMessage="Aucun signal structuré n’a été produit pour cette observation."
-              />
+              <IndicatorSignalsPanel signals={observation.indicator_signals} />
             )}
+            <IndicatorStrengthNote />
           </section>
 
           <section

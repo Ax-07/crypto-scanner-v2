@@ -125,7 +125,7 @@ export function BacktestObservationsTable({ job }: BacktestObservationsTableProp
                       <TableCell>
                         <BacktestObservationSummary observation={observation} />
                       </TableCell>
-                      <TableCell className="max-w-64 whitespace-normal break-words text-xs">
+                      <TableCell className="max-w-64 whitespace-normal wrap-break-word text-xs">
                         {observation.rejection_reason
                           ?? observation.rejection_stage
                           ?? "Aucun rejet"}

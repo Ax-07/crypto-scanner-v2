@@ -249,7 +249,7 @@ describe("ScannerResultSignals", () => {
     )
 
     expect(
-      screen.getByText("Aucun signal structuré n’a été produit."),
+      screen.getByText("Aucun signal structuré n’a été produit pour ce résultat."),
     ).toBeInTheDocument()
   })
 })

@@ -2,6 +2,7 @@ import { z } from "zod"
 
 import { API_URL, apiRequest } from "@/api/client"
 import { indicatorSignalsSchema } from "@/schemas/indicator-signals"
+import { structuredSignalFiltersSchema } from "@/schemas/structured-signal-filters"
 import type { MarketType, ScanConfig, ScanJob } from "@/types/scanner"
 
 /**
@@ -12,14 +13,15 @@ export const scanResultSchema = z.object({
   indicator_signals: indicatorSignalsSchema.optional(),
 }).passthrough()
 
+export const scannerConfigEnvelopeSchema = z.object({
+  structured_signal_filters: structuredSignalFiltersSchema.nullable().optional(),
+}).passthrough()
+
 /** Contrat runtime des snapshots diffusés par le WebSocket scanner. */
 export const scannerJobMessageSchema = z.object({
   id: z.string().min(1),
   status: z.enum(["pending", "running", "completed", "failed", "cancelled"]),
-  config: z.custom<ScanConfig>(
-    (value) => typeof value === "object" && value !== null,
-    "Configuration scanner absente",
-  ),
+  config: scannerConfigEnvelopeSchema,
   progress: z.object({
     processed: z.number().int().nonnegative(),
     total: z.number().int().nonnegative(),
@@ -42,7 +44,9 @@ export function parseScannerJob(payload: unknown): ScanJob {
 
 export const scannerApi = {
   /** Charge la configuration scanner calculée par le backend. */
-  getDefaultConfig: (signal?: AbortSignal) => apiRequest<ScanConfig>("/api/scanner/config", { signal }),
+  getDefaultConfig: (signal?: AbortSignal) =>
+    apiRequest<unknown>("/api/scanner/config", { signal })
+      .then((payload) => scannerConfigEnvelopeSchema.parse(payload) as ScanConfig),
   /** Crée un job avec une configuration déjà validée côté formulaire. */
   start: (config: ScanConfig) =>
     apiRequest<unknown>("/api/scanner/jobs", {

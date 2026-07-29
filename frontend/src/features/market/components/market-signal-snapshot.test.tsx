@@ -55,6 +55,11 @@ describe("MarketSignalSnapshot confirmé", () => {
       "RSI", "SMA", "EMA", "MACD", "Bollinger", "Stochastique",
     ])
     expect(screen.getByText(/facteur « Tendance »/)).toBeVisible()
+    expect(screen.getByText(
+      /L’intensité représente la force technique.*ne représente pas une probabilité de gain/i,
+    )).toBeVisible()
+    expect(screen.queryByText(/taux de réussite|confiance|fiabilité|chance de gain/i))
+      .not.toBeInTheDocument()
   })
 
   it("distingue un champ absent d’un objet vide", () => {
@@ -66,7 +71,7 @@ describe("MarketSignalSnapshot confirmé", () => {
         timeframe="1h"
       />,
     )
-    expect(screen.getByText(/ne sont pas disponibles dans ce snapshot/)).toBeVisible()
+    expect(screen.getByText(/ne sont pas disponibles pour ce snapshot/)).toBeVisible()
     rerender(
       <MarketSignalSnapshot
         kind="confirmed"

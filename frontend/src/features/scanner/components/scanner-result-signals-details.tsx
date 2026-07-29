@@ -1,4 +1,9 @@
-import { IndicatorSignalsPanel } from "@/components/indicator-signals"
+import {
+  IndicatorSignalsPanel,
+  IndicatorStrengthNote,
+  formatIndicatorSignalsCollectionMessage,
+  getIndicatorSignalsCollectionState,
+} from "@/components/indicator-signals"
 import { Badge } from "@/components/ui/badge"
 import type { ScanResult } from "@/types/scanner"
 
@@ -9,6 +14,8 @@ interface ScannerResultSignalsDetailsProps {
 export function ScannerResultSignalsDetails({
   result,
 }: ScannerResultSignalsDetailsProps) {
+  const collectionState = getIndicatorSignalsCollectionState(result.indicator_signals)
+
   return (
     <div className="space-y-4">
       <section
@@ -34,21 +41,20 @@ export function ScannerResultSignalsDetails({
         </p>
       </section>
 
-      {result.indicator_signals === undefined ? (
+      {collectionState !== "available" || result.indicator_signals === undefined ? (
         <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-          Les signaux structurés ne sont pas disponibles pour ce résultat.
+          {formatIndicatorSignalsCollectionMessage({
+            state: collectionState,
+            context: "ce résultat",
+          })}
         </p>
       ) : (
         <IndicatorSignalsPanel
           signals={result.indicator_signals}
-          emptyMessage="Aucun signal structuré n’a été produit."
         />
       )}
 
-      <p className="text-xs text-muted-foreground">
-        L’intensité décrit la force technique du signal selon les règles de
-        l’indicateur. Elle ne représente pas une probabilité de gain.
-      </p>
+      <IndicatorStrengthNote />
     </div>
   )
 }

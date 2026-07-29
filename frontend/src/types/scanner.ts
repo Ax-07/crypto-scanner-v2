@@ -72,6 +72,7 @@ export type ScanConfig = {
   filter_macd_signal: MacdSignal[] | null
   filter_bb_position: BollingerPosition[] | null
   filter_stoch_signal: StochasticSignal[] | null
+  structured_signal_filters?: StructuredSignalFilters | null
 }
 
 /** Analyse d'une paire renvoyée dans les résultats terminaux du job. */
@@ -138,3 +139,4 @@ export type ScanJob = {
   results?: ScanResult[]
 }
 import type { IndicatorSignals, IndicatorSignalStatus } from "@/types/indicator-signals"
+import type { StructuredSignalFilters } from "@/types/structured-signal-filters"

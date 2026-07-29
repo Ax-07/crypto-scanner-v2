@@ -21,6 +21,21 @@ describe("scanConfigSchema", () => {
   it("impose SMA ou EMA lorsque les moyennes sont actives", () => expect(scanConfigSchema.safeParse({ ...valid, use_sma: false, use_ema: false }).success).toBe(false))
   it("limite le score de tendance aux timeframes", () => expect(scanConfigSchema.safeParse({ ...valid, min_trend_score: 4 }).success).toBe(false))
   it("impose un poids positif actif pour la confluence", () => expect(scanConfigSchema.safeParse({ ...valid, confluence_weights: { rsi: 0, trend: 0, macd: 0, bollinger: 0, stochastic: 0 } }).success).toBe(false))
+  it("accepte une ancienne configuration sans contrat structuré", () => expect(scanConfigSchema.safeParse(valid).success).toBe(true))
+  it("accepte la coexistence ancien/nouveau", () => expect(scanConfigSchema.safeParse({
+    ...valid,
+    filter_macd_signal: ["bearish"],
+    structured_signal_filters: {
+      version: 1,
+      indicators: {
+        macd: { match: "all", conditions: [{ field: "direction", values: ["bullish"] }] },
+      },
+    },
+  }).success).toBe(true))
+  it("rejette une version structurée inconnue", () => expect(scanConfigSchema.safeParse({
+    ...valid,
+    structured_signal_filters: { version: 2, indicators: {} },
+  }).success).toBe(false))
 })
 
 describe("parsePeriodList", () => {

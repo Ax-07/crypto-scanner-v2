@@ -3,6 +3,7 @@
  * Le backend reste l'autorité finale du contrat.
  */
 import { z } from "zod"
+import { structuredSignalFiltersSchema } from "@/schemas/structured-signal-filters"
 
 export const TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"] as const
 const periodList = z.array(z.number().int().min(2).max(1000)).min(1).refine((items) => new Set(items).size === items.length, "Les périodes doivent être uniques")
@@ -31,6 +32,7 @@ export const scanConfigSchema = z.object({
   filter_macd_signal: z.array(z.enum(["bullish", "bearish", "neutral"])).nullable(),
   filter_bb_position: z.array(z.enum(["oversold", "near_oversold", "neutral", "near_overbought", "overbought"])).nullable(),
   filter_stoch_signal: z.array(z.enum(["oversold", "overbought", "bullish_cross", "bearish_cross", "neutral"])).nullable(),
+  structured_signal_filters: structuredSignalFiltersSchema.nullable().optional(),
 }).superRefine((config, context) => {
   const issue = (path: Array<string | number>, message: string) => context.addIssue({ code: "custom", path, message })
   // Ces relations entre champs reflètent les refus Pydantic les plus utiles à anticiper.

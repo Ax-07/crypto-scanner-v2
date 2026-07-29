@@ -60,6 +60,29 @@ describe("scanner store", () => {
     expect(useScannerStore.getState().job?.config).toBe(config)
   })
 
+  it("conserve le contrat du job sans migrer un snapshot historique", async () => {
+    const structuredConfig = {
+      ...config,
+      structured_signal_filters: {
+        version: 1,
+        indicators: {
+          macd: {
+            match: "all",
+            conditions: [{ field: "direction", values: ["bullish"] }],
+          },
+        },
+      },
+    } as ScanConfig
+    const structuredJob = { ...job, config: structuredConfig }
+    vi.mocked(scannerApi.start).mockResolvedValue(structuredJob)
+    await useScannerStore.getState().startScan(structuredConfig)
+    expect(useScannerStore.getState().config?.structured_signal_filters)
+      .toEqual(structuredConfig.structured_signal_filters)
+
+    useScannerStore.setState({ job, config })
+    expect(useScannerStore.getState().job?.config.structured_signal_filters).toBeUndefined()
+  })
+
   it("conserve les signaux structurés des résultats finaux", async () => {
     vi.mocked(scannerApi.start).mockResolvedValue(job)
     vi.mocked(scannerApi.results).mockResolvedValue({
