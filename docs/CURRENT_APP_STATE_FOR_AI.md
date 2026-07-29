@@ -1,9 +1,10 @@
 # État complet de `scanner_crypto` pour contexte IA
 
 Ce document est la source de reprise principale après l'audit des signaux structurés des
-Phases 1 à 4 puis des Phases 5.1 à 5.3. Il décrit le code réellement présent,
-pas une cible. Les contrats et composants frontend sont intégrés et le scanner
-affiche désormais ces composants ; le marché et le backtest restent non migrés.
+Phases 1 à 4 puis des Phases 5.1 à 5.4. Il décrit le code réellement présent,
+pas une cible. Les contrats et composants frontend sont intégrés ; le scanner et
+le marché temps réel affichent désormais ces composants. Le backtest reste non
+migré.
 
 ## 1. Métadonnées de génération
 
@@ -130,8 +131,8 @@ directions, clés connues, nombres finis et force entre 0 et 1. Les frontières 
 scanner/backtest valident ce champ sans retirer leurs champs historiques ; le schéma
 marché le conserve dans les vues racine, confirmée et provisoire. Les trois stores
 Zustand stockent les objets complets. La bibliothèque Phase 5.2 est montée par la
-table scanner depuis la Phase 5.3 ; aucun composant marché ou backtest ne l'utilise
-encore.
+table scanner depuis la Phase 5.3 et par les panneaux confirmed/provisional du
+marché depuis la Phase 5.4 ; le backtest ne l'utilise pas encore.
 
 ## 8. Routes REST
 
@@ -795,7 +796,8 @@ dictionnaire partiel, ne le mute pas, filtre optionnellement les indisponibles e
 emploie une grille responsive. Voir `docs/frontend/indicator-signals-ui.md`.
 
 La Phase 5.2 n'a modifié ni contrats, ni schémas Zod, ni API, ni stores. Scanner,
-marché et backtest conservent leur interface historique.
+marché compose désormais la même bibliothèque sous son graphique ; le backtest
+conserve son interface historique.
 
 ## 29 bis. Intégration scanner Phase 5.3
 
@@ -886,6 +888,20 @@ Validation Phase 5.3 :
 | `pnpm run build` | 0 | 2045 modules transformés, build Vite réussi |
 | `python -m pytest -q` depuis `backend/` | 0 | 366 passés, 1 ignoré, 22 subtests, 3 warnings |
 
+Validation Phase 5.4 :
+
+| Commande | Code | Résultat |
+|---|---:|---|
+| `$env:CI='true'; pnpm install --frozen-lockfile` | 0 | lockfile à jour, 335 paquets réutilisés, 0 téléchargé |
+| `pnpm exec vitest run src/features/market` | 0 | 8 fichiers, 31 tests passés |
+| `pnpm exec vitest run src/stores/market-store.test.ts` | 0 | 1 fichier, 9 tests passés |
+| `pnpm exec vitest run src/api/market-contract.test.ts` | 0 | 1 fichier, 6 tests passés |
+| `pnpm run typecheck` | 0 | TypeScript réussi |
+| `pnpm run lint` | 0 | ESLint, 0 warning |
+| `pnpm run test` | 0 | 31 fichiers, 174 tests passés |
+| `pnpm run build` | 0 | 2 048 modules transformés, build Vite réussi |
+| `.\venv\Scripts\python.exe -m pytest -q` depuis `backend/` | 0 | 366 passés, 1 ignoré, 22 subtests, 2 warnings |
+
 ## 33. Commandes de développement
 
 ```powershell
@@ -922,7 +938,8 @@ Le code backend lit `os.getenv`; charger explicitement `.env` ou utiliser
 - Marché : pas de modèle Pydantic public.
 - Builder : `disabled` signifie omission, contrairement à une phrase obsolète de
   sa docstring de module à corriger si ce contrat change.
-- Frontend : scanner intégré en Phase 5.3 ; marché et backtest non migrés.
+- Frontend : scanner intégré en Phase 5.3 et marché en Phase 5.4 ; backtest non
+  migré.
 - Backtest : pas de simulation de capital/positions.
 - Versions Python non figées exactement.
 - Artefacts lourds présents localement mais ignorés : `dist`, `node_modules`,
@@ -1011,11 +1028,14 @@ ou le lien marché.
 
 ### 5.4 — Marché
 
-Fichiers : `market.ts`, `api/market.ts`, socket/store, `market-metrics` ou nouveau
-panneau. Afficher confirmed et signaler provisional/forming ; rendre SMA/EMA
-visibles mais expliquer qu'ils ne composent pas directement le facteur trend.
-Tester history, update, reconnexion et error. Acceptation : mise à jour temps réel
-sans perte, distinction close/open explicite.
+Terminée. `MarketConnectionStatus` expose les quatre états réels du store et une
+alerte d'erreur sans effacer les données. `MarketSignalsSection` utilise des
+onglets locaux sur mobile et deux colonnes sur desktop ; ses deux
+`MarketSignalSnapshot` lisent séparément les vues confirmed/provisional et
+composent `IndicatorSignalsPanel` sous le graphique. Les six indicateurs sont
+pris en charge, le champ absent reste distinct de `{}`, et la note SMA/EMA versus
+facteur historique trend est visible. Aucun contrat, socket, graphique ou calcul
+métier n'a été modifié.
 
 ### 5.5 — Backtest
 
@@ -1050,12 +1070,12 @@ distinction confirmed/provisional et l'exclusion SMA/EMA de la confluence march�
 | Fonctionnalité | Scanner | Marché backend | Backtest | CSV scanner | Frontend actuel |
 |---|---:|---:|---:|---:|---:|
 | Anciens signaux | oui | oui | oui | oui | oui |
-| Signaux structurés | oui | oui | oui | non | affichés dans le scanner seulement |
-| Confluence structurée | oui, sauf trend | oui, sauf SMA/EMA | oui, sauf trend | résultat legacy | non affichée |
-| SMA/EMA structurés | non | oui | non | non | non |
+| Signaux structurés | oui | oui | oui | non | affichés dans le scanner et le marché |
+| Confluence structurée | oui, sauf trend | oui, sauf SMA/EMA | oui, sauf trend | résultat legacy | score/grade marché affichés sans recalcul |
+| SMA/EMA structurés | non | oui | non | non | affichés dans le marché |
 | Tendance multi-timeframes | oui | non | oui | score/trends | scanner seulement |
 | `raw_value` | JSON | JSON backend | JSON | non | conservé, formatter UI prêt |
-| Affichage utilisateur | legacy + structuré | legacy | résumé legacy | téléchargement | scanner migré ; marché/backtest non migrés |
+| Affichage utilisateur | legacy + structuré | legacy + structuré | résumé legacy | téléchargement | scanner et marché migrés ; backtest non migré |
 
 ## 43. Statut des Phases 1 à 4
 
@@ -1072,7 +1092,11 @@ distinction confirmed/provisional et l'exclusion SMA/EMA de la confluence march�
   accessibilité et tests présents.
 - Phase 5.3, scanner frontend : implémentée ; résumé compact, détail en `Sheet`,
   compatibilité historique et colonnes existantes préservées.
+- Phase 5.4, marché frontend : implémentée ; connexion/erreur visibles, vues
+  confirmed/provisional distinctes, six signaux structurés et confluence backend
+  affichés sous le graphique, responsive et accessibles.
 
-Conclusion : la donnée structurée arrive jusqu'aux stores et le scanner l'affiche
-de façon responsive et compatible avec les colonnes historiques. La suite est la
-Phase 5.4, limitée à l'intégration du marché temps réel.
+Conclusion : la donnée structurée arrive jusqu'aux stores ; le scanner et le marché
+temps réel l'affichent sans recalcul. La suite est la Phase 5.5, limitée à
+l'intégration des observations du backtest et à leur séparation avec les
+performances réalisées.

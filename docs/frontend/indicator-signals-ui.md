@@ -3,8 +3,8 @@
 La Phase 5.2 fournit une bibliothèque de présentation réutilisable dans
 `frontend/src/components/indicator-signals/`. Elle consomme les contrats canoniques
 de `src/types/indicator-signals.ts`, sans store, appel API ou recalcul métier.
-Depuis la Phase 5.3, le scanner la compose dans son tableau de résultats. Le marché
-et le backtest ne l'utilisent pas encore.
+Depuis la Phase 5.3, le scanner la compose dans son tableau de résultats. La Phase
+5.4 l'intègre aussi à la page marché en temps réel ; le backtest reste non migré.
 
 ## API publique
 
@@ -151,6 +151,33 @@ Le résumé n'utilise que `result.indicator_signals`. Il ne reconstruit aucun ob
 depuis `job.config`, ne recalcule ni intensité ni confluence, et n'assimile jamais
 l'intensité à une contribution ou une probabilité.
 
-Les phases suivantes intégreront séparément le marché puis le backtest. La Phase
-5.3 ne modifie ni leurs pages, ni leurs composants, ni les stores, routes, contrats
-réseau ou graphiques.
+La Phase 5.3 n'a modifié ni le marché ni le backtest. La Phase 5.4 ci-dessous
+intègre ensuite le marché sans modifier les routes, contrats réseau ou graphiques ;
+le backtest reste réservé à la Phase 5.5.
+
+## Intégration dans le marché — Phase 5.4
+
+`MarketSignalsSection` lit séparément `snapshot.confirmed` et
+`snapshot.provisional` avec deux sélecteurs Zustand fins. Il ne consomme pas les
+champs racine legacy comme fallback : ces champs restent disponibles pour
+`MarketMetrics`, tandis que l'interface structurée respecte la source temporelle
+explicite fournie par le backend.
+
+Sur mobile, une tablist locale sélectionne initialement les signaux confirmés et
+permet les flèches gauche/droite, Début et Fin. Les deux snapshots restent montés
+et le choix n'est stocké ni dans Zustand ni dans l'URL. À partir de `lg`, les deux
+panneaux sont visibles côte à côte sous le graphique.
+
+`MarketSignalSnapshot` affiche symbole, timeframe, prix, timestamp lorsqu'il
+existe, score/grade backend et signaux structurés. Il distingue :
+
+- snapshot absent : message propre à la vue confirmée ou provisoire ;
+- `indicator_signals` absent : ancien payload sans signaux structurés ;
+- objet `{}` : payload moderne n'ayant produit aucun signal ;
+- dictionnaire partiel : uniquement les clés reçues dans l'ordre canonique ;
+- statut indisponible : transmission inchangée à la carte commune.
+
+Le panneau provisoire porte texte, icône, badge, bordure et avertissement sur la
+bougie ouverte. Une note commune précise que SMA/EMA sont affichés individuellement
+mais ne remplacent pas le facteur historique « Tendance » utilisé par la confluence
+marché. Aucun score, signal ou tendance n'est recalculé dans React.

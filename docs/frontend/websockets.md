@@ -103,9 +103,17 @@ Les messages suivants sont incrémentaux :
 Un message `{ "type": "error", "message": "..." }` place la connexion en erreur. Un JSON invalide produit le message local « Message WebSocket invalide ».
 
 `indicator_signals` est optionnel pour accepter les anciens serveurs. Lorsqu'il
-est présent dans `history` ou `update`, le schéma Zod le valide et le store conserve
-le snapshot complet. Son absence ne crée aucun fallback. Aucun composant visuel
-n'exploite encore ces signaux en Phase 5.1.
+est présent dans `history` ou `update`, le schéma Zod le valide dans les vues
+racine, `confirmed` et `provisional`, puis le store conserve le snapshot complet.
+Son absence ne crée aucun fallback.
+
+Le protocole réel ne possède pas de messages autonomes `confirmed` ou
+`provisional` : ce sont deux vues de `snapshot` dans les messages `history` et
+`update`. `confirmed` est calculé uniquement sur les bougies closes.
+`provisional`, marqué `is_forming=true`, inclut la bougie ouverte et peut changer
+avant sa clôture. Les champs racine legacy correspondent au provisoire lorsqu'il
+existe, sinon au confirmé. La page marché affiche les deux vues sans substituer
+l'une à l'autre.
 
 ## Reconnexion et courses
 
@@ -116,3 +124,11 @@ Chaque connexion reçoit une génération. Tous ses gestionnaires vérifient que
 Après chaque ouverture, le client relit SQLite après la dernière bougie connue
 avec une superposition d'une milliseconde. Cette réconciliation met à jour la
 bougie courante et récupère les clôtures manquées pendant la coupure.
+
+Le store expose exactement `connecting`, `connected`, `disconnected` et `error`.
+Une reconnexion repasse par `connecting`; aucun état `reconnecting` ni compteur de
+tentatives n'est disponible. L'interface affiche donc la reconnexion automatique
+sans inventer de métrique. Une erreur utilise une alerte et conserve les derniers
+snapshots, avec l'indication qu'ils peuvent être figés. Seul le court libellé du
+statut est en `aria-live="polite"` afin de ne pas annoncer chaque variation de
+marché.
