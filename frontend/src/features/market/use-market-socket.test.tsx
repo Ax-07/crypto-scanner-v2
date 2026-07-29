@@ -1,5 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { act } from "react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { marketApi } from "@/api/market"
 import { useMarketSocket } from "@/features/market/use-market-socket"
@@ -26,6 +27,10 @@ describe("useMarketSocket", () => {
     vi.stubGlobal("WebSocket", FakeSocket)
     vi.restoreAllMocks()
     useMarketStore.getState().resetStream()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it("remplace le socket et ignore les messages de l'ancienne paire", () => {
@@ -110,6 +115,26 @@ describe("useMarketSocket", () => {
     FakeSocket.instances[0].message({ type: "update", candle: { time: "bad" } })
     expect(useMarketStore.getState().connectionError).toContain("contrat de marché")
     expect(useMarketStore.getState().candles).toEqual([])
+    unmount()
+  })
+
+  it("reconnecte automatiquement en conservant le dernier snapshot", () => {
+    vi.useFakeTimers()
+    useMarketStore.getState().resetMarket("BTC/USDC", "1h")
+    useMarketStore.setState({
+      snapshot: { confirmed: { price: 42, indicator_signals: {} } },
+    })
+    const { unmount } = renderHook(() => useMarketSocket("BTC/USDC", "1h"))
+    const first = FakeSocket.instances[0]
+
+    act(() => first.onclose?.())
+    expect(useMarketStore.getState().status).toBe("disconnected")
+    expect(useMarketStore.getState().snapshot.confirmed?.price).toBe(42)
+
+    act(() => vi.advanceTimersByTime(2_000))
+    expect(FakeSocket.instances).toHaveLength(2)
+    expect(useMarketStore.getState().status).toBe("connecting")
+    expect(useMarketStore.getState().snapshot.confirmed?.price).toBe(42)
     unmount()
   })
 })

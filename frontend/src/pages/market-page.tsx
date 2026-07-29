@@ -6,6 +6,8 @@ import { IndicatorToolbar } from "@/components/dashboard/indicator-toolbar";
 import { MarketMetrics } from "@/components/dashboard/market-metrics";
 import { TradingChart } from "@/components/dashboard/trading-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MarketConnectionStatus } from "@/features/market/components/market-connection-status";
+import { MarketSignalsSection } from "@/features/market/components/market-signals-section";
 import { MarketToolbar } from "@/features/market/components/market-toolbar";
 import { parseMarketSearch } from "@/features/market/market-search-params";
 import { serializeMarketProfile } from "@/features/market/market-profile";
@@ -37,8 +39,6 @@ export function MarketPage() {
   const latestLoadedTime = useMarketStore((state) => state.latestLoadedTime);
   const downloaded = useMarketStore((state) => state.downloadedFromExchange);
   const historyError = useMarketStore((state) => state.historyError);
-  const connectionError = useMarketStore((state) => state.connectionError);
-  const status = useMarketStore((state) => state.status);
   const snapshot = useMarketStore((state) => state.snapshot);
   const issueChartCommand = useMarketStore((state) => state.issueChartCommand);
 
@@ -86,6 +86,7 @@ export function MarketPage() {
           hasMoreAfter={hasMoreAfter}
         />
       </div>
+      <MarketConnectionStatus />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border px-3 py-2 text-xs text-muted-foreground">
         <span>{count.toLocaleString("fr-FR")} bougies chargées</span>
         <span>{coverage?.total_candles.toLocaleString("fr-FR") ?? "—"} disponibles</span>
@@ -114,15 +115,11 @@ export function MarketPage() {
         ) : null}
         {downloaded > 0 ? <span>{downloaded.toLocaleString("fr-FR")} téléchargée(s)</span> : null}
         {memoryLimit ? <span>Limite mémoire active : {memoryLimit.toLocaleString("fr-FR")}</span> : null}
-        <span className={status === "error" ? "text-destructive" : status === "connected" ? "text-emerald-600" : ""}>
-          Temps réel : {connectionLabels[status]}
-        </span>
         {historyError ? (
           <button className="text-destructive underline" onClick={history.retry}>
             {historyError} · Réessayer
           </button>
         ) : null}
-        {connectionError ? <span className="text-destructive">{connectionError}</span> : null}
       </div>
       <MarketMetrics />
       <IndicatorToolbar />
@@ -137,13 +134,7 @@ export function MarketPage() {
           <TradingChart onLoadMore={history.loadMore} />
         </CardContent>
       </Card>
+      <MarketSignalsSection symbol={symbol} timeframe={timeframe} />
     </div>
   );
 }
-
-const connectionLabels = {
-  connecting: "connexion ou reconnexion…",
-  connected: "connecté",
-  disconnected: "déconnecté",
-  error: "erreur",
-} as const;

@@ -209,4 +209,52 @@ describe("market store history generations", () => {
       )
     },
   )
+
+  it("met à jour séparément les vues confirmed et provisional sans perdre les données en erreur", () => {
+    const completeSignal = {
+      status: "available",
+      direction: "bullish",
+      signal: "bullish_cross",
+      state: null,
+      strength: 0.75,
+      reason: null,
+      raw_value: 10,
+    } as const
+    useMarketStore.getState().applyHistory({
+      type: "history",
+      symbol: "BTC/USDC",
+      timeframe: "1h",
+      candles: [],
+      indicators: {},
+      markers: [],
+      snapshot: {
+        confirmed: { price: 100, indicator_signals: { rsi: completeSignal } },
+        provisional: { price: 101, indicator_signals: { rsi: completeSignal }, is_forming: true },
+      },
+    }, "BTC/USDC|1h")
+    useMarketStore.getState().applyUpdate({
+      type: "update",
+      candle: { time: 5, open: 1, high: 2, low: 0, close: 1, volume: 1 },
+      indicators: {},
+      markers: [],
+      snapshot: {
+        confirmed: { price: 102, indicator_signals: { ema: completeSignal } },
+        provisional: {
+          price: 103,
+          indicator_signals: {
+            rsi: { ...completeSignal, direction: "bearish", signal: "bearish_cross" },
+          },
+          is_forming: true,
+        },
+      },
+    }, "BTC/USDC|1h")
+    useMarketStore.getState().setConnection("error", "Flux interrompu")
+
+    const state = useMarketStore.getState()
+    expect(state.snapshot.confirmed?.price).toBe(102)
+    expect(state.snapshot.confirmed?.indicator_signals?.ema).toEqual(completeSignal)
+    expect(state.snapshot.provisional?.price).toBe(103)
+    expect(state.snapshot.provisional?.indicator_signals?.rsi?.direction).toBe("bearish")
+    expect(state.connectionError).toBe("Flux interrompu")
+  })
 })
