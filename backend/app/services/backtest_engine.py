@@ -1,0 +1,315 @@
+"""Rejeu historique causal sur le dépôt OHLCV local, sans accès réseau."""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Protocol
+
+from app.domain.backtesting import (
+    build_analytics,
+    calculate_forward_outcomes,
+)
+from app.domain.signal_evaluation import evaluate_signal_snapshot
+from app.domain.candles import Candle, timeframe_milliseconds
+from app.domain.limits import ma_ohlcv_limit, primary_ohlcv_limit
+from app.models.backtest import BacktestJob, BacktestProgress, BacktestSummary
+from app.repositories.backtest_repository import BacktestRepository
+from app.repositories.candle_repository import CandleRepository
+
+ProgressCallback = Callable[[BacktestProgress], Awaitable[None]]
+
+
+class HistoricalRepository(Protocol):
+    async def before(
+        self, symbol: str, timeframe: str, before_ms: int, limit: int, job: BacktestJob
+    ) -> list[Candle]: ...
+
+    async def range(
+        self, symbol: str, timeframe: str, start_ms: int, end_ms: int, job: BacktestJob
+    ) -> list[Candle]: ...
+
+
+class SQLiteHistoricalRepository:
+    """Adaptateur de lecture uniquement au-dessus de la base de production."""
+
+    def __init__(self, candles: CandleRepository) -> None:
+        self.candles = candles
+
+    async def before(
+        self, symbol: str, timeframe: str, before_ms: int, limit: int, job: BacktestJob
+    ) -> list[Candle]:
+        signal = job.config.signal_config
+        return await self.candles.get_candles_before(
+            exchange_id=signal.exchange_id,
+            market_type=signal.market_type,
+            symbol=symbol,
+            timeframe=timeframe,
+            before_open_time=before_ms,
+            limit=limit,
+            closed_only=True,
+        )
+
+    async def range(
+        self, symbol: str, timeframe: str, start_ms: int, end_ms: int, job: BacktestJob
+    ) -> list[Candle]:
+        signal = job.config.signal_config
+        return await self.candles.get_range(
+            signal.exchange_id,
+            signal.market_type,
+            symbol,
+            timeframe,
+            from_time=start_ms,
+            to_time=end_ms,
+            limit=2_000_000,
+            closed_only=True,
+        )
+
+
+@dataclass(slots=True)
+class LoadedSeries:
+    candles: list[Candle]
+    first_decision_index: int
+    last_decision_index: int
+    gap_after: set[int]
+
+
+class BacktestEngine:
+    def __init__(
+        self,
+        history: HistoricalRepository,
+        results: BacktestRepository,
+        *,
+        yield_every: int = 25,
+    ) -> None:
+        self.history = history
+        self.results = results
+        self.yield_every = yield_every
+
+    async def _load_primary(self, job: BacktestJob, symbol: str) -> LoadedSeries:
+        config = job.config
+        signal = config.signal_config
+        start_ms = int(config.start.timestamp() * 1_000)
+        end_ms = int(config.end.timestamp() * 1_000)
+        interval = timeframe_milliseconds(signal.timeframe)
+        warmup = primary_ohlcv_limit(signal)
+        future = max(config.horizons) + int(config.entry_policy == "next_open") + 1
+        before = await self.history.before(symbol, signal.timeframe, start_ms, warmup, job)
+        after = await self.history.range(
+            symbol,
+            signal.timeframe,
+            start_ms,
+            end_ms + future * interval,
+            job,
+        )
+        candles = [*before, *after]
+        decision_indices = [
+            index for index, candle in enumerate(candles) if start_ms <= candle.open_time < end_ms
+        ]
+        if not decision_indices:
+            raise ValueError(f"Aucune bougie fermée pour {symbol} sur la plage")
+        gaps = {
+            index
+            for index in range(len(candles) - 1)
+            if candles[index + 1].open_time - candles[index].open_time != interval
+        }
+        range_gaps = {
+            index for index in gaps if decision_indices[0] - 1 <= index < decision_indices[-1]
+        }
+        if range_gaps and config.gap_policy == "reject_range":
+            raise ValueError(f"Couverture discontinue pour {symbol}: {len(range_gaps)} trou(s)")
+        if range_gaps:
+            job.warnings.append(
+                f"{symbol}: {len(range_gaps)} trou(s), politique {config.gap_policy}"
+            )
+        return LoadedSeries(candles, decision_indices[0], decision_indices[-1], gaps)
+
+    async def _load_trends(
+        self, job: BacktestJob, symbol: str, end_ms: int
+    ) -> dict[str, list[Candle]]:
+        signal = job.config.signal_config
+        if not signal.use_ma:
+            return {}
+        result: dict[str, list[Candle]] = {}
+        start_ms = int(job.config.start.timestamp() * 1_000)
+        limit = ma_ohlcv_limit(signal)
+        for timeframe in signal.ma_timeframes:
+            if timeframe == signal.timeframe:
+                continue
+            before = await self.history.before(symbol, timeframe, start_ms, limit, job)
+            current = await self.history.range(symbol, timeframe, start_ms, end_ms, job)
+            result[timeframe] = [*before, *current]
+        return result
+
+    async def run(self, job: BacktestJob, on_progress: ProgressCallback | None = None) -> None:
+        config = job.config
+        if config.snapshot_status == "provisional":
+            raise ValueError(
+                "Les OHLCV historiques ne conservent pas les révisions intrabar; "
+                "un rejeu provisional causal est indisponible."
+            )
+        loaded: dict[str, LoadedSeries] = {}
+        for symbol in config.symbols:
+            loaded[symbol] = await self._load_primary(job, symbol)
+        fingerprint_payload = "|".join(
+            f"{symbol}:{series.candles[0].open_time}:{series.candles[-1].open_time}:"
+            f"{len(series.candles)}"
+            for symbol, series in sorted(loaded.items())
+        )
+        job.dataset_version = "sha256:" + hashlib.sha256(fingerprint_payload.encode()).hexdigest()
+        checkpoint = await self.results.get_checkpoint(job.id)
+        resume_symbol_index = int(checkpoint.get("symbol_index", 0)) if checkpoint else 0
+        resume_decision_index = int(checkpoint.get("decision_index", -1)) if checkpoint else -1
+        if checkpoint:
+            job.progress.processed = int(checkpoint.get("processed", 0))
+            job.progress.observations = int(checkpoint.get("observations", 0))
+            job.checkpoint = checkpoint
+        job.progress.total = sum(
+            item.last_decision_index - item.first_decision_index + 1 for item in loaded.values()
+        )
+        job.progress.phase = "replay"
+        if on_progress:
+            await on_progress(job.progress.model_copy(deep=True))
+
+        last_state: dict[str, list[object]] = dict(
+            checkpoint.get("last_state", {}) if checkpoint else {}
+        )
+        for symbol_index, symbol in enumerate(config.symbols):
+            if symbol_index < resume_symbol_index:
+                continue
+            job.progress.current_symbol = symbol
+            series = loaded[symbol]
+            end_with_future = series.candles[-1].close_time or series.candles[-1].open_time
+            higher = await self._load_trends(job, symbol, end_with_future)
+            signal = config.signal_config
+            primary_limit = primary_ohlcv_limit(signal)
+            trend_limit = ma_ohlcv_limit(signal)
+            for index in range(series.first_decision_index, series.last_decision_index + 1):
+                if symbol_index == resume_symbol_index and index <= resume_decision_index:
+                    continue
+                candle = series.candles[index]
+                decision_ms = candle.close_time or (
+                    candle.open_time + timeframe_milliseconds(signal.timeframe)
+                )
+                primary_start = max(0, index - primary_limit + 1)
+                window_gap = any(
+                    gap_index in series.gap_after for gap_index in range(primary_start, index)
+                )
+                if window_gap and config.gap_policy == "skip_affected":
+                    job.progress.processed += 1
+                    continue
+                primary = series.candles[primary_start : index + 1]
+                trend_sets: dict[str, list[Candle]] = {signal.timeframe: primary}
+                for timeframe, candles in higher.items():
+                    eligible = [
+                        item
+                        for item in candles
+                        if (item.close_time or item.open_time) <= decision_ms
+                    ]
+                    trend_sets[timeframe] = eligible[-trend_limit:]
+                observation = evaluate_signal_snapshot(
+                    job_id=job.id,
+                    symbol=symbol,
+                    decision_time_ms=decision_ms,
+                    primary=primary,
+                    trend_candles=trend_sets,
+                    profile=signal,
+                    snapshot_status=config.snapshot_status,
+                    dataset_version=job.dataset_version,
+                )
+                signature: list[object] = [
+                    observation.accepted,
+                    observation.rejection_stage,
+                    observation.confluence_grade,
+                    observation.macd_signal,
+                    observation.bollinger_position,
+                    observation.stochastic_signal,
+                    [list(item) for item in sorted(observation.trend_states.items())],
+                ]
+                keep = (
+                    config.replay_mode == "every_bar"
+                    or (config.replay_mode == "filtered_signals" and observation.accepted)
+                    or (
+                        config.replay_mode == "state_changes"
+                        and last_state.get(symbol) != signature
+                    )
+                )
+                last_state[symbol] = signature
+                if keep:
+                    observation_id = await self.results.add_observation(observation)
+                    observation.id = observation_id
+                    outcomes = calculate_forward_outcomes(
+                        observation_id,
+                        series.candles,
+                        index,
+                        config,
+                        blocked_intervals=(
+                            {item + 1 for item in series.gap_after}
+                            if config.gap_policy == "skip_affected"
+                            else set()
+                        ),
+                    )
+                    await self.results.add_outcomes(job.id, observation_id, outcomes)
+                    job.progress.observations += 1
+                job.progress.processed += 1
+                if job.progress.processed % self.yield_every == 0:
+                    checkpoint = {
+                        "symbol_index": symbol_index,
+                        "symbol": symbol,
+                        "decision_index": index,
+                        "processed": job.progress.processed,
+                        "observations": job.progress.observations,
+                        "algorithm_version": job.algorithm_version,
+                        "dataset_version": job.dataset_version,
+                        "status": "running",
+                        "last_state": last_state,
+                    }
+                    job.checkpoint = checkpoint
+                    await self.results.save_checkpoint(job.id, checkpoint)
+                    if on_progress:
+                        await on_progress(job.progress.model_copy(deep=True))
+                    await asyncio.sleep(0)
+
+        job.progress.phase = "analytics"
+        if on_progress:
+            await on_progress(job.progress.model_copy(deep=True))
+        observations = await self.results.all_observations(job.id)
+        outcomes = await self.results.all_outcomes(job.id)
+        summary, correlations, ablations = build_analytics(
+            observations, outcomes, config, job.warnings
+        )
+        job.summary = BacktestSummary.model_validate(summary)
+        job.correlations = correlations
+        job.ablations = ablations
+        for kind, payload in (
+            ("summary", summary),
+            ("segments", summary.get("segments", {})),
+            ("funnel", summary.get("filter_funnel", [])),
+            ("correlations", correlations),
+            ("ablations", ablations),
+            (
+                "divergences",
+                [
+                    {"observation_id": item.id, "items": item.divergences}
+                    for item in observations
+                    if item.divergences
+                ],
+            ),
+        ):
+            await self.results.save_artifact(job.id, kind, payload)
+        final_checkpoint = {
+            "symbol_index": len(config.symbols),
+            "symbol": None,
+            "decision_index": -1,
+            "processed": job.progress.processed,
+            "observations": job.progress.observations,
+            "algorithm_version": job.algorithm_version,
+            "dataset_version": job.dataset_version,
+            "status": "completed",
+        }
+        job.checkpoint = final_checkpoint
+        await self.results.save_checkpoint(job.id, final_checkpoint)
+        job.progress.phase = "completed"
+        job.progress.current_symbol = None

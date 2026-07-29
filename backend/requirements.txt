@@ -1,0 +1,27 @@
+# Crypto Scanner RSI - Dependencies
+# Python 3.11+ (`StrEnum` est utilisé par les modèles du backend)
+
+ccxt>=4.0.0
+pandas>=2.0.0
+numpy>=1.24.0
+python-dotenv>=1.0.0
+aiosqlite>=0.20.0
+
+# GUI Desktop Application
+PyQt6>=6.6.0
+matplotlib>=3.8.0
+openpyxl>=3.1.0  # Pour export Excel
+
+# Code quality tools
+flake8>=6.0.0
+black>=24.0.0
+mypy>=1.10.0
+
+# api
+uvicorn>=0.30.0
+fastapi>=0.100.0
+
+# Backend tests
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+httpx2>=0.1.0
