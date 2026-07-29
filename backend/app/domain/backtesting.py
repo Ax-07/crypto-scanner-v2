@@ -36,7 +36,6 @@ from app.domain.indicators import (
     detect_macd_signal,
     detect_stochastic_signal,
     detect_trend,
-    get_latest_rsi,
     is_bollinger_degenerate,
 )
 from app.models.backtest import BacktestConfig, ForwardOutcome, SignalObservation
@@ -68,7 +67,8 @@ def evaluate_information_set(
     close = float(primary[-1].close)
 
     rsi_series = calculate_rsi(frame["close"], config.rsi_period) if config.use_rsi else None
-    rsi = get_latest_rsi(frame["close"], config.rsi_period) if config.use_rsi else None
+    valid_rsi = rsi_series.dropna() if rsi_series is not None else None
+    rsi = float(valid_rsi.iloc[-1]) if valid_rsi is not None and not valid_rsi.empty else None
     rsi = round(rsi, 2) if rsi is not None else None
     trend_states: dict[str, TrendState] = {}
     trend_score = 0

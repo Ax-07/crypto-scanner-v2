@@ -17,9 +17,7 @@ from app.core.settings import ScanConfig
 from app.core.config import get_app_settings
 from app.database.connection import Database
 from app.domain.analysis import AnalysisOutcome, AnalysisStatus
-from app.domain.candles import Candle, timeframe_milliseconds
 from app.domain.limits import ma_ohlcv_limit, primary_ohlcv_limit
-from app.domain.signal_evaluation import evaluate_signal_snapshot
 from app.domain.indicator_bundle import build_indicator_signals
 from app.domain.signal_filters import (
     check_structured_signal_filters,
@@ -36,6 +34,7 @@ from app.domain.indicators import (
     calculate_confluence_score,
     calculate_ema,
     calculate_macd,
+    calculate_rsi,
     calculate_sma,
     calculate_stochastic,
     check_signal_filters,
@@ -43,7 +42,6 @@ from app.domain.indicators import (
     detect_macd_signal,
     detect_stochastic_signal,
     detect_trend,
-    get_latest_rsi,
     is_bollinger_degenerate,
 )
 from app.services.market_data import fetch_ohlcv, get_closed_candles, get_last_closed_candle
@@ -182,91 +180,13 @@ class ScannerService:
                 return AnalysisOutcome(AnalysisStatus.ERROR, error=str(exc))
 
     async def analyze_symbol(self, exchange: Any, symbol: str) -> AnalysisOutcome:
-        """Exécute l'adaptateur scanner puis impose la décision du moteur canonique."""
-        outcome = await self._analyze_symbol_adapter(exchange, symbol)
-        if outcome.status == AnalysisStatus.ERROR:
-            return outcome
-        cached = self._candle_cache.get((symbol, self.config.timeframe))
-        if cached is None or cached.empty:
-            return outcome
-        primary = self._canonical_candles(
-            get_closed_candles(cached, self.config.timeframe),
-            symbol,
-            self.config.timeframe,
-        )
-        if not primary:
-            return outcome
-        trend_candles: dict[str, list[Candle]] = {self.config.timeframe: primary}
-        for timeframe in self.config.ma_timeframes:
-            frame = self._candle_cache.get((symbol, timeframe))
-            if frame is not None and not frame.empty:
-                trend_candles[timeframe] = self._canonical_candles(
-                    get_closed_candles(frame, timeframe), symbol, timeframe
-                )
-        decision_time = primary[-1].close_time or (
-            primary[-1].open_time + timeframe_milliseconds(self.config.timeframe)
-        )
-        canonical = evaluate_signal_snapshot(
-            job_id="live-scanner",
-            symbol=symbol,
-            decision_time_ms=decision_time,
-            primary=primary,
-            trend_candles=trend_candles,
-            profile=self.config,
-            dataset_version=f"live:{primary[0].open_time}:{primary[-1].open_time}",
-            profile_id="production-inline",
-        )
-        adapter_accepted = outcome.status == AnalysisStatus.SUCCESS
-        if adapter_accepted != canonical.accepted:
-            logger.error(
-                "Divergence moteur canonique/adaptateur pour %s: canonical=%s adapter=%s",
-                symbol,
-                canonical.accepted,
-                outcome.status,
-            )
-            return AnalysisOutcome(
-                AnalysisStatus.ERROR,
-                error="Divergence interne entre le moteur canonique et l'adaptateur scanner",
-            )
-        if outcome.result is not None:
-            outcome.result = outcome.result.model_copy(
-                update={
-                    "rsi": canonical.rsi,
-                    "trend_score": canonical.trend_score,
-                    "trend_states": canonical.trend_states,
-                    "trend_net_score": canonical.trend_net_score,
-                    "macd_signal_type": canonical.macd_signal,
-                    "bb_position": canonical.bollinger_position,
-                    "stoch_signal": canonical.stochastic_signal,
-                    "confluence_score": canonical.confluence_score,
-                    "confluence_grade": canonical.confluence_grade,
-                    "confluence_breakdown": canonical.confluence_breakdown,
-                    "confluence_effective_weights": canonical.effective_weights,
-                    "indicator_availability": canonical.availability,
-                    "indicator_signals": canonical.indicator_signals,
-                }
-            )
-        return outcome
+        """Exécute l'adaptateur scanner en un seul passage de calcul.
 
-    def _canonical_candles(self, frame: pd.DataFrame, symbol: str, timeframe: str) -> list[Candle]:
-        interval = timeframe_milliseconds(timeframe)
-        return [
-            Candle(
-                exchange_id=self.config.exchange_id,
-                market_type=self.config.market_type,
-                symbol=symbol,
-                timeframe=timeframe,
-                open_time=int(row.timestamp),
-                open=float(row.open),
-                high=float(row.high),
-                low=float(row.low),
-                close=float(row.close),
-                volume=float(row.volume),
-                close_time=int(row.timestamp) + interval,
-                is_closed=True,
-            )
-            for row in frame.itertuples(index=False)
-        ]
+        La parité avec le moteur canonique est vérifiée par les tests de
+        service. Le scanner ne recalcule donc plus tous les indicateurs en
+        production uniquement pour effectuer ce contrôle.
+        """
+        return await self._analyze_symbol_adapter(exchange, symbol)
 
     async def _analyze_symbol_adapter(self, exchange: Any, symbol: str) -> AnalysisOutcome:
         """Analyse une paire en appliquant les filtres du moins au plus coûteux.
@@ -292,8 +212,11 @@ class ScannerService:
 
         last_candle = get_last_closed_candle(base_frame, config.timeframe)
         rsi: float | None = None
+        rsi_series: pd.Series | None = None
         if config.use_rsi:
-            rsi = get_latest_rsi(base_frame["close"], config.rsi_period)
+            rsi_series = calculate_rsi(base_frame["close"], config.rsi_period)
+            valid_rsi = rsi_series.dropna()
+            rsi = float(valid_rsi.iloc[-1]) if not valid_rsi.empty else None
             if rsi is None:
                 return AnalysisOutcome(AnalysisStatus.ERROR, error="Données RSI insuffisantes")
             if rsi >= config.rsi_threshold:
@@ -309,7 +232,7 @@ class ScannerService:
         if config.use_ma and trend_score < config.min_trend_score:
             return AnalysisOutcome(AnalysisStatus.FILTERED)
 
-        multi = self._analyze_multi_indicators(base_frame)
+        multi = self._analyze_multi_indicators(base_frame, rsi_series=rsi_series)
         bollinger_invalid = bool(multi.pop("_bollinger_invalid", False))
         stochastic_invalid = bool(multi.pop("_stochastic_invalid", False))
         indicator_signals = cast(
@@ -485,6 +408,7 @@ class ScannerService:
             confluence_effective_weights=confluence_effective_weights,
             confluence_details=confluence_details,
             indicator_availability=availability,
+            indicator_signals=indicator_signals,
             **multi,
         )
         return AnalysisOutcome(AnalysisStatus.SUCCESS, result=result)
@@ -590,7 +514,12 @@ class ScannerService:
 
         return moving_averages, trends, trend_states, trend_score, trend_net_score
 
-    def _analyze_multi_indicators(self, frame: pd.DataFrame) -> dict[str, Any]:
+    def _analyze_multi_indicators(
+        self,
+        frame: pd.DataFrame,
+        *,
+        rsi_series: pd.Series | None = None,
+    ) -> dict[str, Any]:
         """Calcule MACD, Bollinger et Stochastique lorsqu'ils sont activés."""
         config = self.config
         result: dict[str, Any] = {}
@@ -654,16 +583,28 @@ class ScannerService:
             elif len(frame) >= config.stochastic_k_period:
                 result["_stochastic_invalid"] = True
 
-        result["_indicator_signals"] = build_indicator_signals(
-            close=frame["close"],
-            use_rsi=False,
-            macd_data=macd_data,
-            use_macd=config.use_macd,
-            bollinger_bands=bands,
-            use_bollinger=config.use_bollinger,
-            stochastic_data=stochastic_data,
-            use_stochastic=config.use_stochastic,
-            stochastic_oversold=config.stochastic_oversold,
-            stochastic_overbought=config.stochastic_overbought,
+        result["_indicator_signals"] = (
+            build_indicator_signals(
+                close=frame["close"],
+                rsi_series=rsi_series,
+                use_rsi=config.use_rsi,
+                macd_data=macd_data,
+                use_macd=config.use_macd,
+                bollinger_bands=bands,
+                use_bollinger=config.use_bollinger,
+                stochastic_data=stochastic_data,
+                use_stochastic=config.use_stochastic,
+                stochastic_oversold=config.stochastic_oversold,
+                stochastic_overbought=config.stochastic_overbought,
+            )
+            if any(
+                (
+                    config.use_rsi,
+                    config.use_macd,
+                    config.use_bollinger,
+                    config.use_stochastic,
+                )
+            )
+            else {}
         )
         return result

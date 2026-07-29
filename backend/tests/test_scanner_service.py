@@ -8,8 +8,19 @@ from unittest.mock import AsyncMock, patch
 import pandas as pd
 
 from app.core.settings import ScanConfig
+from app.domain.backtesting import evaluate_information_set
+from app.domain.candles import Candle, timeframe_milliseconds
+from app.domain.indicator_bundle import build_indicator_signals
+from app.domain.indicators import (
+    calculate_bollinger_bands,
+    calculate_confluence_score,
+    calculate_ema,
+    calculate_macd,
+    calculate_rsi,
+    calculate_sma,
+    calculate_stochastic,
+)
 from app.models.scanner import ScanResult, ScanStatus
-from app.domain.indicators import calculate_confluence_score
 from app.services.scan_manager import ScanManager
 from app.services.scanner import ScannerService
 
@@ -29,6 +40,43 @@ def candle_frame(size: int = 220) -> pd.DataFrame:
             "volume": [100.0] * size,
         }
     )
+
+
+def descending_candle_frame(size: int = 220) -> pd.DataFrame:
+    """Produit un historique complet dont le RSI ne rejette pas le scan."""
+    frame = candle_frame(size)
+    close = [float(size + 10 - index) for index in range(size)]
+    frame["open"] = close
+    frame["high"] = [value + 1 for value in close]
+    frame["low"] = [value - 1 for value in close]
+    frame["close"] = close
+    return frame
+
+
+def frame_to_candles(
+    frame: pd.DataFrame,
+    config: ScanConfig,
+    symbol: str = "BTC/USDC",
+) -> list[Candle]:
+    """Convertit la fixture scanner pour l'oracle canonique réservé aux tests."""
+    interval = timeframe_milliseconds(config.timeframe)
+    return [
+        Candle(
+            exchange_id=config.exchange_id,
+            market_type=config.market_type,
+            symbol=symbol,
+            timeframe=config.timeframe,
+            open_time=int(row.timestamp),
+            open=float(row.open),
+            high=float(row.high),
+            low=float(row.low),
+            close=float(row.close),
+            volume=float(row.volume),
+            close_time=int(row.timestamp) + interval,
+            is_closed=True,
+        )
+        for row in frame.itertuples(index=False)
+    ]
 
 
 def minimal_config(**changes: object) -> ScanConfig:
@@ -124,7 +172,7 @@ class ScannerIndicatorTests(unittest.IsolatedAsyncioTestCase):
         service = ScannerService(minimal_config(rsi_threshold=0))
         with (
             patch("app.services.scanner.fetch_ohlcv", new=AsyncMock(return_value=candle_frame())),
-            patch("app.services.scanner.get_latest_rsi") as calculate_rsi,
+            patch("app.services.scanner.calculate_rsi") as calculate_rsi,
         ):
             status, result = await service.analyze_symbol(object(), "BTC/USDC")
 
@@ -212,6 +260,232 @@ class ScannerIndicatorTests(unittest.IsolatedAsyncioTestCase):
                 ):
                     status, _result = await service.analyze_symbol(object(), "BTC/USDC")
                 self.assertIn(status, {"success", "filtered"})
+
+    async def test_one_pass_calculation_counts_with_every_indicator_enabled(self) -> None:
+        config = minimal_config(
+            use_rsi=True,
+            rsi_threshold=100,
+            use_ma=True,
+            use_sma=True,
+            use_ema=True,
+            sma_periods=[5, 8],
+            ema_periods=[5, 8],
+            ma_timeframes=["4h"],
+            min_trend_score=0,
+            use_macd=True,
+            use_bollinger=True,
+            use_stochastic=True,
+            use_confluence_score=True,
+            min_confluence_score=0,
+        )
+        service = ScannerService(config)
+        with (
+            patch(
+                "app.services.scanner.fetch_ohlcv",
+                new=AsyncMock(return_value=descending_candle_frame()),
+            ) as fetch,
+            patch(
+                "app.services.scanner.calculate_rsi",
+                wraps=calculate_rsi,
+            ) as rsi,
+            patch(
+                "app.services.scanner.calculate_macd",
+                wraps=calculate_macd,
+            ) as macd,
+            patch(
+                "app.services.scanner.calculate_bollinger_bands",
+                wraps=calculate_bollinger_bands,
+            ) as bollinger,
+            patch(
+                "app.services.scanner.calculate_stochastic",
+                wraps=calculate_stochastic,
+            ) as stochastic,
+            patch(
+                "app.services.scanner.calculate_sma",
+                wraps=calculate_sma,
+            ) as sma,
+            patch(
+                "app.services.scanner.calculate_ema",
+                wraps=calculate_ema,
+            ) as ema,
+            patch(
+                "app.services.scanner.build_indicator_signals",
+                wraps=build_indicator_signals,
+            ) as builder,
+            patch("app.domain.backtesting.evaluate_information_set") as canonical,
+        ):
+            status, result = await service.analyze_symbol(object(), "BTC/USDC")
+
+        self.assertEqual(status, "success")
+        self.assertIsNotNone(result)
+        fetch.assert_awaited_once()
+        self.assertEqual(rsi.call_count, 1)
+        self.assertEqual(macd.call_count, 1)
+        self.assertEqual(bollinger.call_count, 1)
+        self.assertEqual(stochastic.call_count, 1)
+        self.assertEqual(sma.call_count, 2)
+        self.assertEqual(ema.call_count, 2)
+        self.assertEqual(builder.call_count, 1)
+        canonical.assert_not_called()
+
+    async def test_disabled_indicators_trigger_no_calculation_or_builder_entry(
+        self,
+    ) -> None:
+        service = ScannerService(minimal_config())
+        with (
+            patch(
+                "app.services.scanner.fetch_ohlcv",
+                new=AsyncMock(return_value=candle_frame()),
+            ),
+            patch("app.services.scanner.calculate_rsi") as rsi,
+            patch("app.services.scanner.calculate_macd") as macd,
+            patch("app.services.scanner.calculate_bollinger_bands") as bollinger,
+            patch("app.services.scanner.calculate_stochastic") as stochastic,
+            patch("app.services.scanner.calculate_sma") as sma,
+            patch("app.services.scanner.calculate_ema") as ema,
+            patch("app.services.scanner.build_indicator_signals") as builder,
+        ):
+            status, result = await service.analyze_symbol(object(), "BTC/USDC")
+
+        self.assertEqual(status, "success")
+        self.assertIsNotNone(result)
+        for calculation in (rsi, macd, bollinger, stochastic, sma, ema, builder):
+            calculation.assert_not_called()
+        assert result is not None
+        self.assertEqual(result.indicator_signals, {})
+        self.assertEqual(result.confluence_breakdown, {})
+
+    async def test_rsi_rejection_stops_before_other_indicator_calculations(
+        self,
+    ) -> None:
+        service = ScannerService(
+            minimal_config(
+                use_rsi=True,
+                rsi_threshold=35,
+                use_macd=True,
+                use_bollinger=True,
+                use_stochastic=True,
+            )
+        )
+        with (
+            patch(
+                "app.services.scanner.fetch_ohlcv",
+                new=AsyncMock(return_value=candle_frame()),
+            ),
+            patch(
+                "app.services.scanner.calculate_rsi",
+                wraps=calculate_rsi,
+            ) as rsi,
+            patch("app.services.scanner.calculate_macd") as macd,
+            patch("app.services.scanner.calculate_bollinger_bands") as bollinger,
+            patch("app.services.scanner.calculate_stochastic") as stochastic,
+            patch("app.services.scanner.build_indicator_signals") as builder,
+        ):
+            status, result = await service.analyze_symbol(object(), "BTC/USDC")
+
+        self.assertEqual(status, "filtered")
+        self.assertIsNone(result)
+        self.assertEqual(rsi.call_count, 1)
+        for calculation in (macd, bollinger, stochastic, builder):
+            calculation.assert_not_called()
+
+    async def test_scanner_decision_and_public_classes_match_canonical_oracle(
+        self,
+    ) -> None:
+        configurations = [
+            minimal_config(use_macd=True, filter_macd_signal=["bearish"]),
+            minimal_config(
+                use_macd=True,
+                structured_signal_filters={
+                    "version": 1,
+                    "indicators": {
+                        "macd": {
+                            "match": "all",
+                            "conditions": [{"field": "direction", "values": ["bearish"]}],
+                        }
+                    },
+                },
+            ),
+            minimal_config(
+                use_macd=True,
+                filter_macd_signal=["bullish"],
+                structured_signal_filters={
+                    "version": 1,
+                    "indicators": {
+                        "macd": {
+                            "match": "all",
+                            "conditions": [],
+                        }
+                    },
+                },
+            ),
+            minimal_config(
+                use_macd=True,
+                filter_macd_signal=["bearish"],
+                structured_signal_filters={
+                    "version": 1,
+                    "indicators": {
+                        "macd": {
+                            "match": "all",
+                            "conditions": [{"field": "direction", "values": ["bullish"]}],
+                        }
+                    },
+                },
+            ),
+            minimal_config(
+                structured_signal_filters={
+                    "version": 1,
+                    "indicators": {
+                        "macd": {
+                            "match": "all",
+                            "conditions": [{"field": "status", "values": ["disabled"]}],
+                        }
+                    },
+                },
+            ),
+        ]
+        for config in configurations:
+            with self.subTest(config=config.model_dump(mode="json")):
+                service = ScannerService(config)
+                with patch(
+                    "app.services.scanner.fetch_ohlcv",
+                    new=AsyncMock(return_value=descending_candle_frame()),
+                ):
+                    outcome = await service.analyze_symbol(object(), "BTC/USDC")
+
+                cached = service._candle_cache[("BTC/USDC", config.timeframe)]
+                assert cached is not None
+                primary = frame_to_candles(cached, config)
+                decision_time = primary[-1].close_time
+                assert decision_time is not None
+                canonical = evaluate_information_set(
+                    job_id="parity-oracle",
+                    symbol="BTC/USDC",
+                    decision_time_ms=decision_time,
+                    primary=primary,
+                    trend_candles={config.timeframe: primary},
+                    config=config,
+                )
+
+                self.assertEqual(outcome.status == "success", canonical.accepted)
+                if outcome.result is not None:
+                    self.assertEqual(outcome.result.rsi, canonical.rsi)
+                    self.assertEqual(
+                        outcome.result.macd_signal_type,
+                        canonical.macd_signal,
+                    )
+                    self.assertEqual(
+                        outcome.result.bb_position,
+                        canonical.bollinger_position,
+                    )
+                    self.assertEqual(
+                        outcome.result.stoch_signal,
+                        canonical.stochastic_signal,
+                    )
+                    self.assertEqual(
+                        outcome.result.indicator_signals,
+                        canonical.indicator_signals,
+                    )
 
 
 class ConfluenceTests(unittest.TestCase):
