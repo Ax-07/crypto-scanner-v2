@@ -1,0 +1,290 @@
+# =============================================================================
+
+# scanner_crypto — fichiers ignorés par Git
+
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+
+# Système d’exploitation
+
+# -----------------------------------------------------------------------------
+
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# -----------------------------------------------------------------------------
+
+# Éditeurs et IDE
+
+# -----------------------------------------------------------------------------
+
+.vscode/
+.idea/
+*.code-workspace
+
+*.swp
+*.swo
+*.swn
+*~
+*.bak
+*.orig
+
+# -----------------------------------------------------------------------------
+
+# Secrets et configuration locale
+
+# -----------------------------------------------------------------------------
+
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# -----------------------------------------------------------------------------
+
+# Python
+
+# -----------------------------------------------------------------------------
+
+**pycache**/
+*.py[cod]
+*$py.class
+*.pyd
+*.so
+
+.python-version
+
+# Environnements virtuels
+
+.venv/
+venv/
+env/
+ENV/
+backend/.venv/
+backend/venv/
+backend/env/
+
+# Caches des outils
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.hypothesis/
+.tox/
+.nox/
+
+# Couverture
+
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Builds et packages Python
+
+build/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+
+*.egg
+*.egg-info/
+.installed.cfg
+MANIFEST
+
+# Jupyter
+
+.ipynb_checkpoints/
+
+# -----------------------------------------------------------------------------
+
+# Node.js / React / Vite / pnpm
+
+# -----------------------------------------------------------------------------
+
+node_modules/
+frontend/node_modules/
+
+.pnpm-store/
+.npm/
+.yarn/
+.yarn-cache/
+.yarn-integrity
+
+# Builds frontend
+
+frontend/dist/
+frontend/build/
+dist/
+
+# Caches frontend
+
+.vite/
+frontend/.vite/
+.cache/
+.parcel-cache/
+.turbo/
+
+# Couverture frontend
+
+coverage/
+frontend/coverage/
+
+# Fichiers générés TypeScript
+
+*.tsbuildinfo
+
+# Caches des outils frontend
+
+.eslintcache
+.stylelintcache
+
+# Logs des gestionnaires de paquets
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# -----------------------------------------------------------------------------
+
+# Bases de données et données locales
+
+# -----------------------------------------------------------------------------
+
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+
+backend/data/
+backend/storage/
+backend/databases/
+
+# -----------------------------------------------------------------------------
+
+# Logs et fichiers temporaires
+
+# -----------------------------------------------------------------------------
+
+logs/
+backend/logs/
+frontend/logs/
+
+*.log
+*.log.*
+
+tmp/
+temp/
+.tmp/
+.cache/
+
+*.tmp
+*.temp
+*.pid
+*.pid.lock
+*.seed
+*.stackdump
+
+# -----------------------------------------------------------------------------
+
+# Artefacts de tests et rapports générés
+
+# -----------------------------------------------------------------------------
+
+test-results/
+playwright-report/
+blob-report/
+junit.xml
+
+reports/
+backend/reports/
+frontend/reports/
+
+# -----------------------------------------------------------------------------
+
+# Fichiers générés par l’application
+
+# -----------------------------------------------------------------------------
+
+exports/
+backend/exports/
+frontend/exports/
+
+downloads/
+backend/downloads/
+
+backtests/
+backend/backtests/
+
+scanner-results/
+backend/scanner-results/
+
+# -----------------------------------------------------------------------------
+
+# Outils et environnements locaux
+
+# -----------------------------------------------------------------------------
+
+.local/
+.local-history/
+.history/
+
+docker-compose.override.yml
+
+# Fichiers de profilage
+
+*.prof
+*.lprof
+
+# -----------------------------------------------------------------------------
+
+# Ne jamais ignorer les fichiers structurants du projet
+
+# -----------------------------------------------------------------------------
+
+!package.json
+!pnpm-lock.yaml
+!requirements.txt
+!pyproject.toml
+!README.md
+
+!frontend/package.json
+!frontend/pnpm-lock.yaml
+
+!backend/requirements.txt
+!backend/pyproject.toml
+
+!docs/
+!docs/**
