@@ -247,6 +247,8 @@ backend/downloads/
 
 backtests/
 backend/backtests/
+!frontend/src/features/backtests/
+!frontend/src/features/backtests/**
 
 scanner-results/
 backend/scanner-results/
