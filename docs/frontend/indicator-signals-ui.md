@@ -4,7 +4,8 @@ La Phase 5.2 fournit une bibliothèque de présentation réutilisable dans
 `frontend/src/components/indicator-signals/`. Elle consomme les contrats canoniques
 de `src/types/indicator-signals.ts`, sans store, appel API ou recalcul métier.
 Depuis la Phase 5.3, le scanner la compose dans son tableau de résultats. La Phase
-5.4 l'intègre aussi à la page marché en temps réel ; le backtest reste non migré.
+5.4 l'intègre aussi à la page marché en temps réel. La Phase 5.5 l'emploie enfin
+dans le détail des observations du backtest.
 
 ## API publique
 
@@ -181,3 +182,34 @@ Le panneau provisoire porte texte, icône, badge, bordure et avertissement sur l
 bougie ouverte. Une note commune précise que SMA/EMA sont affichés individuellement
 mais ne remplacent pas le facteur historique « Tendance » utilisé par la confluence
 marché. Aucun score, signal ou tendance n'est recalculé dans React.
+
+## Intégration dans le backtest — Phase 5.5
+
+`features/backtests/components/` ajoute un tableau paginé, un résumé compact, un
+badge de décision et un détail en `Sheet`. Le contrat réel n'expose pas de décisions
+entrée/sortie : `accepted=true/false` signifie seulement qu'un signal candidat a
+passé ou non les filtres. L'interface affiche donc « Signal accepté » ou « Signal
+rejeté » sans déduire une opération depuis une direction technique.
+
+Chaque ligne conserve date, symbole, timeframe, clôture observée, confluence,
+motif éventuel et résumé des signaux. Le résumé compte uniquement les clés reçues,
+sépare disponibles/indisponibles et décrit les directions des seuls signaux
+calculables. Il ne moyenne pas les intensités et ne produit aucune direction
+globale.
+
+Le bouton accessible « Voir les signaux de l'observation du… » ouvre un `Sheet`
+pleine largeur sur mobile et latéral large sur desktop. Le détail compose
+`IndicatorSignalsPanel`, le score/grade, facteurs, poids et contributions fournis
+par le backend, sans recalcul. Il distingue le champ absent, `{}`, les dictionnaires
+partiels et les statuts indisponibles.
+
+Une note sépare explicitement :
+
+- le signal technique disponible au temps de décision ;
+- l'acceptation ou le rejet par les filtres ;
+- les rendements forward calculés ensuite dans le dataset `outcomes`.
+
+Le replay ne possède ni trade, ni position, ni capital. Aucun rapprochement
+heuristique avec un trade n'est donc effectué. La note anti-look-ahead rappelle
+que chaque observation confirmed est construite sur les seules bougies closes
+disponibles à cet instant.

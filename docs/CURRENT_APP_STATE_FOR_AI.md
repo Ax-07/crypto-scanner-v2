@@ -1,10 +1,9 @@
 # État complet de `scanner_crypto` pour contexte IA
 
 Ce document est la source de reprise principale après l'audit des signaux structurés des
-Phases 1 à 4 puis des Phases 5.1 à 5.4. Il décrit le code réellement présent,
-pas une cible. Les contrats et composants frontend sont intégrés ; le scanner et
-le marché temps réel affichent désormais ces composants. Le backtest reste non
-migré.
+Phases 1 à 4 puis des Phases 5.1 à 5.5. Il décrit le code réellement présent,
+pas une cible. Les contrats et composants frontend sont intégrés ; le scanner,
+le marché temps réel et le backtest affichent désormais ces composants.
 
 ## 1. Métadonnées de génération
 
@@ -132,7 +131,7 @@ scanner/backtest valident ce champ sans retirer leurs champs historiques ; le sc
 marché le conserve dans les vues racine, confirmée et provisoire. Les trois stores
 Zustand stockent les objets complets. La bibliothèque Phase 5.2 est montée par la
 table scanner depuis la Phase 5.3 et par les panneaux confirmed/provisional du
-marché depuis la Phase 5.4 ; le backtest ne l'utilise pas encore.
+marché depuis la Phase 5.4 et par les observations de backtest depuis la Phase 5.5.
 
 ## 8. Routes REST
 
@@ -731,8 +730,8 @@ sont actuellement pas inclus dans l'export CSV du scanner. L'export CSV
   confluence et une colonne additive `Signaux` avec résumé et détail structuré.
 - `market-metrics` affiche prix, RSI, tendance, MACD, Bollinger, Stochastique,
   confluence et disponibilité historiques.
-- La table backtest affiche décision, RSI, confluence et rejet, sans détail des
-  signaux.
+- La table backtest pagine les observations par 50, affiche un résumé des six
+  indicateurs et ouvre leur détail dans un panneau local.
 - `apiRequest<T>` caste `response.json()`.
 - Le scanner WS et ses résultats REST valident le champ structuré.
 - Le marché Zod conserve `indicator_signals` jusqu'au store.
@@ -741,8 +740,8 @@ sont actuellement pas inclus dans l'export CSV du scanner. L'export CSV
 
 Le module métier isolé `components/indicator-signals/` affiche statut, direction,
 événement, état, `strength`, raison et `raw_value`. Le scanner le compose via des
-composants dédiés sous `features/scanner/components/`; le marché, le backtest et
-le graphique ne l'importent pas encore.
+composants dédiés sous `features/scanner/components/`; le marché et le backtest
+le composent également. Le graphique ne l'importe pas.
 
 ## 28. Contrats TypeScript ajoutés en Phase 5.1
 
@@ -796,8 +795,8 @@ dictionnaire partiel, ne le mute pas, filtre optionnellement les indisponibles e
 emploie une grille responsive. Voir `docs/frontend/indicator-signals-ui.md`.
 
 La Phase 5.2 n'a modifié ni contrats, ni schémas Zod, ni API, ni stores. Scanner,
-marché compose désormais la même bibliothèque sous son graphique ; le backtest
-conserve son interface historique.
+marché et backtest composent désormais la même bibliothèque dans leurs vues
+métier respectives.
 
 ## 29 bis. Intégration scanner Phase 5.3
 
@@ -818,6 +817,28 @@ partiels et les cartes affichent directement les statuts indisponibles reçus. A
 objet `disabled` n'est synthétisé depuis la configuration. Le score/grade de
 confluence reste affiché comme contexte historique distinct et n'est jamais
 recalculé. L'ouverture ne touche ni Zustand, ni URL, ni ordre des résultats.
+
+## 29 ter. Intégration backtest Phase 5.5
+
+`BacktestObservationsTable` remplace la table inline historique. Elle conserve
+l'ordre des observations renvoyées, affiche les décisions backend
+`accepted`/`rejected` sans inventer de sémantique de trade, et résume les six
+indicateurs dans l'ordre canonique partagé.
+
+`BacktestObservationDetails` ouvre un `Sheet` local, plein écran sur mobile et
+latéral sur desktop. Il affiche les signaux déjà chargés, le contexte de
+confluence backend et, le cas échéant, l'étape et la raison de rejet. L'ouverture
+ne lance aucun appel API. Un champ absent désigne un payload historique ; `{}` un
+payload moderne sans signal ; un dictionnaire partiel reste partiel.
+
+Le store gère séparément la page d'observations, son total, son chargement et son
+erreur. L'API utilise `offset` et `limit=50`. Une erreur de pagination ne détruit
+ni le job ni ses métriques globales. Les exports restent servis par le backend ;
+l'export des observations contient `indicator_signals` sérialisé en JSON.
+
+Cette interface ne relie pas heuristiquement une observation à un outcome et ne
+présente ni trade, ni position, ni capital : le backend est un replay causal de
+signaux avec rendements futurs, pas un simulateur de portefeuille.
 
 ## 30. Gestion de l'état frontend
 
@@ -902,6 +923,19 @@ Validation Phase 5.4 :
 | `pnpm run build` | 0 | 2 048 modules transformés, build Vite réussi |
 | `.\venv\Scripts\python.exe -m pytest -q` depuis `backend/` | 0 | 366 passés, 1 ignoré, 22 subtests, 2 warnings |
 
+Validation Phase 5.5 :
+
+| Commande | Code | Résultat |
+|---|---:|---|
+| `$env:CI='true'; pnpm install --frozen-lockfile` | 0 | lockfile à jour, 335 paquets réutilisés, 0 téléchargé |
+| `pnpm exec vitest run src/api/backtests.test.ts src/stores/backtest-store.test.ts src/features/backtests src/pages/backtests-page.test.tsx` | 0 | 8 fichiers, 34 tests passés |
+| `pnpm run typecheck` | 0 | TypeScript réussi |
+| `pnpm run lint` | 0 | ESLint, 0 warning |
+| `pnpm run test` | 0 | 36 fichiers, 200 tests passés |
+| `pnpm run build` | 0 | 2 052 modules transformés, build Vite réussi |
+| `.\venv\Scripts\python.exe -m pytest -q tests/test_backtesting_domain.py tests/test_backtest_engine.py tests/test_backtest_api.py` depuis `backend/` | 0 | 12 tests passés |
+| `.\venv\Scripts\python.exe -m pytest -q` depuis `backend/` | 0 | 366 passés, 1 ignoré, 22 subtests, 2 warnings |
+
 ## 33. Commandes de développement
 
 ```powershell
@@ -933,13 +967,14 @@ Le code backend lit `os.getenv`; charger explicitement `.env` ou utiliser
 
 ## 35. Limites et dette technique
 
-- Dépôt sans commit : aucun historique fiable.
+- Dépôt Git initialisé avec un historique récent ; `safe.directory` reste requis
+  dans cet environnement Windows.
 - Scanner : adaptateur historique complet + recalcul canonique.
 - Marché : pas de modèle Pydantic public.
 - Builder : `disabled` signifie omission, contrairement à une phrase obsolète de
   sa docstring de module à corriger si ce contrat change.
-- Frontend : scanner intégré en Phase 5.3 et marché en Phase 5.4 ; backtest non
-  migré.
+- Frontend : scanner, marché et backtest structurés sont intégrés ; les champs
+  legacy restent volontairement présents.
 - Backtest : pas de simulation de capital/positions.
 - Versions Python non figées exactement.
 - Artefacts lourds présents localement mais ignorés : `dist`, `node_modules`,
@@ -1039,10 +1074,11 @@ métier n'a été modifié.
 
 ### 5.5 — Backtest
 
-Fichiers : types/API/store/page backtests. Étendre observation et détail de ligne,
-comparer les signaux aux outcomes réels sans présenter strength comme performance.
-Tests : accepted/rejected, entrée/sortie, observation sans signaux. Acceptation :
-les signaux de décision sont consultables et séparés des rendements futurs.
+Terminée. La table d'observations est paginée et affiche un résumé compact des
+signaux structurés. Un `Sheet` local détaille les six indicateurs, la confluence
+backend et le rejet éventuel. Les décisions restent `accepted`/`rejected` :
+aucune entrée, sortie, position ou performance réalisée n'est inventée. Les
+payloads absents, vides et partiels ainsi que les états réseau sont couverts.
 
 ### 5.6 — Nettoyage progressif
 
@@ -1070,12 +1106,12 @@ distinction confirmed/provisional et l'exclusion SMA/EMA de la confluence march�
 | Fonctionnalité | Scanner | Marché backend | Backtest | CSV scanner | Frontend actuel |
 |---|---:|---:|---:|---:|---:|
 | Anciens signaux | oui | oui | oui | oui | oui |
-| Signaux structurés | oui | oui | oui | non | affichés dans le scanner et le marché |
-| Confluence structurée | oui, sauf trend | oui, sauf SMA/EMA | oui, sauf trend | résultat legacy | score/grade marché affichés sans recalcul |
+| Signaux structurés | oui | oui | oui | non | affichés dans le scanner, le marché et le backtest |
+| Confluence structurée | oui, sauf trend | oui, sauf SMA/EMA | oui, sauf trend | résultat legacy | contexte backend affiché sans recalcul |
 | SMA/EMA structurés | non | oui | non | non | affichés dans le marché |
 | Tendance multi-timeframes | oui | non | oui | score/trends | scanner seulement |
-| `raw_value` | JSON | JSON backend | JSON | non | conservé, formatter UI prêt |
-| Affichage utilisateur | legacy + structuré | legacy + structuré | résumé legacy | téléchargement | scanner et marché migrés ; backtest non migré |
+| `raw_value` | JSON | JSON backend | JSON | non | affichable dans les détails structurés |
+| Affichage utilisateur | legacy + structuré | legacy + structuré | legacy + structuré | téléchargement | scanner, marché et backtest migrés |
 
 ## 43. Statut des Phases 1 à 4
 
@@ -1095,8 +1131,10 @@ distinction confirmed/provisional et l'exclusion SMA/EMA de la confluence march�
 - Phase 5.4, marché frontend : implémentée ; connexion/erreur visibles, vues
   confirmed/provisional distinctes, six signaux structurés et confluence backend
   affichés sous le graphique, responsive et accessibles.
+- Phase 5.5, backtest frontend : implémentée ; observations paginées, décisions
+  `accepted`/`rejected`, résumé et détail structurés, compatibilité historique et
+  séparation explicite entre signal, outcome futur et simulation de portefeuille.
 
-Conclusion : la donnée structurée arrive jusqu'aux stores ; le scanner et le marché
-temps réel l'affichent sans recalcul. La suite est la Phase 5.5, limitée à
-l'intégration des observations du backtest et à leur séparation avec les
-performances réalisées.
+Conclusion : la donnée structurée arrive jusqu'aux stores et les trois interfaces
+la présentent sans recalcul. La suite recommandée est la Phase 5.6 de nettoyage
+progressif, sans suppression de champ legacy sans dépréciation explicite.

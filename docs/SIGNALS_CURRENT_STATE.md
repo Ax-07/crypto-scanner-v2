@@ -102,7 +102,8 @@ Pydantic et TypeScript synchronisent MACD, Bollinger, Stochastique, grades,
 tendance, disponibilité, marqueurs et signaux structurés. Le schéma Zod commun
 contrôle les six clés d'indicateur et conserve `indicator_signals` dans les flux
 scanner, marché et backtest jusqu'aux stores. Le champ reste optionnel pour les
-anciens payloads et aucun composant ne l'affiche encore.
+anciens payloads. Les interfaces scanner, marché et backtest le présentent avec
+la bibliothèque visuelle partagée, sans recalcul.
 
 ## Tests
 

@@ -71,6 +71,17 @@ ni une prévision de gain.
 La Phase 5.1 conserve ces données jusqu'aux stores. Aucun composant ne les affiche
 encore; leur présentation appartient à la Phase 5.2.
 
+Depuis la Phase 5.5, `backtestApi.observations(id, offset, limit)` transmet la
+pagination native de `GET /api/backtests/{id}/observations`. Le store conserve la
+page courante, le total, l'offset et ses états de chargement/erreur. Ouvrir le
+détail d'une observation ne déclenche aucun appel réseau.
+
+Le type `SignalObservation` expose aussi les champs backend utilisés par le détail :
+`confluence_breakdown`, `filter_trace`, `source_open_time`, `calculation_mode` et
+`schema_version`, optionnels côté frontend pour préserver les anciens résultats.
+`accepted` reste un booléen d'acceptation par les filtres, pas une décision
+d'entrée/sortie.
+
 Utiliser l’union `message.type` pour réduire un message WebSocket. Éviter les copies locales partielles de ces contrats : elles dérivent rapidement du backend. Les exemples complets de payloads sont dans la [documentation WebSocket](websockets.md).
 
 ## Évolution du contrat

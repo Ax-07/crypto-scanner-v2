@@ -76,9 +76,9 @@ WS   /api/backtests/{job_id}/ws
 
 L'interface restaure l'historique persistant, rouvre les résultats et propose la
 reprise d'un job interrompu. Les tableaux de recherche et exports sont présents.
-La page n'implémente pas encore de graphiques statistiques avancés ni une
-pagination interactive de toutes les observations ; les APIs paginées et filtrées
-sont disponibles.
+La page n'implémente pas encore de graphiques statistiques avancés. Elle pagine
+les observations par 50 et permet d'ouvrir leurs signaux structurés ; les APIs
+paginées et filtrées restent disponibles pour les autres analyses.
 
 ## Oracle synthétique
 
