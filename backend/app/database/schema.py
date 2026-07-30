@@ -1,6 +1,6 @@
 """Schéma SQLite versionné des données OHLCV."""
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 MIGRATION_1 = """
 CREATE TABLE IF NOT EXISTS candles (
@@ -307,6 +307,122 @@ ON shadow_comparisons (
 );
 """
 
+MIGRATION_8 = """
+CREATE TABLE IF NOT EXISTS backtest_portfolio_runs (
+    job_id TEXT PRIMARY KEY REFERENCES backtest_jobs(id) ON DELETE CASCADE,
+    schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+    engine_version TEXT NOT NULL,
+    config_fingerprint TEXT NOT NULL,
+    quote_asset TEXT NOT NULL,
+    config_json TEXT NOT NULL,
+    metrics_json TEXT NOT NULL,
+    final_cash TEXT NOT NULL,
+    final_equity TEXT NOT NULL,
+    final_open_position_json TEXT,
+    order_count INTEGER NOT NULL CHECK (order_count >= 0),
+    execution_count INTEGER NOT NULL CHECK (execution_count >= 0),
+    trade_count INTEGER NOT NULL CHECK (trade_count >= 0),
+    equity_point_count INTEGER NOT NULL CHECK (equity_point_count >= 0),
+    created_at TEXT NOT NULL,
+    completed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS backtest_portfolio_orders (
+    job_id TEXT NOT NULL
+        REFERENCES backtest_portfolio_runs(job_id) ON DELETE CASCADE,
+    schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+    sequence INTEGER NOT NULL CHECK (sequence >= 0),
+    order_id TEXT NOT NULL,
+    observation_id TEXT,
+    side TEXT NOT NULL,
+    intent_time TEXT NOT NULL,
+    execution_policy TEXT NOT NULL,
+    requested_cash TEXT,
+    status TEXT NOT NULL,
+    rejection_reason TEXT,
+    PRIMARY KEY (job_id, sequence),
+    UNIQUE (job_id, order_id)
+);
+
+CREATE TABLE IF NOT EXISTS backtest_portfolio_executions (
+    job_id TEXT NOT NULL
+        REFERENCES backtest_portfolio_runs(job_id) ON DELETE CASCADE,
+    schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+    sequence INTEGER NOT NULL CHECK (sequence >= 0),
+    execution_id TEXT NOT NULL,
+    order_id TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    side TEXT NOT NULL,
+    reference_price TEXT NOT NULL,
+    execution_price TEXT NOT NULL,
+    quantity TEXT NOT NULL,
+    gross_notional TEXT NOT NULL,
+    fee TEXT NOT NULL,
+    slippage_rate TEXT NOT NULL,
+    PRIMARY KEY (job_id, sequence),
+    UNIQUE (job_id, execution_id),
+    FOREIGN KEY (job_id, order_id)
+        REFERENCES backtest_portfolio_orders(job_id, order_id)
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_executions_order
+ON backtest_portfolio_executions (job_id, order_id);
+
+CREATE TABLE IF NOT EXISTS backtest_portfolio_trades (
+    job_id TEXT NOT NULL
+        REFERENCES backtest_portfolio_runs(job_id) ON DELETE CASCADE,
+    schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+    sequence INTEGER NOT NULL CHECK (sequence >= 0),
+    trade_id TEXT NOT NULL,
+    position_id TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    quote_asset TEXT NOT NULL,
+    entry_observation_id TEXT NOT NULL,
+    exit_observation_id TEXT,
+    entry_order_id TEXT NOT NULL,
+    exit_order_id TEXT NOT NULL,
+    entry_execution_id TEXT NOT NULL,
+    exit_execution_id TEXT NOT NULL,
+    entry_time TEXT NOT NULL,
+    exit_time TEXT NOT NULL,
+    entry_price TEXT NOT NULL,
+    exit_price TEXT NOT NULL,
+    quantity TEXT NOT NULL,
+    entry_fee TEXT NOT NULL,
+    exit_fee TEXT NOT NULL,
+    gross_exit_proceeds TEXT NOT NULL,
+    net_exit_proceeds TEXT NOT NULL,
+    realized_pnl TEXT NOT NULL,
+    return_ratio TEXT NOT NULL,
+    duration_bars INTEGER NOT NULL CHECK (duration_bars >= 0),
+    exit_reason TEXT NOT NULL,
+    PRIMARY KEY (job_id, sequence),
+    UNIQUE (job_id, trade_id),
+    FOREIGN KEY (job_id, entry_execution_id)
+        REFERENCES backtest_portfolio_executions(job_id, execution_id),
+    FOREIGN KEY (job_id, exit_execution_id)
+        REFERENCES backtest_portfolio_executions(job_id, execution_id)
+);
+
+CREATE TABLE IF NOT EXISTS backtest_portfolio_equity (
+    job_id TEXT NOT NULL
+        REFERENCES backtest_portfolio_runs(job_id) ON DELETE CASCADE,
+    schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+    sequence INTEGER NOT NULL CHECK (sequence >= 0),
+    timestamp TEXT NOT NULL,
+    cash TEXT NOT NULL,
+    position_value TEXT NOT NULL,
+    equity TEXT NOT NULL,
+    realized_pnl_cumulative TEXT NOT NULL,
+    unrealized_pnl TEXT NOT NULL,
+    fees_cumulative TEXT NOT NULL,
+    drawdown_ratio TEXT NOT NULL,
+    exposed INTEGER NOT NULL CHECK (exposed IN (0, 1)),
+    PRIMARY KEY (job_id, sequence)
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_equity_time
+ON backtest_portfolio_equity (job_id, timestamp, sequence);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_1,
     2: MIGRATION_2,
@@ -315,4 +431,5 @@ MIGRATIONS = {
     5: MIGRATION_5,
     6: MIGRATION_6,
     7: MIGRATION_7,
+    8: MIGRATION_8,
 }

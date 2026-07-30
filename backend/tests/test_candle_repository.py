@@ -8,7 +8,7 @@ from pathlib import Path
 import aiosqlite
 
 from app.database.connection import Database
-from app.database.schema import MIGRATION_1, MIGRATION_2, MIGRATION_3
+from app.database.schema import MIGRATION_1, MIGRATION_2, MIGRATION_3, SCHEMA_VERSION
 from app.domain.candles import Candle, find_missing_ranges
 from app.repositories.candle_repository import CandleRepository
 
@@ -74,7 +74,7 @@ class DatabaseAndRepositoryTests(unittest.IsolatedAsyncioTestCase):
             versions = await (
                 await connection.execute("SELECT COUNT(*) FROM schema_migrations")
             ).fetchone()
-        self.assertEqual(versions[0], 7)
+        self.assertEqual(versions[0], SCHEMA_VERSION)
 
     async def test_upsert_latest_range_filters_bounds_and_no_duplicate(self) -> None:
         self.assertEqual(await self.repository.upsert_many([]), 0)

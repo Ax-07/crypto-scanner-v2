@@ -29,6 +29,15 @@ class PortfolioInvariantError(PortfolioDomainError):
     """Invariant comptable interne violé."""
 
 
+def canonical_decimal(value: DecimalInput, *, name: str = "value") -> str:
+    """Retourne la forme texte canonique d'un décimal fini."""
+    decimal_value = to_finite_decimal(value, name=name)
+    normalized = decimal_value.normalize()
+    if normalized == ZERO:
+        return "0"
+    return format(normalized, "f")
+
+
 def to_finite_decimal(value: DecimalInput, *, name: str) -> Decimal:
     """Convertit via la représentation textuelle et exige une valeur finie."""
     if isinstance(value, bool):

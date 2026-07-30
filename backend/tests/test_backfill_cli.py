@@ -11,6 +11,7 @@ from app.cli.backfill_candles import build_parser, main, options_from_args
 from app.cli.backup_database import backup
 from app.cli.repair_history_metadata import repair
 from app.database.connection import Database
+from app.database.schema import SCHEMA_VERSION
 
 
 class BackfillCliTests(unittest.TestCase):
@@ -54,7 +55,7 @@ class BackupTests(unittest.IsolatedAsyncioTestCase):
                 row = await (
                     await connection.execute("SELECT COUNT(*) FROM schema_migrations")
                 ).fetchone()
-            self.assertEqual(row[0], 7)
+            self.assertEqual(row[0], SCHEMA_VERSION)
 
     async def test_targeted_history_metadata_repair_command(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

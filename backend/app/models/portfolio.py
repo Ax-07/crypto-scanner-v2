@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import (
@@ -16,17 +18,10 @@ from pydantic import (
 from app.domain.portfolio.decimal_utils import (
     HUNDRED,
     ONE,
+    canonical_decimal,
     require_non_negative_decimal,
     require_positive_decimal,
 )
-
-
-def canonical_decimal(value: Decimal) -> str:
-    """Sérialise un décimal fini sans exposant ni zéros finaux superflus."""
-    normalized = value.normalize()
-    if normalized == 0:
-        return "0"
-    return format(normalized, "f")
 
 
 class PortfolioPositionSizingConfig(BaseModel):
@@ -145,3 +140,125 @@ class PortfolioSimulationPublicResult(BaseModel):
     summary: PortfolioSimulationSummary
     has_trades: bool
     has_equity_curve: bool
+
+
+class PortfolioDetailsStatus(StrEnum):
+    """Disponibilité durable des détails d'une simulation."""
+
+    COMPLETE = "complete"
+    UNAVAILABLE_LEGACY = "unavailable_legacy"
+
+
+class PortfolioTradeV1(BaseModel):
+    """Trade fermé public, sans duplication des ordres et exécutions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1] = 1
+    sequence: int = Field(ge=0)
+    trade_id: str
+    position_id: str
+    symbol: str
+    quote_asset: str
+    entry_observation_id: str
+    exit_observation_id: str | None
+    entry_time: datetime
+    exit_time: datetime
+    entry_price: Decimal
+    exit_price: Decimal
+    quantity: Decimal
+    entry_fee: Decimal
+    exit_fee: Decimal
+    gross_exit_proceeds: Decimal
+    net_exit_proceeds: Decimal
+    realized_pnl: Decimal
+    return_ratio: Decimal
+    duration_bars: int = Field(ge=0)
+    exit_reason: Literal["validation_lost", "end_of_test"]
+
+    @field_serializer(
+        "entry_price",
+        "exit_price",
+        "quantity",
+        "entry_fee",
+        "exit_fee",
+        "gross_exit_proceeds",
+        "net_exit_proceeds",
+        "realized_pnl",
+        "return_ratio",
+    )
+    def serialize_trade_decimal(self, value: Decimal) -> str:
+        return canonical_decimal(value)
+
+
+class PortfolioEquityPointV1(BaseModel):
+    """Point public exact de la courbe d'equity persistée."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1] = 1
+    sequence: int = Field(ge=0)
+    timestamp: datetime
+    cash: Decimal
+    position_value: Decimal
+    equity: Decimal
+    realized_pnl_cumulative: Decimal
+    unrealized_pnl: Decimal
+    fees_cumulative: Decimal
+    drawdown_ratio: Decimal
+
+    @field_serializer(
+        "cash",
+        "position_value",
+        "equity",
+        "realized_pnl_cumulative",
+        "unrealized_pnl",
+        "fees_cumulative",
+        "drawdown_ratio",
+    )
+    def serialize_equity_decimal(self, value: Decimal) -> str:
+        return canonical_decimal(value)
+
+
+class PortfolioTradePage(BaseModel):
+    """Page SQL stable de trades."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[PortfolioTradeV1]
+    total: int = Field(ge=0)
+    offset: int = Field(ge=0)
+    limit: int = Field(ge=1)
+    has_more: bool
+
+
+class PortfolioEquityPage(BaseModel):
+    """Page brute ou sélection déterministe de points existants."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[PortfolioEquityPointV1]
+    total: int = Field(ge=0)
+    offset: int = Field(ge=0)
+    limit: int = Field(ge=1)
+    has_more: bool
+    sampled: bool
+    source_point_count: int = Field(ge=0)
+
+
+class PortfolioRunMetadataV1(BaseModel):
+    """Métadonnées publiques bornées d'un run durable."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1] = 1
+    schema_version: Literal[1] = 1
+    engine_version: str
+    quote_asset: str
+    summary: PortfolioSimulationSummary
+    details_status: PortfolioDetailsStatus
+    order_count: int = Field(ge=0)
+    execution_count: int = Field(ge=0)
+    trade_count: int = Field(ge=0)
+    equity_point_count: int = Field(ge=0)
+    available_after_restart: bool

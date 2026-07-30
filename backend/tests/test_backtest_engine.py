@@ -157,9 +157,10 @@ async def test_portfolio_replay_is_additive_and_resume_is_deterministic() -> Non
         await repository.save_job(uninterrupted)
         engine = BacktestEngine(MemoryHistory(rows), repository, yield_every=1)
         await engine.run(uninterrupted)
-        full_result = uninterrupted.portfolio_result
+        full_result = await engine.portfolios.load_portfolio_simulation_result(uninterrupted.id)
         full_outcomes = await repository.all_outcomes(uninterrupted.id)
         assert full_result is not None
+        assert uninterrupted.portfolio_result is None
         assert uninterrupted.summary is not None
         assert uninterrupted.summary.trade_simulation_included
         assert uninterrupted.summary.portfolio_simulation is not None
@@ -179,9 +180,10 @@ async def test_portfolio_replay_is_additive_and_resume_is_deterministic() -> Non
         restored = await repository.get_job(resumed.id)
         assert restored is not None
         await engine.run(restored)
-        resumed_result = restored.portfolio_result
+        resumed_result = await engine.portfolios.load_portfolio_simulation_result(restored.id)
         resumed_outcomes = await repository.all_outcomes(restored.id)
         assert resumed_result is not None
+        assert restored.portfolio_result is None
         assert resumed_result.metrics == full_result.metrics
         assert [item.id for item in resumed_result.orders] == [
             item.id for item in full_result.orders
@@ -198,9 +200,12 @@ async def test_portfolio_replay_is_additive_and_resume_is_deterministic() -> Non
         assert restored.config_fingerprint == uninterrupted.config_fingerprint
         assert restored.checkpoint is not None
         assert restored.checkpoint["config_fingerprint"] == restored.config_fingerprint
-        checkpoint_result = restored.portfolio_result
+        checkpoint_result = resumed_result
         await engine.run(restored)
-        assert restored.portfolio_result == checkpoint_result
+        assert (
+            await engine.portfolios.load_portfolio_simulation_result(restored.id)
+            == checkpoint_result
+        )
         await database.close()
 
 

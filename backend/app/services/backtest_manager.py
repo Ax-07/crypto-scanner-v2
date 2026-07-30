@@ -10,6 +10,7 @@ from uuid import uuid4
 from app.models.backtest import BacktestConfig, BacktestJob, BacktestStatus
 from app.repositories.backtest_repository import BacktestRepository
 from app.repositories.candle_repository import CandleRepository
+from app.repositories.portfolio_repository import PortfolioRepository
 from app.services.backtest_engine import BacktestEngine, SQLiteHistoricalRepository
 from app.services.portfolio_replay import backtest_config_fingerprint
 
@@ -19,7 +20,12 @@ logger = logging.getLogger(__name__)
 class BacktestManager:
     def __init__(self, repository: BacktestRepository, candles: CandleRepository) -> None:
         self.repository = repository
-        self.engine = BacktestEngine(SQLiteHistoricalRepository(candles), repository)
+        self.portfolio_repository = PortfolioRepository(repository.database)
+        self.engine = BacktestEngine(
+            SQLiteHistoricalRepository(candles),
+            repository,
+            portfolios=self.portfolio_repository,
+        )
         self._jobs: dict[str, BacktestJob] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._conditions: dict[str, asyncio.Condition] = {}
@@ -121,6 +127,7 @@ class BacktestManager:
             await self.engine.run(job, lambda progress: self._progress(job, progress))
             job.status = BacktestStatus.COMPLETED
         except asyncio.CancelledError:
+            await self.portfolio_repository.delete_simulation_result(job.id)
             job.status = BacktestStatus.CANCELLED
             job.progress.phase = "cancelled"
             job.set_portfolio_result(None)
@@ -129,6 +136,7 @@ class BacktestManager:
                 job.summary.trade_simulation_included = False
             logger.info("Backtest %s annulé", job.id)
         except Exception as exc:
+            await self.portfolio_repository.delete_simulation_result(job.id)
             job.status = BacktestStatus.FAILED
             job.error = str(exc)
             job.progress.phase = "failed"

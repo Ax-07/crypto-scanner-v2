@@ -17,8 +17,19 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from fastapi.responses import StreamingResponse
 
+from app.exporters.portfolio_csv import stream_equity_v1, stream_trades_v1
 from app.models.backtest import BacktestConfig, BacktestStatus
+from app.models.portfolio import (
+    PortfolioDetailsStatus,
+    PortfolioEquityPage,
+    PortfolioEquityPointV1,
+    PortfolioRunMetadataV1,
+    PortfolioTradePage,
+    PortfolioTradeV1,
+)
+from app.repositories.portfolio_repository import StoredPortfolioRun
 from app.services.backtest_manager import BacktestManager
 
 router = APIRouter(prefix="/api/backtests", tags=["backtests"])
@@ -33,6 +44,83 @@ async def _job_or_404(manager: BacktestManager, job_id: str):
     if job is None:
         raise HTTPException(status_code=404, detail="Backtest introuvable")
     return job
+
+
+def _portfolio_error(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(status_code=status_code, detail={"code": code, "message": message})
+
+
+async def _portfolio_run_or_error(
+    manager: BacktestManager, job_id: str
+) -> tuple[Any, StoredPortfolioRun]:
+    job = await _job_or_404(manager, job_id)
+    if job.config.portfolio_simulation is None:
+        raise _portfolio_error(
+            404,
+            "portfolio_not_requested",
+            "La simulation de portefeuille n'a pas été demandée.",
+        )
+    if job.status is not BacktestStatus.COMPLETED:
+        raise _portfolio_error(
+            409,
+            "portfolio_job_not_completed",
+            f"Les détails ne sont pas disponibles pour un job {job.status.value}.",
+        )
+    run = await manager.portfolio_repository.get_run_metadata(job_id)
+    if run is None:
+        if job.summary is not None and job.summary.portfolio_simulation is not None:
+            raise _portfolio_error(
+                409,
+                "portfolio_details_legacy_unavailable",
+                "Ce job Phase 6.3 possède un résumé mais aucun détail persistant.",
+            )
+        raise _portfolio_error(
+            409,
+            "portfolio_details_unavailable",
+            "Les détails du portefeuille sont indisponibles.",
+        )
+    return job, run
+
+
+def _public_trade(item) -> PortfolioTradeV1:
+    trade = item.trade
+    return PortfolioTradeV1(
+        sequence=item.sequence,
+        trade_id=trade.id,
+        position_id=trade.position_id,
+        symbol=trade.symbol,
+        quote_asset=trade.quote_asset,
+        entry_observation_id=trade.entry_observation_id,
+        exit_observation_id=trade.exit_observation_id,
+        entry_time=trade.entry_time,
+        exit_time=trade.exit_time,
+        entry_price=trade.entry_price,
+        exit_price=trade.exit_price,
+        quantity=trade.quantity,
+        entry_fee=trade.entry_fee,
+        exit_fee=trade.exit_fee,
+        gross_exit_proceeds=trade.gross_exit_proceeds,
+        net_exit_proceeds=trade.net_exit_proceeds,
+        realized_pnl=trade.realized_pnl,
+        return_ratio=trade.return_ratio,
+        duration_bars=trade.duration_bars,
+        exit_reason=trade.exit_reason.value,
+    )
+
+
+def _public_equity(item) -> PortfolioEquityPointV1:
+    point = item.point
+    return PortfolioEquityPointV1(
+        sequence=item.sequence,
+        timestamp=point.timestamp,
+        cash=point.cash,
+        position_value=point.position_value,
+        equity=point.equity,
+        realized_pnl_cumulative=point.realized_pnl_cumulative,
+        unrealized_pnl=point.unrealized_pnl,
+        fees_cumulative=point.fees_cumulative,
+        drawdown_ratio=point.drawdown_ratio,
+    )
 
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED)
@@ -110,6 +198,110 @@ async def get_summary(job_id: str, request: Request) -> dict[str, Any]:
     if job.summary is None:
         raise HTTPException(status_code=409, detail="Résumé indisponible avant la fin du backtest")
     return job.summary.public_payload()
+
+
+@router.get("/{job_id}/portfolio", response_model=PortfolioRunMetadataV1)
+async def get_portfolio(job_id: str, request: Request) -> PortfolioRunMetadataV1:
+    manager = _manager(request)
+    job, run = await _portfolio_run_or_error(manager, job_id)
+    assert job.summary is not None and job.summary.portfolio_simulation is not None
+    return PortfolioRunMetadataV1(
+        schema_version=1,
+        engine_version=run.engine_version,
+        quote_asset=run.quote_asset,
+        summary=job.summary.portfolio_simulation.summary,
+        details_status=PortfolioDetailsStatus.COMPLETE,
+        order_count=run.order_count,
+        execution_count=run.execution_count,
+        trade_count=run.trade_count,
+        equity_point_count=run.equity_point_count,
+        available_after_restart=True,
+    )
+
+
+@router.get("/{job_id}/trades", response_model=PortfolioTradePage)
+async def get_portfolio_trades(
+    job_id: str,
+    request: Request,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> PortfolioTradePage:
+    manager = _manager(request)
+    await _portfolio_run_or_error(manager, job_id)
+    page = await manager.portfolio_repository.list_trades(job_id=job_id, offset=offset, limit=limit)
+    return PortfolioTradePage(
+        items=[_public_trade(item) for item in page.items],
+        total=page.total,
+        offset=offset,
+        limit=limit,
+        has_more=offset + len(page.items) < page.total,
+    )
+
+
+@router.get("/{job_id}/equity", response_model=PortfolioEquityPage)
+async def get_portfolio_equity(
+    job_id: str,
+    request: Request,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=1_000),
+    mode: Literal["raw", "sampled"] = "raw",
+    max_points: int = Query(default=1_000, ge=4, le=2_000),
+) -> PortfolioEquityPage:
+    manager = _manager(request)
+    await _portfolio_run_or_error(manager, job_id)
+    if mode == "sampled":
+        if offset != 0:
+            raise _portfolio_error(
+                422,
+                "invalid_pagination",
+                "offset doit valoir 0 en mode sampled.",
+            )
+        page = await manager.portfolio_repository.sample_equity_points(
+            job_id=job_id, max_points=max_points
+        )
+        return PortfolioEquityPage(
+            items=[_public_equity(item) for item in page.items],
+            total=page.total,
+            offset=0,
+            limit=max_points,
+            has_more=False,
+            sampled=True,
+            source_point_count=page.total,
+        )
+    page = await manager.portfolio_repository.list_equity_points(
+        job_id=job_id, offset=offset, limit=limit
+    )
+    return PortfolioEquityPage(
+        items=[_public_equity(item) for item in page.items],
+        total=page.total,
+        offset=offset,
+        limit=limit,
+        has_more=offset + len(page.items) < page.total,
+        sampled=False,
+        source_point_count=page.total,
+    )
+
+
+@router.get("/{job_id}/trades/export.csv")
+async def export_portfolio_trades(job_id: str, request: Request) -> StreamingResponse:
+    manager = _manager(request)
+    await _portfolio_run_or_error(manager, job_id)
+    return StreamingResponse(
+        stream_trades_v1(manager.portfolio_repository, job_id),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{job_id}-trades-v1.csv"'},
+    )
+
+
+@router.get("/{job_id}/equity/export.csv")
+async def export_portfolio_equity(job_id: str, request: Request) -> StreamingResponse:
+    manager = _manager(request)
+    await _portfolio_run_or_error(manager, job_id)
+    return StreamingResponse(
+        stream_equity_v1(manager.portfolio_repository, job_id),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{job_id}-equity-v1.csv"'},
+    )
 
 
 @router.get("/{job_id}/summary.json")
@@ -224,15 +416,23 @@ async def get_divergences(job_id: str, request: Request) -> Any:
 
 @router.get("/{job_id}/exports")
 async def get_exports(job_id: str, request: Request) -> dict[str, str]:
-    await _job_or_404(_manager(request), job_id)
+    manager = _manager(request)
+    job = await _job_or_404(manager, job_id)
     base = f"/api/backtests/{job_id}"
-    return {
+    exports = {
         "summary": f"{base}/summary.json",
         "observations": f"{base}/export.csv?dataset=observations",
         "outcomes": f"{base}/export.csv?dataset=outcomes",
         "correlations": f"{base}/export.csv?dataset=correlations",
         "ablations": f"{base}/export.csv?dataset=ablations",
     }
+    if (
+        job.status is BacktestStatus.COMPLETED
+        and await manager.portfolio_repository.get_run_metadata(job_id) is not None
+    ):
+        exports["portfolio_trades_v1"] = f"{base}/trades/export.csv"
+        exports["portfolio_equity_v1"] = f"{base}/equity/export.csv"
+    return exports
 
 
 @router.get("/{job_id}/ablations")

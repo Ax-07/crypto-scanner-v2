@@ -19,6 +19,7 @@ from app.domain.portfolio import simulate_portfolio
 from app.models.backtest import BacktestJob, BacktestProgress, BacktestSummary
 from app.repositories.backtest_repository import BacktestRepository
 from app.repositories.candle_repository import CandleRepository
+from app.repositories.portfolio_repository import PortfolioRepository
 from app.services.portfolio_replay import (
     backtest_config_fingerprint,
     build_portfolio_simulation_steps,
@@ -90,9 +91,11 @@ class BacktestEngine:
         results: BacktestRepository,
         *,
         yield_every: int = 25,
+        portfolios: PortfolioRepository | None = None,
     ) -> None:
         self.history = history
         self.results = results
+        self.portfolios = portfolios or PortfolioRepository(results.database)
         self.yield_every = yield_every
 
     async def _load_primary(self, job: BacktestJob, symbol: str) -> LoadedSeries:
@@ -308,11 +311,17 @@ class BacktestEngine:
                 steps=steps,
                 config=to_internal_portfolio_config(config.portfolio_simulation),
             )
-            job.set_portfolio_result(portfolio_result)
+            assert config_fingerprint is not None
+            await self.portfolios.replace_simulation_result(
+                job_id=job.id,
+                result=portfolio_result,
+                config_fingerprint=config_fingerprint,
+            )
             summary["trade_simulation_included"] = True
             summary["portfolio_simulation"] = to_public_portfolio_result(
                 portfolio_result
             ).model_dump(mode="json")
+            job.set_portfolio_result(None)
         job.summary = BacktestSummary.model_validate(summary)
         job.correlations = correlations
         job.ablations = ablations
