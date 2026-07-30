@@ -1,7 +1,13 @@
 # Simulation de portefeuille du backtest — conception Phase 6.1
 
 Statut : **proposé**, audité sur le code de `main` au commit `e61835b` le
-29 juillet 2026. Cette phase ne contient aucune implémentation runtime.
+29 juillet 2026.
+
+La Phase 6.2 implémente et teste désormais le moteur de domaine pur décrit ici,
+sous `backend/app/domain/portfolio/`. Il n'est pas encore intégré aux jobs de
+backtest, aux contrats publics, à la persistance, à l'API ou au frontend. La
+documentation d'implémentation est dans
+[`backend/portfolio-simulation-engine-v1.md`](backend/portfolio-simulation-engine-v1.md).
 
 ## 1. Résumé exécutif
 
@@ -705,8 +711,9 @@ checkpoint vérifié.
 
 ## 27. Plan d'implémentation recommandé
 
-- **Phase 6.2 — Modèles et moteur de portefeuille pur** : Decimal, stratégie,
-  événements, sizing, exécutions, position, scénarios manuels.
+- **Phase 6.2 — Modèles et moteur de portefeuille pur — implémentée** :
+  Decimal, stratégie, événements, sizing, exécutions, position, métriques,
+  scénarios manuels et garanties anti-look-ahead.
 - **Phase 6.3 — Intégration au replay et contrats API** : bloc optionnel,
   causalité, fingerprint séparé, checkpoints et compatibilité.
 - **Phase 6.4 — Trades, equity, métriques et exports** : persistance,
@@ -718,4 +725,3 @@ checkpoint vérifié.
 
 Chaque phase doit préserver les tests golden des outcomes et ne doit annoncer
 la simulation comme disponible qu'après activation de ses contrats publics.
-

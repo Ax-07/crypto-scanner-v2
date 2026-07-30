@@ -6,8 +6,10 @@
 > [`BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md`](BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md)
 > et résumée par
 > [`adr/ADR-portfolio-backtest-v1.md`](adr/ADR-portfolio-backtest-v1.md).
-> **Le simulateur de portefeuille est conçu mais pas encore implémenté.**
-> Le replay et les contrats décrits ci-dessous restent le comportement réel.
+> **Le moteur de portefeuille pur est implémenté et testé, mais il n'est pas
+> encore intégré aux jobs de backtest ni exposé par l'API.** Le replay et les
+> contrats décrits ci-dessous restent le comportement réel. Voir
+> [`backend/portfolio-simulation-engine-v1.md`](backend/portfolio-simulation-engine-v1.md).
 
 ## Architecture et causalité
 

@@ -39,9 +39,11 @@ La Phase 6.1 a produit la conception
 [`BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md`](BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md)
 et l'ADR proposé
 [`adr/ADR-portfolio-backtest-v1.md`](adr/ADR-portfolio-backtest-v1.md).
-**Le simulateur de portefeuille est conçu mais pas encore implémenté.** Ces
-documents décrivent une cible additive; ils ne modifient pas l'état runtime
-présenté ici.
+**Le moteur de portefeuille pur est implémenté et testé sous
+`backend/app/domain/portfolio/`, mais il n'est pas encore intégré aux jobs de
+backtest ni exposé par l'API.** Sa documentation technique est
+[`backend/portfolio-simulation-engine-v1.md`](backend/portfolio-simulation-engine-v1.md).
+Les contrats publics et le comportement runtime du replay restent inchangés.
 
 ## 3. État Git
 
