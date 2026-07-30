@@ -1,0 +1,1317 @@
+{
+  "aggregate": {
+    "R0": {
+      "additional_trade_datasets": {},
+      "funnel": {
+        "accepted": 4,
+        "all_non_rsi_pass": 56,
+        "false_to_true": 3,
+        "first_rejection_stages": {
+          "none": 4,
+          "rsi": 2348,
+          "trend": 243
+        },
+        "observations": 2595,
+        "rejected": 2591,
+        "rejection_overlaps": {
+          "rsi+confluence": 721,
+          "rsi+multiple": 1552,
+          "rsi+trend": 23,
+          "rsi_only": 52
+        },
+        "rsi_available": 2595,
+        "rsi_fail": 2348,
+        "rsi_insufficient": 0,
+        "rsi_invalid": 0,
+        "rsi_only_rejections": 52,
+        "rsi_pass": 247,
+        "true_to_false": 3
+      },
+      "metrics": {
+        "average_trade_return": "-0.00924634338022711802595919682",
+        "exposure_ratio_weighted": "0.001541425818882466281310211946",
+        "gross_loss": "-355.874788067270262341583191",
+        "gross_profit": "75.92304995868853361329584",
+        "markets_with_trades": 2,
+        "max_drawdown_ratio": "0.03470345341107547860420153794",
+        "net_profit_sum_non_combinable_accounts": "-279.951738108581728728287351",
+        "net_return_equal_weight_accounts": "-0.00559903476217163457456574702",
+        "profit_factor": "0.2133420306929328166964616675",
+        "top_5_profit_concentration": "1",
+        "total_fees": "59.87167428174496850173807778",
+        "trade_count": 3,
+        "win_rate": "0.3333333333333333333333333333"
+      }
+    }
+  },
+  "baseline_fingerprint": "sha256:7a35c7442778828cd207b6fbaee4a6d8390d6bb8fcb7d79751030d433b44a1b6",
+  "conclusion": "no_variant_increased_sample_enough",
+  "datasets": [
+    {
+      "dataset": {
+        "end": "2025-11-20T04:00:00Z",
+        "observations": 1476,
+        "start": "2025-03-19T08:00:00Z",
+        "symbol": "BTC/USDC",
+        "timeframe": "4h"
+      },
+      "variants": {
+        "R0": {
+          "accepted_without_distinct_entry": 1,
+          "funnel": {
+            "accepted": 3,
+            "accepted_sequences": {
+              "count": 2,
+              "maximum": "2",
+              "median": "1.5",
+              "minimum": "1",
+              "q10": "1",
+              "q25": "1",
+              "q75": "1",
+              "q90": "1",
+              "sequence_count": 2
+            },
+            "all_non_rsi_pass": 47,
+            "false_to_true": 2,
+            "first_rejection_stages": {
+              "none": 3,
+              "rsi": 1321,
+              "trend": 152
+            },
+            "observations": 1476,
+            "rejected": 1473,
+            "rejection_overlaps": {
+              "rsi+confluence": 570,
+              "rsi+multiple": 688,
+              "rsi+trend": 19,
+              "rsi_only": 44
+            },
+            "rsi_available": 1476,
+            "rsi_fail": 1321,
+            "rsi_insufficient": 0,
+            "rsi_invalid": 0,
+            "rsi_only_rejections": 44,
+            "rsi_pass": 155,
+            "true_to_false": 2
+          },
+          "metrics": {
+            "average_loss": "-339.93417174888815874631176",
+            "average_trade_duration": "1.5",
+            "average_trade_return": "-0.01307248425442157185917522368",
+            "average_win": "75.92304995868853361329584",
+            "breakeven_trade_count": 0,
+            "exposure_ratio": "0.002032520325203252032520325203",
+            "final_cash": "9735.98887820980037486698408",
+            "final_equity": "9735.98887820980037486698408",
+            "gross_loss": "-339.93417174888815874631176",
+            "gross_profit": "75.92304995868853361329584",
+            "initial_capital": "10000",
+            "largest_loss": "-339.93417174888815874631176",
+            "largest_win": "75.92304995868853361329584",
+            "losing_trade_count": 1,
+            "max_drawdown_ratio": "0.03470345341107547860420153794",
+            "net_profit": "-264.01112179019962513301592",
+            "open_position_count": 0,
+            "profit_factor": "0.2233463307559836672339200956",
+            "realized_pnl": "-264.01112179019962513301592",
+            "total_fees": "39.88761085461624185871030146",
+            "total_return_ratio": "-0.026401112179019962513301592",
+            "trade_count": 2,
+            "unrealized_pnl": "0",
+            "win_rate": "0.5",
+            "winning_trade_count": 1
+          },
+          "newly_accepted_outcomes": {
+            "by_horizon": {
+              "1": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "12": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "24": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "3": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "6": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              }
+            },
+            "newly_accepted_observation_count": 0,
+            "note": "outcomes indépendants; jamais sommés ni utilisés comme P&L"
+          },
+          "orders": {
+            "cancelled_count": 0,
+            "executed_count": 4,
+            "order_count": 4,
+            "pending_count": 0,
+            "rejected_count": 0,
+            "rejection_reasons": {}
+          },
+          "profit_concentration": {
+            "best_1": {
+              "pnl": "75.92304995868853361329584",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "-0.2875751954837035896852219745"
+            },
+            "best_10_percent": {
+              "pnl": "75.92304995868853361329584",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "-0.2875751954837035896852219745"
+            },
+            "best_3": {
+              "pnl": "-264.01112179019962513301592",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "1"
+            },
+            "best_5": {
+              "pnl": "-264.01112179019962513301592",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "1"
+            },
+            "total_pnl": "-264.01112179019962513301592",
+            "worst_1": {
+              "pnl": "-339.93417174888815874631176",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "1.287575195483703589685221975"
+            },
+            "worst_10_percent": {
+              "pnl": "-339.93417174888815874631176",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "1.287575195483703589685221975"
+            },
+            "worst_3": {
+              "pnl": "-264.01112179019962513301592",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "1"
+            },
+            "worst_5": {
+              "pnl": "-264.01112179019962513301592",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "1"
+            }
+          },
+          "rsi_distribution": {
+            "accepted": {
+              "count": 3,
+              "maximum": "32.28",
+              "median": "31.89",
+              "minimum": "29.51",
+              "q10": "29.51",
+              "q25": "29.51",
+              "q75": "31.89",
+              "q90": "31.89"
+            },
+            "all": {
+              "count": 1476,
+              "maximum": "85.37",
+              "median": "50.9",
+              "minimum": "18.92",
+              "q10": "34.79",
+              "q25": "42.87",
+              "q75": "59.55",
+              "q90": "67.46"
+            },
+            "entries": {
+              "count": 2,
+              "maximum": "32.28",
+              "median": "30.895",
+              "minimum": "29.51",
+              "q10": "29.51",
+              "q25": "29.51",
+              "q75": "29.51",
+              "q90": "29.51"
+            },
+            "losing_entries": {
+              "count": 1,
+              "maximum": "29.51",
+              "median": "29.51",
+              "minimum": "29.51",
+              "q10": "29.51",
+              "q25": "29.51",
+              "q75": "29.51",
+              "q90": "29.51"
+            },
+            "rejected_by_rsi": {
+              "count": 1321,
+              "maximum": "85.37",
+              "median": "52.66",
+              "minimum": "35.04",
+              "q10": "40.36",
+              "q25": "45.82",
+              "q75": "60.57",
+              "q90": "68.17"
+            },
+            "winning_entries": {
+              "count": 1,
+              "maximum": "32.28",
+              "median": "32.28",
+              "minimum": "32.28",
+              "q10": "32.28",
+              "q25": "32.28",
+              "q75": "32.28",
+              "q90": "32.28"
+            }
+          },
+          "trade_comparison": {
+            "additional_count": 0,
+            "additional_trades": [],
+            "common_count": 2,
+            "disappeared_count": 0,
+            "disappeared_trade_keys": [],
+            "sequence_note": "clés exactes entrée/sortie/raison; les différences incluent les effets de séquence et de position unique"
+          },
+          "trade_duration": {
+            "additional": {
+              "count": 0
+            },
+            "all": {
+              "count": 2,
+              "maximum": "2",
+              "median": "1.5",
+              "minimum": "1",
+              "q10": "1",
+              "q25": "1",
+              "q75": "1",
+              "q90": "1"
+            },
+            "by_exit_reason": {
+              "validation_lost": {
+                "count": 2,
+                "maximum": "2",
+                "median": "1.5",
+                "minimum": "1",
+                "q10": "1",
+                "q25": "1",
+                "q75": "1",
+                "q90": "1"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "dataset": {
+        "end": "2021-12-26T00:00:00Z",
+        "observations": 277,
+        "start": "2021-03-25T00:00:00Z",
+        "symbol": "BTC/USDC",
+        "timeframe": "1d"
+      },
+      "variants": {
+        "R0": {
+          "accepted_without_distinct_entry": 0,
+          "funnel": {
+            "accepted": 0,
+            "accepted_sequences": {
+              "count": 0,
+              "sequence_count": 0
+            },
+            "all_non_rsi_pass": 8,
+            "false_to_true": 0,
+            "first_rejection_stages": {
+              "rsi": 251,
+              "trend": 26
+            },
+            "observations": 277,
+            "rejected": 277,
+            "rejection_overlaps": {
+              "rsi+confluence": 88,
+              "rsi+multiple": 154,
+              "rsi+trend": 1,
+              "rsi_only": 8
+            },
+            "rsi_available": 277,
+            "rsi_fail": 251,
+            "rsi_insufficient": 0,
+            "rsi_invalid": 0,
+            "rsi_only_rejections": 8,
+            "rsi_pass": 26,
+            "true_to_false": 0
+          },
+          "metrics": {
+            "average_loss": null,
+            "average_trade_duration": null,
+            "average_trade_return": null,
+            "average_win": null,
+            "breakeven_trade_count": 0,
+            "exposure_ratio": "0",
+            "final_cash": "10000",
+            "final_equity": "10000",
+            "gross_loss": "0",
+            "gross_profit": "0",
+            "initial_capital": "10000",
+            "largest_loss": null,
+            "largest_win": null,
+            "losing_trade_count": 0,
+            "max_drawdown_ratio": "0",
+            "net_profit": "0",
+            "open_position_count": 0,
+            "profit_factor": null,
+            "realized_pnl": "0",
+            "total_fees": "0",
+            "total_return_ratio": "0",
+            "trade_count": 0,
+            "unrealized_pnl": "0",
+            "win_rate": null,
+            "winning_trade_count": 0
+          },
+          "newly_accepted_outcomes": {
+            "by_horizon": {
+              "1": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "12": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "24": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "3": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "6": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              }
+            },
+            "newly_accepted_observation_count": 0,
+            "note": "outcomes indépendants; jamais sommés ni utilisés comme P&L"
+          },
+          "orders": {
+            "cancelled_count": 0,
+            "executed_count": 0,
+            "order_count": 0,
+            "pending_count": 0,
+            "rejected_count": 0,
+            "rejection_reasons": {}
+          },
+          "profit_concentration": {
+            "best_1": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "best_10_percent": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "best_3": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "best_5": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "total_pnl": "0",
+            "worst_1": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "worst_10_percent": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "worst_3": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "worst_5": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            }
+          },
+          "rsi_distribution": {
+            "accepted": {
+              "count": 0
+            },
+            "all": {
+              "count": 277,
+              "maximum": "78.28",
+              "median": "49.25",
+              "minimum": "22.89",
+              "q10": "35.4",
+              "q25": "41.28",
+              "q75": "59.9",
+              "q90": "67.74"
+            },
+            "entries": {
+              "count": 0
+            },
+            "losing_entries": {
+              "count": 0
+            },
+            "rejected_by_rsi": {
+              "count": 251,
+              "maximum": "78.28",
+              "median": "52.02",
+              "minimum": "35.21",
+              "q10": "38.57",
+              "q25": "43.78",
+              "q75": "60.29",
+              "q90": "68.17"
+            },
+            "winning_entries": {
+              "count": 0
+            }
+          },
+          "trade_comparison": {
+            "additional_count": 0,
+            "additional_trades": [],
+            "common_count": 0,
+            "disappeared_count": 0,
+            "disappeared_trade_keys": [],
+            "sequence_note": "clés exactes entrée/sortie/raison; les différences incluent les effets de séquence et de position unique"
+          },
+          "trade_duration": {
+            "additional": {
+              "count": 0
+            },
+            "all": {
+              "count": 0
+            },
+            "by_exit_reason": {}
+          }
+        }
+      }
+    },
+    {
+      "dataset": {
+        "end": "2026-06-14T00:00:00Z",
+        "observations": 242,
+        "start": "2026-05-04T20:00:00Z",
+        "symbol": "LINK/USDC",
+        "timeframe": "4h"
+      },
+      "variants": {
+        "R0": {
+          "accepted_without_distinct_entry": 0,
+          "funnel": {
+            "accepted": 0,
+            "accepted_sequences": {
+              "count": 0,
+              "sequence_count": 0
+            },
+            "all_non_rsi_pass": 0,
+            "false_to_true": 0,
+            "first_rejection_stages": {
+              "rsi": 201,
+              "trend": 41
+            },
+            "observations": 242,
+            "rejected": 242,
+            "rejection_overlaps": {
+              "rsi+multiple": 201
+            },
+            "rsi_available": 242,
+            "rsi_fail": 201,
+            "rsi_insufficient": 0,
+            "rsi_invalid": 0,
+            "rsi_only_rejections": 0,
+            "rsi_pass": 41,
+            "true_to_false": 0
+          },
+          "metrics": {
+            "average_loss": null,
+            "average_trade_duration": null,
+            "average_trade_return": null,
+            "average_win": null,
+            "breakeven_trade_count": 0,
+            "exposure_ratio": "0",
+            "final_cash": "10000",
+            "final_equity": "10000",
+            "gross_loss": "0",
+            "gross_profit": "0",
+            "initial_capital": "10000",
+            "largest_loss": null,
+            "largest_win": null,
+            "losing_trade_count": 0,
+            "max_drawdown_ratio": "0",
+            "net_profit": "0",
+            "open_position_count": 0,
+            "profit_factor": null,
+            "realized_pnl": "0",
+            "total_fees": "0",
+            "total_return_ratio": "0",
+            "trade_count": 0,
+            "unrealized_pnl": "0",
+            "win_rate": null,
+            "winning_trade_count": 0
+          },
+          "newly_accepted_outcomes": {
+            "by_horizon": {
+              "1": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "12": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "24": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "3": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "6": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              }
+            },
+            "newly_accepted_observation_count": 0,
+            "note": "outcomes indépendants; jamais sommés ni utilisés comme P&L"
+          },
+          "orders": {
+            "cancelled_count": 0,
+            "executed_count": 0,
+            "order_count": 0,
+            "pending_count": 0,
+            "rejected_count": 0,
+            "rejection_reasons": {}
+          },
+          "profit_concentration": {
+            "best_1": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "best_10_percent": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "best_3": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "best_5": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "total_pnl": "0",
+            "worst_1": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "worst_10_percent": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "worst_3": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "worst_5": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            }
+          },
+          "rsi_distribution": {
+            "accepted": {
+              "count": 0
+            },
+            "all": {
+              "count": 242,
+              "maximum": "84.94",
+              "median": "47.97",
+              "minimum": "20.3",
+              "q10": "30.83",
+              "q25": "38.77",
+              "q75": "54.37",
+              "q90": "64.13"
+            },
+            "entries": {
+              "count": 0
+            },
+            "losing_entries": {
+              "count": 0
+            },
+            "rejected_by_rsi": {
+              "count": 201,
+              "maximum": "84.94",
+              "median": "49.93",
+              "minimum": "35.05",
+              "q10": "39.03",
+              "q25": "43.76",
+              "q75": "56.17",
+              "q90": "66.85"
+            },
+            "winning_entries": {
+              "count": 0
+            }
+          },
+          "trade_comparison": {
+            "additional_count": 0,
+            "additional_trades": [],
+            "common_count": 0,
+            "disappeared_count": 0,
+            "disappeared_trade_keys": [],
+            "sequence_note": "clés exactes entrée/sortie/raison; les différences incluent les effets de séquence et de position unique"
+          },
+          "trade_duration": {
+            "additional": {
+              "count": 0
+            },
+            "all": {
+              "count": 0
+            },
+            "by_exit_reason": {}
+          }
+        }
+      }
+    },
+    {
+      "dataset": {
+        "end": "2026-07-11T01:00:00Z",
+        "observations": 300,
+        "start": "2026-06-28T14:00:00Z",
+        "symbol": "ONDO/USDC",
+        "timeframe": "1h"
+      },
+      "variants": {
+        "R0": {
+          "accepted_without_distinct_entry": 0,
+          "funnel": {
+            "accepted": 0,
+            "accepted_sequences": {
+              "count": 0,
+              "sequence_count": 0
+            },
+            "all_non_rsi_pass": 0,
+            "false_to_true": 0,
+            "first_rejection_stages": {
+              "rsi": 291,
+              "trend": 9
+            },
+            "observations": 300,
+            "rejected": 300,
+            "rejection_overlaps": {
+              "rsi+multiple": 288,
+              "rsi+trend": 3
+            },
+            "rsi_available": 300,
+            "rsi_fail": 291,
+            "rsi_insufficient": 0,
+            "rsi_invalid": 0,
+            "rsi_only_rejections": 0,
+            "rsi_pass": 9,
+            "true_to_false": 0
+          },
+          "metrics": {
+            "average_loss": null,
+            "average_trade_duration": null,
+            "average_trade_return": null,
+            "average_win": null,
+            "breakeven_trade_count": 0,
+            "exposure_ratio": "0",
+            "final_cash": "10000",
+            "final_equity": "10000",
+            "gross_loss": "0",
+            "gross_profit": "0",
+            "initial_capital": "10000",
+            "largest_loss": null,
+            "largest_win": null,
+            "losing_trade_count": 0,
+            "max_drawdown_ratio": "0",
+            "net_profit": "0",
+            "open_position_count": 0,
+            "profit_factor": null,
+            "realized_pnl": "0",
+            "total_fees": "0",
+            "total_return_ratio": "0",
+            "trade_count": 0,
+            "unrealized_pnl": "0",
+            "win_rate": null,
+            "winning_trade_count": 0
+          },
+          "newly_accepted_outcomes": {
+            "by_horizon": {
+              "1": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "12": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "24": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "3": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "6": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              }
+            },
+            "newly_accepted_observation_count": 0,
+            "note": "outcomes indépendants; jamais sommés ni utilisés comme P&L"
+          },
+          "orders": {
+            "cancelled_count": 0,
+            "executed_count": 0,
+            "order_count": 0,
+            "pending_count": 0,
+            "rejected_count": 0,
+            "rejection_reasons": {}
+          },
+          "profit_concentration": {
+            "best_1": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "best_10_percent": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "best_3": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "best_5": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "total_pnl": "0",
+            "worst_1": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "worst_10_percent": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "worst_3": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            },
+            "worst_5": {
+              "pnl": "0",
+              "share_interpretation": "undefined_zero_total",
+              "share_of_total": null
+            }
+          },
+          "rsi_distribution": {
+            "accepted": {
+              "count": 0
+            },
+            "all": {
+              "count": 300,
+              "maximum": "75.96",
+              "median": "51.175",
+              "minimum": "30.48",
+              "q10": "39.2",
+              "q25": "44.42",
+              "q75": "58",
+              "q90": "63.55"
+            },
+            "entries": {
+              "count": 0
+            },
+            "losing_entries": {
+              "count": 0
+            },
+            "rejected_by_rsi": {
+              "count": 291,
+              "maximum": "75.96",
+              "median": "51.25",
+              "minimum": "35.36",
+              "q10": "39.81",
+              "q25": "45.57",
+              "q75": "58.12",
+              "q90": "63.58"
+            },
+            "winning_entries": {
+              "count": 0
+            }
+          },
+          "trade_comparison": {
+            "additional_count": 0,
+            "additional_trades": [],
+            "common_count": 0,
+            "disappeared_count": 0,
+            "disappeared_trade_keys": [],
+            "sequence_note": "clés exactes entrée/sortie/raison; les différences incluent les effets de séquence et de position unique"
+          },
+          "trade_duration": {
+            "additional": {
+              "count": 0
+            },
+            "all": {
+              "count": 0
+            },
+            "by_exit_reason": {}
+          }
+        }
+      }
+    },
+    {
+      "dataset": {
+        "end": "2026-07-12T02:00:00Z",
+        "observations": 300,
+        "start": "2026-06-29T15:00:00Z",
+        "symbol": "SUI/USDC",
+        "timeframe": "1h"
+      },
+      "variants": {
+        "R0": {
+          "accepted_without_distinct_entry": 0,
+          "funnel": {
+            "accepted": 1,
+            "accepted_sequences": {
+              "count": 1,
+              "maximum": "1",
+              "median": "1",
+              "minimum": "1",
+              "q10": "1",
+              "q25": "1",
+              "q75": "1",
+              "q90": "1",
+              "sequence_count": 1
+            },
+            "all_non_rsi_pass": 1,
+            "false_to_true": 1,
+            "first_rejection_stages": {
+              "none": 1,
+              "rsi": 284,
+              "trend": 15
+            },
+            "observations": 300,
+            "rejected": 299,
+            "rejection_overlaps": {
+              "rsi+confluence": 63,
+              "rsi+multiple": 221
+            },
+            "rsi_available": 300,
+            "rsi_fail": 284,
+            "rsi_insufficient": 0,
+            "rsi_invalid": 0,
+            "rsi_only_rejections": 0,
+            "rsi_pass": 16,
+            "true_to_false": 1
+          },
+          "metrics": {
+            "average_loss": "-15.940616318382103595271431",
+            "average_trade_duration": "1",
+            "average_trade_return": "-0.0015940616318382103595271431",
+            "average_win": null,
+            "breakeven_trade_count": 0,
+            "exposure_ratio": "0.003333333333333333333333333333",
+            "final_cash": "9984.059383681617896404728569",
+            "final_equity": "9984.059383681617896404728569",
+            "gross_loss": "-15.940616318382103595271431",
+            "gross_profit": "0",
+            "initial_capital": "10000",
+            "largest_loss": "-15.940616318382103595271431",
+            "largest_win": null,
+            "losing_trade_count": 1,
+            "max_drawdown_ratio": "0.0015940616318382103595271431",
+            "net_profit": "-15.940616318382103595271431",
+            "open_position_count": 0,
+            "profit_factor": "0",
+            "realized_pnl": "-15.940616318382103595271431",
+            "total_fees": "19.98406342712872664302777632",
+            "total_return_ratio": "-0.0015940616318382103595271431",
+            "trade_count": 1,
+            "unrealized_pnl": "0",
+            "win_rate": "0",
+            "winning_trade_count": 0
+          },
+          "newly_accepted_outcomes": {
+            "by_horizon": {
+              "1": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "12": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "24": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "3": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              },
+              "6": {
+                "count": 0,
+                "mae": {
+                  "count": 0
+                },
+                "mean": null,
+                "mfe": {
+                  "count": 0
+                },
+                "positive_ratio": null
+              }
+            },
+            "newly_accepted_observation_count": 0,
+            "note": "outcomes indépendants; jamais sommés ni utilisés comme P&L"
+          },
+          "orders": {
+            "cancelled_count": 0,
+            "executed_count": 2,
+            "order_count": 2,
+            "pending_count": 0,
+            "rejected_count": 0,
+            "rejection_reasons": {}
+          },
+          "profit_concentration": {
+            "best_1": {
+              "pnl": "-15.940616318382103595271431",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "1"
+            },
+            "best_10_percent": {
+              "pnl": "-15.940616318382103595271431",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "1"
+            },
+            "best_3": {
+              "pnl": "-15.940616318382103595271431",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "1"
+            },
+            "best_5": {
+              "pnl": "-15.940616318382103595271431",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "1"
+            },
+            "total_pnl": "-15.940616318382103595271431",
+            "worst_1": {
+              "pnl": "-15.940616318382103595271431",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "1"
+            },
+            "worst_10_percent": {
+              "pnl": "-15.940616318382103595271431",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "1"
+            },
+            "worst_3": {
+              "pnl": "-15.940616318382103595271431",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "1"
+            },
+            "worst_5": {
+              "pnl": "-15.940616318382103595271431",
+              "share_interpretation": "signed_against_non_positive_total",
+              "share_of_total": "1"
+            }
+          },
+          "rsi_distribution": {
+            "accepted": {
+              "count": 1,
+              "maximum": "34.84",
+              "median": "34.84",
+              "minimum": "34.84",
+              "q10": "34.84",
+              "q25": "34.84",
+              "q75": "34.84",
+              "q90": "34.84"
+            },
+            "all": {
+              "count": 300,
+              "maximum": "77.21",
+              "median": "53.605",
+              "minimum": "28.42",
+              "q10": "37.49",
+              "q25": "46.35",
+              "q75": "60.39",
+              "q90": "64.91"
+            },
+            "entries": {
+              "count": 1,
+              "maximum": "34.84",
+              "median": "34.84",
+              "minimum": "34.84",
+              "q10": "34.84",
+              "q25": "34.84",
+              "q75": "34.84",
+              "q90": "34.84"
+            },
+            "losing_entries": {
+              "count": 1,
+              "maximum": "34.84",
+              "median": "34.84",
+              "minimum": "34.84",
+              "q10": "34.84",
+              "q25": "34.84",
+              "q75": "34.84",
+              "q90": "34.84"
+            },
+            "rejected_by_rsi": {
+              "count": 284,
+              "maximum": "77.21",
+              "median": "54.05",
+              "minimum": "35.03",
+              "q10": "40.89",
+              "q25": "47.73",
+              "q75": "60.7",
+              "q90": "65.01"
+            },
+            "winning_entries": {
+              "count": 0
+            }
+          },
+          "trade_comparison": {
+            "additional_count": 0,
+            "additional_trades": [],
+            "common_count": 1,
+            "disappeared_count": 0,
+            "disappeared_trade_keys": [],
+            "sequence_note": "clés exactes entrée/sortie/raison; les différences incluent les effets de séquence et de position unique"
+          },
+          "trade_duration": {
+            "additional": {
+              "count": 0
+            },
+            "all": {
+              "count": 1,
+              "maximum": "1",
+              "median": "1",
+              "minimum": "1",
+              "q10": "1",
+              "q25": "1",
+              "q75": "1",
+              "q90": "1"
+            },
+            "by_exit_reason": {
+              "validation_lost": {
+                "count": 1,
+                "maximum": "1",
+                "median": "1",
+                "minimum": "1",
+                "q10": "1",
+                "q25": "1",
+                "q75": "1",
+                "q90": "1"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "duration_seconds": "2.446528",
+  "manifest_hash": "sha256:e928998ad8f71429f85db51d3975dc6c46ec3a62f868ba407e5080f84f18ad64",
+  "mode": "full",
+  "selected_variant": null,
+  "stage": "validation",
+  "validation_decisions": {
+    "R0": []
+  },
+  "variants_executed": [
+    "R0"
+  ],
+  "version": "rsi-filter-experiment-v1"
+}

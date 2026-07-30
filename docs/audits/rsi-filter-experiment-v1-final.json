@@ -1,0 +1,12 @@
+{
+  "aggregate": {},
+  "baseline_fingerprint": "sha256:7a35c7442778828cd207b6fbaee4a6d8390d6bb8fcb7d79751030d433b44a1b6",
+  "conclusion": "no_variant_increased_sample_enough",
+  "manifest_hash": "sha256:e928998ad8f71429f85db51d3975dc6c46ec3a62f868ba407e5080f84f18ad64",
+  "reason": "aucune variante survivante issue de la validation",
+  "selected_variant": null,
+  "stage": "final-test",
+  "status": "not_opened",
+  "variants_executed": [],
+  "version": "rsi-filter-experiment-v1"
+}

@@ -1338,3 +1338,43 @@ Limites : presque toutes les données sont cotées en USDC, la plupart des 851
 combinaisons ont un historique trop court, les résultats ne se généralisent pas
 entre marchés/timeframes et les ablations/corrélations existantes restent des
 analyses d'outcomes descriptives, non un P&L de portefeuille.
+
+## 46. Phase 7.2 — expérience isolée du filtre RSI
+
+L'hypothèse préenregistrée teste uniquement si le prédicat de production
+`RSI < 35` est trop restrictif. Le RSI Wilder/EWM, sa période 14, ses statuts,
+son signal structuré et tous les autres indicateurs/filtres restent inchangés.
+Les variantes internes sont R0 `<35`, R1 `<40`, R2 `<45` et R3 sans prédicat de
+valeur mais exigeant toujours un RSI fini et `available`.
+
+Le manifeste est
+`docs/audits/rsi-filter-experiment-v1-plan.md`, hash
+`sha256:e928998ad8f71429f85db51d3975dc6c46ec3a62f868ba407e5080f84f18ad64`.
+Il réutilise les cinq datasets et les segments 60/20/20 exacts de la Phase 7.1.
+La baseline full est reproduite : 12 973 observations, 33 accepted, transitions
+22/22, 44 ordres exécutés, zéro rejet opérationnel et 22 trades.
+
+Sur les 7 782 observations de développement :
+
+- R0 produit 29 accepted et 19 trades ;
+- R1 produit 36 accepted et 24 trades, mais reste sous le seuil de 38 trades,
+  ne crée des trades que sur BTC/USDC 4h et dépasse 80 % de concentration top-5 ;
+- R2 produit 42 accepted et 28 trades, avec les mêmes échecs ;
+- R3 produit 211 accepted et 197 trades sur deux plages, mais son drawdown
+  maximal atteint 33,2200 % contre 3,6952 % pour R0 ; les frais cumulés montent
+  à 3 391,60 unités de cotation et la variante est éliminée.
+
+Aucune variante ne survit. La validation exécute donc seulement R0 sur 2 595
+observations (4 accepted, 3 trades) et aucune sélection n'est créée. Le test
+final gelé n'est pas ouvert ; `rsi-filter-experiment-v1-final.json` enregistre
+explicitement ce statut sans métrique finale.
+
+Conclusion catégorisée :
+`no_variant_increased_sample_enough`. R1/R2 n'augmentent pas assez l'échantillon
+et ne se généralisent pas ; R3 confirme que retirer le goulot peut multiplier les
+trades mais dégrade manifestement le risque et les coûts. La production demeure
+inchangée. Aucune Phase 7.3 d'assouplissement RSI n'est recommandée.
+
+Limites : cinq plages majoritairement USDC, R1/R2 concentrées sur BTC 4h,
+échantillons faibles et aucun test final ouvert. Les outcomes restent
+descriptifs et indépendants du P&L de portefeuille.
