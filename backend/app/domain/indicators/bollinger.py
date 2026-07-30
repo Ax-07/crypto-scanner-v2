@@ -9,6 +9,7 @@ import pandas as pd
 from app.domain.indicators.moving_averages import calculate_sma
 from app.domain.indicators.types import (
     BollingerPosition,
+    IndicatorComponent,
     IndicatorSignal,
     SignalDirection,
     _clamp_strength,
@@ -17,10 +18,84 @@ from app.domain.indicators.types import (
 
 __all__ = [
     "calculate_bollinger_bands",
+    "calculate_bollinger_band_width",
     "detect_bollinger_signal",
     "is_bollinger_degenerate",
     "build_bollinger_signal",
 ]
+
+
+def calculate_bollinger_band_width(
+    close: pd.Series,
+    bands: dict[str, pd.Series],
+) -> dict[str, pd.Series]:
+    """Dérive largeur et position des bandes déjà calculées, sans les recalculer."""
+    frame = pd.concat(
+        [
+            close.astype(float).rename("close"),
+            bands["upper"].astype(float).rename("upper"),
+            bands["middle"].astype(float).rename("middle"),
+            bands["lower"].astype(float).rename("lower"),
+        ],
+        axis=1,
+    )
+    width = (frame["upper"] - frame["lower"]).rename("band_width")
+    width_percent = pd.Series(float("nan"), index=frame.index, dtype=float)
+    valid_middle = frame["middle"].map(math.isfinite) & (frame["middle"] > 0)
+    width_percent.loc[valid_middle] = (
+        100.0 * width.loc[valid_middle] / frame.loc[valid_middle, "middle"]
+    )
+    position = pd.Series(float("nan"), index=frame.index, dtype=float)
+    positive_width = width.map(math.isfinite) & (width > 0)
+    position.loc[positive_width] = (
+        frame.loc[positive_width, "close"] - frame.loc[positive_width, "lower"]
+    ) / width.loc[positive_width]
+    constant = width.map(math.isfinite) & (width.abs() <= 1e-12)
+    position.loc[constant] = 0.5
+    return {
+        "middle_band": frame["middle"],
+        "upper_band": frame["upper"],
+        "lower_band": frame["lower"],
+        "band_width": width,
+        "band_width_percent": width_percent.rename("band_width_percent"),
+        "band_position": position.rename("band_position"),
+    }
+
+
+def _bollinger_components(
+    close: pd.Series,
+    bands: dict[str, pd.Series],
+) -> dict[str, IndicatorComponent] | None:
+    if not {"upper", "middle", "lower"} <= set(bands):
+        return None
+    derived = calculate_bollinger_band_width(close, bands)
+    values = {name: float(series.iloc[-1]) for name, series in derived.items()}
+    if not all(math.isfinite(value) for value in values.values()):
+        return None
+    return {
+        "middle_band": IndicatorComponent(
+            value=values["middle_band"], normalized_value=None, unit="price"
+        ),
+        "upper_band": IndicatorComponent(
+            value=values["upper_band"], normalized_value=None, unit="price"
+        ),
+        "lower_band": IndicatorComponent(
+            value=values["lower_band"], normalized_value=None, unit="price"
+        ),
+        "band_width": IndicatorComponent(
+            value=values["band_width"], normalized_value=None, unit="price"
+        ),
+        "band_width_percent": IndicatorComponent(
+            value=values["band_width_percent"],
+            normalized_value=values["band_width_percent"] / 100.0,
+            unit="percent",
+        ),
+        "band_position": IndicatorComponent(
+            value=values["band_position"],
+            normalized_value=values["band_position"],
+            unit="ratio",
+        ),
+    }
 
 
 def calculate_bollinger_bands(
@@ -177,8 +252,9 @@ def build_bollinger_signal(close: pd.Series, bands: dict[str, pd.Series]) -> Ind
         elif was_above and not is_above:
             event = "upper_band_reentry"
 
+    components = _bollinger_components(close, bands)
     if event == "lower_band_breakout":
-        return IndicatorSignal(
+        result = IndicatorSignal(
             status="available",
             direction="bearish",
             signal=event,
@@ -187,8 +263,8 @@ def build_bollinger_signal(close: pd.Series, bands: dict[str, pd.Series]) -> Ind
             reason="Cassure sous la bande basse: pression vendeuse",
             raw_value=current_close,
         )
-    if event == "lower_band_reentry":
-        return IndicatorSignal(
+    elif event == "lower_band_reentry":
+        result = IndicatorSignal(
             status="available",
             direction="bullish",
             signal=event,
@@ -197,8 +273,8 @@ def build_bollinger_signal(close: pd.Series, bands: dict[str, pd.Series]) -> Ind
             reason="Réintégration au-dessus de la bande basse: rebond potentiel",
             raw_value=current_close,
         )
-    if event == "upper_band_breakout":
-        return IndicatorSignal(
+    elif event == "upper_band_breakout":
+        result = IndicatorSignal(
             status="available",
             direction="bullish",
             signal=event,
@@ -207,8 +283,8 @@ def build_bollinger_signal(close: pd.Series, bands: dict[str, pd.Series]) -> Ind
             reason="Cassure au-dessus de la bande haute: pression acheteuse",
             raw_value=current_close,
         )
-    if event == "upper_band_reentry":
-        return IndicatorSignal(
+    elif event == "upper_band_reentry":
+        result = IndicatorSignal(
             status="available",
             direction="bearish",
             signal=event,
@@ -217,12 +293,16 @@ def build_bollinger_signal(close: pd.Series, bands: dict[str, pd.Series]) -> Ind
             reason="Réintégration sous la bande haute: essoufflement potentiel",
             raw_value=current_close,
         )
-    return IndicatorSignal(
-        status="available",
-        direction=_BOLLINGER_STATE_DIRECTION[current_position],
-        signal=current_position,
-        state=current_position,
-        strength=_clamp_strength(_BOLLINGER_STATE_STRENGTH[current_position]),
-        reason=f"Position Bollinger courante: {current_position}",
-        raw_value=current_close,
-    )
+    else:
+        result = IndicatorSignal(
+            status="available",
+            direction=_BOLLINGER_STATE_DIRECTION[current_position],
+            signal=current_position,
+            state=current_position,
+            strength=_clamp_strength(_BOLLINGER_STATE_STRENGTH[current_position]),
+            reason=f"Position Bollinger courante: {current_position}",
+            raw_value=current_close,
+        )
+    if components is not None:
+        result["components"] = components
+    return result

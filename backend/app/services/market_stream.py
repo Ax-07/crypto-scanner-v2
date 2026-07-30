@@ -17,7 +17,10 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from app.core.settings import MarketIndicatorConfig
 from app.domain.candles import candle_from_ohlcv, is_candle_closed, timeframe_seconds
-from app.domain.indicator_bundle import build_indicator_signals
+from app.domain.indicator_bundle import (
+    build_indicator_signals,
+    calculate_extended_indicator_bundle,
+)
 from app.domain.indicators import (
     calculate_bollinger_bands,
     calculate_confluence_score,
@@ -225,6 +228,34 @@ def calculate_indicator_bundle(
             k_period=profile.stochastic_k_period,
             d_period=profile.stochastic_d_period,
         )
+    atr_config = profile.atr
+    adx_config = profile.adx
+    supertrend_config = profile.supertrend
+    donchian_config = profile.donchian
+    keltner_config = profile.keltner
+    extended_data, extended_signals = calculate_extended_indicator_bundle(
+        high=high,
+        low=low,
+        close=close,
+        use_atr=bool(atr_config and atr_config.enabled),
+        atr_period=atr_config.period if atr_config else 14,
+        use_adx=bool(adx_config and adx_config.enabled),
+        adx_period=adx_config.period if adx_config else 14,
+        adx_weak_threshold=adx_config.weak_threshold if adx_config else 20,
+        adx_strong_threshold=adx_config.strong_threshold if adx_config else 25,
+        use_supertrend=bool(supertrend_config and supertrend_config.enabled),
+        supertrend_atr_period=supertrend_config.atr_period if supertrend_config else 10,
+        supertrend_multiplier=supertrend_config.multiplier if supertrend_config else 3.0,
+        use_donchian=bool(donchian_config and donchian_config.enabled),
+        donchian_period=donchian_config.period if donchian_config else 20,
+        use_keltner=bool(keltner_config and keltner_config.enabled),
+        keltner_ema_period=keltner_config.ema_period if keltner_config else 20,
+        keltner_atr_period=keltner_config.atr_period if keltner_config else 10,
+        keltner_multiplier=keltner_config.multiplier if keltner_config else 2.0,
+    )
+    if extended_data:
+        bundle["_extended_data"] = extended_data
+        bundle["_extended_signals"] = extended_signals
 
     return dataframe, bundle
 
@@ -417,6 +448,10 @@ def calculate_market_snapshot(
         use_stochastic=profile.use_stochastic,
         stochastic_oversold=profile.stochastic_oversold,
         stochastic_overbought=profile.stochastic_overbought,
+        extended_signals=cast(
+            dict[str, Any] | None,
+            bundle.get("_extended_signals"),
+        ),
     )
     availability = {
         "rsi": (
@@ -457,6 +492,13 @@ def calculate_market_snapshot(
             )
         ),
     }
+    availability.update(
+        {
+            name: signal["status"]
+            for name, signal in indicator_signals.items()
+            if name in {"atr", "adx", "supertrend", "donchian", "keltner"}
+        }
+    )
 
     confluence = calculate_confluence_score(
         rsi_value=rsi_value,
@@ -477,7 +519,9 @@ def calculate_market_snapshot(
             "stochastic_signal": stochastic_signal,
         },
         indicator_signals={
-            name: signal for name, signal in indicator_signals.items() if name not in ("sma", "ema")
+            name: signal
+            for name, signal in indicator_signals.items()
+            if name in {"rsi", "macd", "bollinger", "stochastic"}
         },
     )
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Mapping, TypeAlias, TypedDict
+from typing import Literal, Mapping, NotRequired, TypeAlias, TypedDict
 
 MacdSignal: TypeAlias = Literal["bullish", "bearish", "neutral"]
 BollingerPosition: TypeAlias = Literal[
@@ -26,7 +26,31 @@ SignalEvent: TypeAlias = str
 
 #: Clé d'indicateur reconnue par le module de confluence pour le mode
 #: structuré (:data:`IndicatorSignals`).
-IndicatorName: TypeAlias = Literal["rsi", "sma", "ema", "macd", "bollinger", "stochastic"]
+IndicatorName: TypeAlias = Literal[
+    "rsi",
+    "sma",
+    "ema",
+    "macd",
+    "bollinger",
+    "stochastic",
+    "atr",
+    "adx",
+    "supertrend",
+    "donchian",
+    "keltner",
+]
+
+IndicatorComponentUnit: TypeAlias = Literal[
+    "price", "percent", "ratio", "index", "volume", "unitless"
+]
+
+
+class IndicatorComponent(TypedDict):
+    """Composant numérique nommé d'un indicateur multi-valeurs."""
+
+    value: float | None
+    normalized_value: float | None
+    unit: IndicatorComponentUnit
 
 
 class IndicatorSignal(TypedDict):
@@ -63,6 +87,7 @@ class IndicatorSignal(TypedDict):
     strength: float
     reason: str | None
     raw_value: float | None
+    components: NotRequired[Mapping[str, IndicatorComponent] | None]
 
 
 #: Ensemble des signaux structurés d'un même snapshot d'indicateurs, indexés
@@ -104,5 +129,7 @@ __all__ = [
     "SignalEvent",
     "IndicatorName",
     "IndicatorSignal",
+    "IndicatorComponent",
+    "IndicatorComponentUnit",
     "IndicatorSignals",
 ]

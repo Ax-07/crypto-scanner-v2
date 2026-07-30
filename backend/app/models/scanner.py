@@ -6,18 +6,29 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.settings import ScanConfig
 from app.domain.indicators import (
     Availability,
     BollingerPosition,
     ConfluenceGrade,
+    IndicatorComponentUnit,
     MacdSignal,
     SignalDirection,
     StochasticSignal,
     TrendState,
 )
+
+
+class IndicatorComponentModel(BaseModel):
+    """Valeur nommée, unité explicite et normalisation optionnelle."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    value: float | None = None
+    normalized_value: float | None = None
+    unit: IndicatorComponentUnit
 
 
 class IndicatorSignalModel(BaseModel):
@@ -27,6 +38,8 @@ class IndicatorSignalModel(BaseModel):
     interne.
     """
 
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
     status: Availability
     direction: SignalDirection
     signal: str | None = None
@@ -34,6 +47,7 @@ class IndicatorSignalModel(BaseModel):
     strength: float = Field(ge=0.0, le=1.0)
     reason: str | None = None
     raw_value: float | None = None
+    components: dict[str, IndicatorComponentModel] | None = None
 
 
 class ScanStatus(StrEnum):

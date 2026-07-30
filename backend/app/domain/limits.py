@@ -21,6 +21,16 @@ def primary_ohlcv_limit(config: ScanConfig, *, margin: int = 10) -> int:
         requirements.append(config.bollinger_period + margin)
     if config.use_stochastic:
         requirements.append(config.stochastic_k_period + config.stochastic_d_period + margin)
+    if config.atr is not None and config.atr.enabled:
+        requirements.append(config.atr.period + 1 + margin)
+    if config.adx is not None and config.adx.enabled:
+        requirements.append(2 * config.adx.period - 1 + margin)
+    if config.supertrend is not None and config.supertrend.enabled:
+        requirements.append(config.supertrend.atr_period + margin)
+    if config.donchian is not None and config.donchian.enabled:
+        requirements.append(config.donchian.period + 1 + margin)
+    if config.keltner is not None and config.keltner.enabled:
+        requirements.append(max(config.keltner.ema_period, config.keltner.atr_period) + 1 + margin)
     if config.use_ma and config.timeframe in config.ma_timeframes:
         requirements.append(ma_ohlcv_limit(config, margin=margin))
     return max(requirements)

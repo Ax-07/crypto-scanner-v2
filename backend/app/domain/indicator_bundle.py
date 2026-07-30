@@ -39,14 +39,120 @@ from __future__ import annotations
 
 import pandas as pd
 
+from app.domain.indicators.adx import build_adx_signal, calculate_adx_dmi
+from app.domain.indicators.atr import build_atr_signal, calculate_atr, calculate_natr
 from app.domain.indicators.bollinger import build_bollinger_signal
+from app.domain.indicators.donchian import build_donchian_signal, calculate_donchian_channels
+from app.domain.indicators.keltner import build_keltner_signal, calculate_keltner_channels
+from app.domain.indicators.moving_averages import calculate_ema
 from app.domain.indicators.macd import build_macd_signal
 from app.domain.indicators.moving_averages import detect_moving_average_signal
 from app.domain.indicators.rsi import detect_rsi_signal
 from app.domain.indicators.stochastic import build_stochastic_signal
+from app.domain.indicators.supertrend import build_supertrend_signal, calculate_supertrend
 from app.domain.indicators.types import IndicatorSignal, _unavailable_signal
+from app.domain.indicators.wilder import calculate_true_range
 
-__all__ = ["build_indicator_signals"]
+__all__ = ["build_indicator_signals", "calculate_extended_indicator_bundle"]
+
+
+def calculate_extended_indicator_bundle(
+    *,
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    use_atr: bool = False,
+    atr_period: int = 14,
+    use_adx: bool = False,
+    adx_period: int = 14,
+    adx_weak_threshold: float = 20,
+    adx_strong_threshold: float = 25,
+    use_supertrend: bool = False,
+    supertrend_atr_period: int = 10,
+    supertrend_multiplier: float = 3.0,
+    use_donchian: bool = False,
+    donchian_period: int = 20,
+    use_keltner: bool = False,
+    keltner_ema_period: int = 20,
+    keltner_atr_period: int = 10,
+    keltner_multiplier: float = 2.0,
+) -> tuple[dict[str, dict[str, pd.Series]], dict[str, IndicatorSignal]]:
+    """Calcule une seule fois les primitives communes et construit les signaux.
+
+    Le True Range est mutualisé. L'ATR public et l'ATR interne de Supertrend
+    partagent aussi leur série lorsque leurs périodes sont identiques.
+    """
+    if not any((use_atr, use_adx, use_supertrend, use_donchian, use_keltner)):
+        return {}, {}
+    true_range = calculate_true_range(high, low, close)
+    data: dict[str, dict[str, pd.Series]] = {}
+    atr_by_period: dict[int, dict[str, pd.Series]] = {}
+
+    def atr_for(period: int) -> dict[str, pd.Series]:
+        if period not in atr_by_period:
+            atr_by_period[period] = calculate_atr(
+                high,
+                low,
+                close,
+                period,
+                true_range=true_range,
+            )
+            atr_by_period[period]["natr"] = calculate_natr(
+                atr_by_period[period]["atr"],
+                close,
+            )
+        return atr_by_period[period]
+
+    signals: dict[str, IndicatorSignal] = {}
+    if use_atr:
+        data["atr"] = atr_for(atr_period)
+        signals["atr"] = build_atr_signal(data["atr"], close)
+    if use_adx:
+        data["adx"] = calculate_adx_dmi(
+            high,
+            low,
+            close,
+            adx_period,
+            true_range=true_range,
+        )
+        signals["adx"] = build_adx_signal(
+            data["adx"],
+            weak_threshold=adx_weak_threshold,
+            strong_threshold=adx_strong_threshold,
+        )
+    if use_supertrend:
+        supertrend_atr = atr_for(supertrend_atr_period)["atr"]
+        data["supertrend"] = calculate_supertrend(
+            high,
+            low,
+            close,
+            supertrend_atr_period,
+            supertrend_multiplier,
+            atr=supertrend_atr,
+        )
+        signals["supertrend"] = build_supertrend_signal(data["supertrend"], close)
+    if use_donchian:
+        data["donchian"] = calculate_donchian_channels(
+            high,
+            low,
+            close,
+            donchian_period,
+        )
+        signals["donchian"] = build_donchian_signal(data["donchian"], close)
+    if use_keltner:
+        keltner_atr = atr_for(keltner_atr_period)["atr"]
+        data["keltner"] = calculate_keltner_channels(
+            high,
+            low,
+            close,
+            keltner_ema_period,
+            keltner_atr_period,
+            keltner_multiplier,
+            atr=keltner_atr,
+            middle_line=calculate_ema(close, keltner_ema_period),
+        )
+        signals["keltner"] = build_keltner_signal(data["keltner"], close)
+    return data, signals
 
 
 def build_indicator_signals(
@@ -68,6 +174,7 @@ def build_indicator_signals(
     use_stochastic: bool = True,
     stochastic_oversold: float = 20,
     stochastic_overbought: float = 80,
+    extended_signals: dict[str, IndicatorSignal] | None = None,
 ) -> dict[str, IndicatorSignal]:
     """Construit les ``IndicatorSignal`` disponibles à partir des séries calculées.
 
@@ -118,5 +225,8 @@ def build_indicator_signals(
                 signals["stochastic"] = build_stochastic_signal(
                     stochastic_data, stochastic_oversold, stochastic_overbought
                 )
+
+    if extended_signals:
+        signals.update(extended_signals)
 
     return signals

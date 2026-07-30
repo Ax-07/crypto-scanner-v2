@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Literal, get_args
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.structured_signal_filters import StructuredSignalFilters
 
@@ -29,6 +29,7 @@ PROJECT_TIMEFRAMES: tuple[str, ...] = get_args(Timeframe)
 MacdSignal = Literal["bullish", "bearish", "neutral"]
 BollingerPosition = Literal["oversold", "near_oversold", "neutral", "near_overbought", "overbought"]
 StochasticSignal = Literal["oversold", "overbought", "bullish_cross", "bearish_cross", "neutral"]
+OPTIONAL_INDICATOR_EXTENSION_FIELDS = frozenset({"atr", "adx", "supertrend", "donchian", "keltner"})
 
 
 def default_ma_timeframes() -> list[Timeframe]:
@@ -45,6 +46,67 @@ def default_confluence_weights() -> dict[str, float]:
         "bollinger": 20.0,
         "stochastic": 15.0,
     }
+
+
+class AtrIndicatorConfig(BaseModel):
+    """Configuration versionnée de l'observation ATR/NATR."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1] = 1
+    enabled: bool = False
+    period: int = Field(default=14, ge=1, le=1000)
+
+
+class AdxIndicatorConfig(BaseModel):
+    """Configuration versionnée de l'observation ADX/DMI."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    version: Literal[1] = 1
+    enabled: bool = False
+    period: int = Field(default=14, ge=1, le=1000)
+    weak_threshold: float = Field(default=20, ge=0, le=100)
+    strong_threshold: float = Field(default=25, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def validate_thresholds(self) -> "AdxIndicatorConfig":
+        if self.weak_threshold >= self.strong_threshold:
+            raise ValueError("weak_threshold doit être inférieur à strong_threshold")
+        return self
+
+
+class SupertrendIndicatorConfig(BaseModel):
+    """Configuration versionnée de l'observation Supertrend."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    version: Literal[1] = 1
+    enabled: bool = False
+    atr_period: int = Field(default=10, ge=1, le=1000)
+    multiplier: float = Field(default=3.0, gt=0, le=100)
+
+
+class DonchianIndicatorConfig(BaseModel):
+    """Configuration versionnée des canaux de Donchian."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1] = 1
+    enabled: bool = False
+    period: int = Field(default=20, ge=1, le=1000)
+
+
+class KeltnerIndicatorConfig(BaseModel):
+    """Configuration versionnée des canaux de Keltner."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    version: Literal[1] = 1
+    enabled: bool = False
+    ema_period: int = Field(default=20, ge=1, le=1000)
+    atr_period: int = Field(default=10, ge=1, le=1000)
+    multiplier: float = Field(default=2.0, gt=0, le=100)
 
 
 class MarketIndicatorConfig(BaseModel):
@@ -70,6 +132,11 @@ class MarketIndicatorConfig(BaseModel):
     stochastic_oversold: float = Field(default=20, ge=0, le=100)
     stochastic_overbought: float = Field(default=80, ge=0, le=100)
     use_stochastic: bool = True
+    atr: AtrIndicatorConfig | None = None
+    adx: AdxIndicatorConfig | None = None
+    supertrend: SupertrendIndicatorConfig | None = None
+    donchian: DonchianIndicatorConfig | None = None
+    keltner: KeltnerIndicatorConfig | None = None
     use_confluence_score: bool = True
     confluence_weights: dict[str, float] = Field(default_factory=default_confluence_weights)
     origin: Literal["default", "scan", "custom"] = "default"
@@ -162,6 +229,12 @@ class ScanConfig(BaseModel):
     stochastic_d_period: int = Field(default=3, ge=2, le=50)
     stochastic_oversold: float = Field(default=20, ge=0, le=100)
     stochastic_overbought: float = Field(default=80, ge=0, le=100)
+
+    atr: AtrIndicatorConfig | None = None
+    adx: AdxIndicatorConfig | None = None
+    supertrend: SupertrendIndicatorConfig | None = None
+    donchian: DonchianIndicatorConfig | None = None
+    keltner: KeltnerIndicatorConfig | None = None
 
     use_confluence_score: bool = True
     min_confluence_score: float = Field(default=60, ge=0, le=100)

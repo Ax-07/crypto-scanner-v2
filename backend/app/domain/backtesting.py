@@ -12,9 +12,12 @@ from typing import Any, Iterable, Mapping, Sequence, cast
 
 import pandas as pd
 
-from app.core.settings import ScanConfig
+from app.core.settings import OPTIONAL_INDICATOR_EXTENSION_FIELDS, ScanConfig
 from app.domain.candles import Candle, candles_to_frame
-from app.domain.indicator_bundle import build_indicator_signals
+from app.domain.indicator_bundle import (
+    build_indicator_signals,
+    calculate_extended_indicator_bundle,
+)
 from app.domain.signal_filters import (
     check_structured_signal_filters,
     include_disabled_filter_signals,
@@ -142,6 +145,32 @@ def evaluate_information_set(
                 stochastic_data, config.stochastic_oversold, config.stochastic_overbought
             )
 
+    atr_config = config.atr
+    adx_config = config.adx
+    supertrend_config = config.supertrend
+    donchian_config = config.donchian
+    keltner_config = config.keltner
+    _, extended_signals = calculate_extended_indicator_bundle(
+        high=frame["high"],
+        low=frame["low"],
+        close=frame["close"],
+        use_atr=bool(atr_config and atr_config.enabled),
+        atr_period=atr_config.period if atr_config else 14,
+        use_adx=bool(adx_config and adx_config.enabled),
+        adx_period=adx_config.period if adx_config else 14,
+        adx_weak_threshold=adx_config.weak_threshold if adx_config else 20,
+        adx_strong_threshold=adx_config.strong_threshold if adx_config else 25,
+        use_supertrend=bool(supertrend_config and supertrend_config.enabled),
+        supertrend_atr_period=supertrend_config.atr_period if supertrend_config else 10,
+        supertrend_multiplier=supertrend_config.multiplier if supertrend_config else 3.0,
+        use_donchian=bool(donchian_config and donchian_config.enabled),
+        donchian_period=donchian_config.period if donchian_config else 20,
+        use_keltner=bool(keltner_config and keltner_config.enabled),
+        keltner_ema_period=keltner_config.ema_period if keltner_config else 20,
+        keltner_atr_period=keltner_config.atr_period if keltner_config else 10,
+        keltner_multiplier=keltner_config.multiplier if keltner_config else 2.0,
+    )
+
     availability: dict[str, Availability] = {
         "rsi": (
             "available"
@@ -172,6 +201,7 @@ def evaluate_information_set(
             if stoch_signal is not None
             else "disabled" if not config.use_stochastic else "insufficient_data"
         ),
+        **{name: signal["status"] for name, signal in extended_signals.items()},
     }
     active = {
         "rsi": config.use_rsi,
@@ -197,6 +227,7 @@ def evaluate_information_set(
         use_stochastic=config.use_stochastic,
         stochastic_oversold=config.stochastic_oversold,
         stochastic_overbought=config.stochastic_overbought,
+        extended_signals=extended_signals,
     )
     confluence = (
         calculate_confluence_score(
@@ -221,7 +252,11 @@ def evaluate_information_set(
                 "bollinger_signal": bb_position,
                 "stochastic_signal": stoch_signal,
             },
-            indicator_signals=indicator_signals,
+            indicator_signals={
+                name: signal
+                for name, signal in indicator_signals.items()
+                if name in {"rsi", "macd", "bollinger", "stochastic"}
+            },
         )
         if config.use_confluence_score
         else None
@@ -232,10 +267,12 @@ def evaluate_information_set(
         name: cast(float | None, details.get("factor"))
         for name, details in (confluence["details"] if confluence else {}).items()
     }
-    profile_payload = config.model_dump(
-        mode="json",
-        exclude={"structured_signal_filters"} if config.structured_signal_filters is None else None,
-    )
+    excluded_profile_fields = {
+        name for name in OPTIONAL_INDICATOR_EXTENSION_FIELDS if getattr(config, name) is None
+    }
+    if config.structured_signal_filters is None:
+        excluded_profile_fields.add("structured_signal_filters")
+    profile_payload = config.model_dump(mode="json", exclude=excluded_profile_fields)
     profile_fingerprint = (
         "sha256:"
         + hashlib.sha256(

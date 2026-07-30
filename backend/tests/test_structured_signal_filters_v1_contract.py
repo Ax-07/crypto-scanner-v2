@@ -48,11 +48,21 @@ def explicit_json(source: str) -> dict[str, object]:
 
 def profile_fingerprint(config: ScanConfig) -> str:
     """Reproduit localement le fingerprint sans ajouter de helper production."""
+    excluded = {
+        name
+        for name in (
+            "atr",
+            "adx",
+            "supertrend",
+            "donchian",
+            "keltner",
+            "structured_signal_filters",
+        )
+        if getattr(config, name) is None
+    }
     payload = config.model_dump(
         mode="json",
-        exclude=(
-            {"structured_signal_filters"} if config.structured_signal_filters is None else None
-        ),
+        exclude=excluded or None,
     )
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(serialized.encode()).hexdigest()

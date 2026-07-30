@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from app.core.settings import OPTIONAL_INDICATOR_EXTENSION_FIELDS
 from app.domain.candles import Candle, timeframe_milliseconds, timestamp_ms_to_utc
 from app.domain.portfolio import (
     EndOfTestPolicy,
@@ -219,13 +220,13 @@ def to_public_portfolio_result(
 
 def backtest_config_fingerprint(config: BacktestConfig) -> str:
     """Étend exactement le fingerprint historique seulement si nécessaire."""
+    optional_fields = OPTIONAL_INDICATOR_EXTENSION_FIELDS | {"structured_signal_filters"}
+    excluded_fields = {
+        field for field in optional_fields if getattr(config.signal_config, field) is None
+    }
     profile_payload = config.signal_config.model_dump(
         mode="json",
-        exclude=(
-            {"structured_signal_filters"}
-            if config.signal_config.structured_signal_filters is None
-            else None
-        ),
+        exclude=excluded_fields or None,
     )
     if config.portfolio_simulation is not None:
         profile_payload["portfolio_simulation"] = config.portfolio_simulation.model_dump(
