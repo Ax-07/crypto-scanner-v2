@@ -1,13 +1,12 @@
 # Simulation de portefeuille du backtest — conception Phase 6.1
 
-Statut : **proposé**, audité sur le code de `main` au commit `e61835b` le
-29 juillet 2026.
+Statut : **Phase 6.3 intégrée**, conception initiale auditée au commit `e61835b`.
 
-La Phase 6.2 implémente et teste désormais le moteur de domaine pur décrit ici,
-sous `backend/app/domain/portfolio/`. Il n'est pas encore intégré aux jobs de
-backtest, aux contrats publics, à la persistance, à l'API ou au frontend. La
-documentation d'implémentation est dans
-[`backend/portfolio-simulation-engine-v1.md`](backend/portfolio-simulation-engine-v1.md).
+La Phase 6.2 implémente le moteur de domaine pur sous
+`backend/app/domain/portfolio/`. La Phase 6.3 le relie désormais aux jobs et à
+un résumé public additif; les détails restent en mémoire et le frontend n'est
+pas intégré. Voir [`backend/portfolio-simulation-engine-v1.md`](backend/portfolio-simulation-engine-v1.md)
+et [`backend/portfolio-replay-integration-v1.md`](backend/portfolio-replay-integration-v1.md).
 
 ## 1. Résumé exécutif
 
@@ -58,9 +57,10 @@ SQLite OHLCV fermé
 
 Les modèles publics réels sont `BacktestConfig`, `BacktestJob`,
 `BacktestSummary`, `SignalObservation` et `ForwardOutcome`. `BacktestResult`
-n'existe pas. `BacktestSummary.trade_simulation_included` vaut actuellement
-`false`, et `GET /api/backtests/capabilities` annonce
-`trade_simulation: false`.
+n'existe pas. Depuis la Phase 6.3,
+`BacktestSummary.trade_simulation_included` vaut `true` seulement après une
+simulation réussie, et `GET /api/backtests/capabilities` annonce
+`trade_simulation: true`.
 
 ### 2.2 Ce que calcule un outcome
 
@@ -443,7 +443,7 @@ Le moteur pur reçoit une séquence chronologique de bougies et d'observations e
 émet des événements. Il ne dépend ni de FastAPI, SQLite, pandas, Zustand ou
 CCXT.
 
-## 16. Configuration publique future
+## 16. Configuration publique intégrée en Phase 6.3
 
 Bloc optionnel et additif :
 
@@ -451,52 +451,50 @@ Bloc optionnel et additif :
 {
   "portfolio_simulation": {
     "version": 1,
-    "enabled": true,
+    "quote_asset": "USDC",
     "initial_capital": "10000",
-    "strategy": {
-      "mode": "accepted_state_transition_v1"
-    },
     "position_sizing": {
       "mode": "percent_cash",
       "value": "100"
     },
     "execution_policy": "next_open",
-    "fee_rate": 0.001,
-    "slippage_rate": 0.0005,
-    "end_of_test_policy": "force_close",
-    "equity_frequency": "each_primary_close"
+    "fee_rate": "0.001",
+    "slippage_rate": "0.0005",
+    "end_of_test_policy": "force_close"
   }
 }
 ```
 
-L'absence du bloc suffit pour désactiver la simulation. `enabled:false` est
-accepté pour faciliter les formulaires, mais normalisé comme désactivé et exclu
-du fingerprint historique. Un bloc activé entre dans un fingerprint de
-simulation séparé; le fingerprint historique du profil reste inchangé.
+L'absence du bloc suffit pour désactiver la simulation. Aucun champ `enabled`
+n'est accepté en v1. Un bloc présent entre dans le fingerprint canonique; le
+fingerprint historique du profil reste inchangé lorsque le bloc est absent.
+La Phase 6.3 exige `replay_mode="every_bar"` afin de ne jamais interpréter une
+observation non conservée comme un rejet.
 
 `fee_bps` et `slippage_bps` historiques restent ceux des outcomes. Le bloc
 portfolio utilise des taux explicites afin d'éviter de changer leur sens.
 L'interface peut proposer de recopier les valeurs, jamais le faire
 silencieusement.
 
-## 17. Résultat et API futurs
+## 17. Résultat Phase 6.3 et API futures
 
-Dans le payload du job, n'ajouter qu'un aperçu borné :
+Le résumé du job contient désormais un aperçu borné. Les routes de détail
+ci-dessous restent réservées à la Phase 6.4 :
 
 ```json
 {
   "portfolio_simulation": {
     "version": 1,
-    "status": "completed",
     "summary": {
+      "version": 1,
       "quote_asset": "USDC",
       "initial_capital": "10000",
       "final_equity": "1078.217821782178217821782178",
-      "total_return": 0.07821782178217822,
+      "total_return_ratio": "0.078217821782178217821782178",
       "trade_count": 1
     },
-    "open_position": null,
-    "warnings": []
+    "has_trades": true,
+    "has_equity_curve": true
   }
 }
 ```
@@ -514,8 +512,9 @@ GET /api/backtests/{job_id}/equity/export.csv
 
 Réponses : `404` job absent; `409` job non terminé ou résultat indisponible;
 `422` pagination/config invalide; job historique ou simulation désactivée :
-`409` avec code `portfolio_simulation_not_enabled`; job annulé : résumé partiel
-explicitement `partial=true` si un checkpoint cohérent existe, sinon `409`.
+`409` avec code `portfolio_simulation_not_enabled`; un job annulé ne publie
+aucun résultat partiel en Phase 6.3. La Phase 6.4 conservera cette règle sauf
+décision de contrat ultérieure explicite.
 Les listes renvoient `items,total,offset,limit`. Les endpoints actuels et
 `export.csv?dataset=...` restent inchangés.
 
@@ -662,9 +661,7 @@ checkpoint vérifié.
 
 - bloc absent : JSON, comportement, outcomes et fingerprints historiques
   inchangés;
-- bloc `enabled:false` : aucune simulation et normalisation équivalente à
-  l'absence pour le fingerprint historique;
-- bloc activé : replay/outcomes historiques plus résultat additif;
+- bloc présent : replay/outcomes historiques plus résultat additif;
 - ancien job : reste lisible, sans migration obligatoire du payload;
 - aucun champ, endpoint, CSV ou modèle actuel supprimé;
 - aucune position/trade ne doit être reconstruit heuristiquement depuis des

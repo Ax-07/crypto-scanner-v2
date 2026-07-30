@@ -6,10 +6,11 @@
 > [`BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md`](BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md)
 > et résumée par
 > [`adr/ADR-portfolio-backtest-v1.md`](adr/ADR-portfolio-backtest-v1.md).
-> **Le moteur de portefeuille pur est implémenté et testé, mais il n'est pas
-> encore intégré aux jobs de backtest ni exposé par l'API.** Le replay et les
-> contrats décrits ci-dessous restent le comportement réel. Voir
-> [`backend/portfolio-simulation-engine-v1.md`](backend/portfolio-simulation-engine-v1.md).
+> **Le moteur de portefeuille est intégré de manière optionnelle depuis la
+> Phase 6.3.** Le bloc absent conserve le replay historique. Un bloc présent
+> produit un résumé public; trades et equity détaillés restent internes. Voir
+> [`backend/portfolio-simulation-engine-v1.md`](backend/portfolio-simulation-engine-v1.md)
+> et [`backend/portfolio-replay-integration-v1.md`](backend/portfolio-replay-integration-v1.md).
 
 ## Architecture et causalité
 
@@ -43,6 +44,12 @@ extrêmes, nombre de barres disponibles, validité et motif de censure. Ce ne so
 pas des trades de portefeuille : aucune taille, equity ou règle de chevauchement
 n'est simulée.
 
+La configuration optionnelle `portfolio_simulation.version=1` est distincte des
+hypothèses d'outcomes. Elle exige un symbole, `replay_mode="every_bar"` et un
+`quote_asset` explicite. Le moteur consomme les observations et bougies déjà
+constituées, exécute à l'ouverture suivante et clôture la position au dernier
+close. Aucun outcome n'est une entrée du portefeuille.
+
 ## Statistiques et artefacts
 
 Le résumé expose effectif, moyenne, médiane, dispersion, extrema, quantiles,
@@ -61,7 +68,9 @@ index de décision, compteurs, dernier état, version d'algorithme et dataset. L
 insertions observation/outcome sont idempotentes. Au redémarrage, un job actif
 devient `interrupted`, et `POST /api/backtests/{id}/resume` reprend au dernier
 checkpoint. Un test interrompt réellement un replay, le reprend et vérifie
-l'absence de doublons.
+l'absence de doublons. La simulation Phase 6.3 est reconstruite à la fin depuis
+les observations finales; le checkpoint v1 ajoute son fingerprint uniquement
+pour les jobs portefeuille.
 
 ## API et interface
 

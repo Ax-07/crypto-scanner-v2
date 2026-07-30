@@ -2,16 +2,18 @@
 
 > La future interface de simulation est conçue dans
 > [`../BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md`](../BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md).
-> **Le simulateur de portefeuille est conçu mais pas encore implémenté.**
-> Aucune section de trades, capital ou equity n'existe encore dans l'application.
+> **Le backend peut désormais produire un résumé optionnel de simulation de
+> portefeuille.** L'interface ne configure ni n'affiche encore ce résumé.
+> Aucune section de trades ou courbe d'equity n'existe dans l'application.
 
 ## Nature du module
 
-Le « backtest » est un replay causal de signaux, pas une simulation de portefeuille.
-Il ne gère ni capital, taille de position, position courte, ordres, trades ou equity
-curve. Chaque `SignalObservation` décrit l'information disponible à la clôture
-d'une bougie et indique si le candidat a passé tous les filtres (`accepted`) ou
-le premier étage de rejet.
+Le socle historique reste un replay causal de signaux. Lorsque le nouveau bloc
+backend est absent, il ne gère ni capital, taille, ordres, trades ou equity.
+Lorsque le bloc est présent, le backend exécute une simulation long-only
+distincte et joint seulement son résumé au job. Chaque `SignalObservation`
+continue de décrire l'information disponible à la clôture d'une bougie et si le
+candidat a passé les filtres.
 
 Les outcomes sont un dataset séparé relié par `observation_id`. Ils mesurent des
 rendements forward à plusieurs horizons. Cette relation n'est pas une relation
@@ -70,3 +72,7 @@ DOM et la pagination possède un `nav` nommé.
 
 L'inventaire des champs persistés, de l'export observations et des conditions de
 dépréciation est dans l'[audit transversal](structured-signals-migration-audit.md).
+
+La Phase 6.4 devra fournir les endpoints paginés de trades/equity et leurs
+exports. Aucune donnée détaillée n'est actuellement consultable depuis
+l'interface.

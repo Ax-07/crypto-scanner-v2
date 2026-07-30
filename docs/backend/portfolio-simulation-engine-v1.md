@@ -7,8 +7,10 @@ La Phase 6.2 implémente les modèles internes et le moteur de domaine sous
 de FastAPI, SQLite, CCXT, pandas, HTTP, du replay, de `SignalObservation` ou de
 `ForwardOutcome`.
 
-Il n'est pas encore intégré aux jobs de backtest, à l'API, aux modèles Pydantic,
-aux exports ou au frontend. Ces adaptations appartiennent à la Phase 6.3.
+La Phase 6.3 l'intègre désormais aux jobs, à des modèles Pydantic stricts et à
+un résumé public. Les exports, endpoints de détail, persistance des détails et
+frontend restent reportés. Voir
+[`portfolio-replay-integration-v1.md`](portfolio-replay-integration-v1.md).
 
 ## Architecture
 
@@ -239,15 +241,14 @@ Exécution ciblée depuis `backend/` :
 .\venv\Scripts\python.exe -m pytest tests\domain\portfolio -q
 ```
 
-## Limites et Phase 6.3
+## Limites après la Phase 6.3
 
 Le MVP ne simule pas multi-symbole, short, levier, pyramiding, sortie partielle,
-stop, take profit, trailing stop, minimum ou précision exchange. Il ne détecte
-pas encore les gaps temporels à partir d'un timeframe : l'adaptateur Phase 6.3
-devra fournir une suite contiguë ou une information explicite.
+stop, take profit, trailing stop, minimum ou précision exchange. Le moteur pur
+ne détecte pas lui-même les gaps temporels : l'adaptateur Phase 6.3 lui fournit
+une suite primaire vérifiée et contiguë.
 
-La Phase 6.3 devra adapter observation et bougie primaire vers
-`PortfolioSimulationStep`, ajouter une configuration publique optionnelle et un
-résumé additif, préserver les fingerprints/replays historiques et définir la
-persistance/checkpoint. Elle ne devra jamais alimenter la stratégie avec un
-`ForwardOutcome`.
+La Phase 6.3 adapte exactement `source_open_time` vers la bougie primaire,
+rejette les gaps, ajoute la configuration et le résumé additifs, et reconstruit
+le résultat à la fin du replay. Elle n'alimente jamais la stratégie avec un
+`ForwardOutcome`. Les détails restent seulement en mémoire jusqu'à la Phase 6.4.

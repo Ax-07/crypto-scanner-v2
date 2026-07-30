@@ -39,11 +39,13 @@ La Phase 6.1 a produit la conception
 [`BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md`](BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md)
 et l'ADR proposé
 [`adr/ADR-portfolio-backtest-v1.md`](adr/ADR-portfolio-backtest-v1.md).
-**Le moteur de portefeuille pur est implémenté et testé sous
-`backend/app/domain/portfolio/`, mais il n'est pas encore intégré aux jobs de
-backtest ni exposé par l'API.** Sa documentation technique est
+**Le moteur de portefeuille pur sous `backend/app/domain/portfolio/` est
+désormais intégré optionnellement aux jobs et à leur résumé public.** Sa
+documentation technique est
 [`backend/portfolio-simulation-engine-v1.md`](backend/portfolio-simulation-engine-v1.md).
-Les contrats publics et le comportement runtime du replay restent inchangés.
+L'intégration est détaillée dans
+[`backend/portfolio-replay-integration-v1.md`](backend/portfolio-replay-integration-v1.md).
+Le bloc absent conserve le comportement et les payloads historiques.
 
 ## 3. État Git
 
@@ -234,7 +236,11 @@ confluence, traces, provenance, qualité et
 
 `BacktestResult` n'existe pas. Les contrats sont `BacktestJob`,
 `BacktestSummary`, `SignalObservation` et `ForwardOutcome`.
-`BacktestSummary.trade_simulation_included` vaut `False`.
+`BacktestSummary.trade_simulation_included` vaut `False` sans configuration et
+`True` après une simulation réussie. Son champ optionnel
+`portfolio_simulation` expose seulement version, quote asset, résumé et
+indicateurs de présence des détails. `BacktestJob` conserve le résultat complet
+en mémoire sans le sérialiser.
 
 Il n'existe pas de modèle Pydantic `MarketSnapshot`; le marché retourne des
 dictionnaires. Scanner et backtest ont donc une validation Pydantic/OpenAPI
@@ -413,9 +419,9 @@ index de décision, il coupe la fenêtre primaire à `index + 1` et filtre chaqu
 timeframe supérieur à `close_time <= decision_ms`, puis appelle
 `evaluate_signal_snapshot`.
 
-Il ne possède aucun capital fictif ni sizing. Une observation est acceptée ou
-rejetée par les mêmes filtres que le scanner. `calculate_forward_outcomes` mesure
-ensuite les rendements :
+Sans `portfolio_simulation`, il ne possède aucun capital fictif ni sizing. Une
+observation est acceptée ou rejetée par les mêmes filtres que le scanner.
+`calculate_forward_outcomes` mesure ensuite les rendements :
 
 - `signal_close` : entrée à la clôture de la bougie de décision ;
 - `next_open` : entrée à l'ouverture de la bougie suivante ;
@@ -442,6 +448,14 @@ Protection anti-look-ahead :
 
 Ces tests garantissent l'invariance du signal à une mutation située après la
 décision, mais ne prouvent pas à eux seuls la qualité économique du signal.
+
+Avec `portfolio_simulation.version=1`, le replay exige un symbole et
+`every_bar`, adapte exactement `source_open_time` à la bougie primaire déjà
+chargée, rejette tout gap, puis lance le moteur après la constitution des
+observations et outcomes. Les outcomes ne sont jamais lus par la simulation.
+Les détails restent en mémoire; seul un résumé décimal sérialisé en chaînes est
+public. La reprise reconstruit le portefeuille à la fin et aucun résumé partiel
+n'est publié après annulation.
 
 ## 15. Contrat `IndicatorSignal`
 
@@ -1035,7 +1049,8 @@ Le code backend lit `os.getenv`; charger explicitement `.env` ou utiliser
   sa docstring de module à corriger si ce contrat change.
 - Frontend : scanner, marché et backtest structurés sont intégrés ; les champs
   legacy restent volontairement présents.
-- Backtest : pas de simulation de capital/positions.
+- Backtest : simulation v1 optionnelle intégrée au résumé; détails non
+  persistés, sans endpoints paginés ni frontend.
 - Versions Python non figées exactement.
 - Artefacts lourds présents localement mais ignorés : `dist`, `node_modules`,
   environnements virtuels, caches, logs, bases locales et `.env`.
