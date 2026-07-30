@@ -1378,3 +1378,163 @@ inchangée. Aucune Phase 7.3 d'assouplissement RSI n'est recommandée.
 Limites : cinq plages majoritairement USDC, R1/R2 concentrées sur BTC 4h,
 échantillons faibles et aucun test final ouvert. Les outcomes restent
 descriptifs et indépendants du P&L de portefeuille.
+
+## 47. Phase 8.1 — audit et conception de l'extension des indicateurs
+
+La Phase 8.1 a été réalisée au HEAD initial `cb231a1`, branche `main`, avec un
+arbre propre, aucun changement préexistant, indexé ou non suivi. Elle est
+strictement documentaire : aucun calcul, filtre, score de confluence, scanner,
+replay, route, modèle public, export, fichier frontend, lockfile ou dépendance
+n'a été modifié. Aucun nouvel indicateur n'est implémenté.
+
+La conclusion Phase 7.2 reste
+`no_variant_increased_sample_enough`. L'optimisation du filtre RSI est arrêtée,
+le seuil de production reste strictement `RSI < 35`, aucune variante R0–R3
+n'est relancée et le test final reste fermé. La décision est d'enrichir le
+catalogue de signaux structurés avant une nouvelle optimisation globale.
+
+### Inventaire confirmé
+
+Le runtime contient exactement six indicateurs :
+
+- RSI : `fully_integrated`, momentum ;
+- SMA : `partially_integrated`, tendance ;
+- EMA : `partially_integrated`, tendance ;
+- MACD : `fully_integrated`, tendance/momentum ;
+- bandes de Bollinger : `fully_integrated`, volatilité/support-résistance ;
+- Stochastique : `fully_integrated`, momentum.
+
+SMA/EMA sont partiels parce que leurs calculs et builders structurés existent,
+mais leurs signaux individuels ne traversent que le marché live. Scanner et
+replay conservent l'agrégat historique de tendance multi-timeframe. Le marché
+retire SMA/EMA de la confluence structurée afin de préserver ce même facteur
+historique.
+
+Le contrat public courant reste :
+
+```text
+status, direction, signal, state, strength, reason, raw_value
+```
+
+Statuts : `available`, `insufficient_data`, `invalid_data`, `disabled`.
+Direction : `bullish`, `bearish`, `neutral`. `signal` et `state` sont des
+chaînes ouvertes ; `strength` est une intensité technique entre 0 et 1, jamais
+une probabilité ; `raw_value` est un scalaire nullable. Les composants
+multi-valeurs ne sont pas encore représentés proprement.
+
+### Couverture et lacunes
+
+Tendance directionnelle, momentum et position Bollinger sont couverts. Restent
+absents ou incomplets : force de tendance, volatilité normalisée,
+compression/expansion, volume relatif/cumulé, proxy de flux OHLCV, VWAP,
+cassures causales, structure de sommets/creux, distance normalisée à un niveau
+et régime de marché.
+
+L'historique Git local ne contient aucun indicateur caché. Le module historique
+`backend/indicators.py` est uniquement un réexport de compatibilité des mêmes
+primitives.
+
+### Architecture proposée
+
+Les futures phases doivent conserver une fonction pure par indicateur, extraire
+les primitives mutualisables (true range, lissage Wilder, extrema roulants,
+prix typique), puis utiliser un registre déclaratif léger et un graphe de
+dépendances sans import dynamique. Scanner, marché, replay, audit et future
+extraction IA doivent consommer le même calcul ; seule la source des bougies
+change.
+
+Une future version de contrat devra ajouter des `components` strictement typés,
+un code de raison stable/non localisé, versions de formule, warmup et
+provenance causale. Cette proposition ne change pas la v1 publique.
+
+### Catalogue retenu et ordre
+
+Douze composants sont recommandés sur plusieurs phases :
+
+1. Phase 8.2 : ATR, ATR normalisé, ADX/DMI, Supertrend ;
+2. Phase 8.3 : Bollinger Band Width, Donchian et primitives de structure
+   roulante causale ;
+3. Phase 8.4 : volume relatif, Chaikin Money Flow, features OBV et distance au
+   VWAP roulant ;
+4. Phase 8.5 : CCI et Rate of Change ;
+5. Phase 8.6 : évaluer une structure/régime composite seulement après mesure
+   des primitives.
+
+Aroon, Keltner, Choppiness, volatilité historique, MFI, ADL, Ichimoku, PSAR,
+KAMA, TSI, Ultimate Oscillator et Ease of Movement sont reportés. Williams %R
+est rejeté comme quasi-duplicata du `%K` stochastique, Momentum comme
+quasi-duplicata de ROC, HMA comme variante de moyenne non prioritaire, et les
+pivots centrés utilisés au pivot comme non causaux/repaint.
+
+Les indicateurs nécessitant carnet d'ordres, open interest, funding,
+liquidations, trades individuels/volume delta, données on-chain ou sentiment
+restent hors périmètre tant que ces sources ne sont pas historisées,
+versionnées et disponibles en live.
+
+### Recommandation unique Phase 8.2
+
+```text
+ATR + ATR normalisé + ADX/DMI + Supertrend
+```
+
+ATR fournit la primitive de volatilité ; ADX sépare la force de la direction
+portée par +DI/-DI ; Supertrend réutilise ATR et fournit un état persistant. La
+Phase 8.2 devra intégrer calculs purs, composants multi-valeurs, warmup,
+causalité, parité live/backtest et frontend, sans modifier les filtres ou la
+confluence de production.
+
+### Préparation future de l'IA
+
+Une observation d'apprentissage séparera :
+
+- metadata : timestamp, symbole, timeframe, versions/fingerprint ;
+- features : valeurs brutes/normalisées, states, signaux et régime connus au
+  temps de décision ;
+- labels : outcomes futurs calculés et joints après la décision.
+
+Les normalisations statistiques seront ajustées sur train uniquement. Aucun
+label, outcome futur, pivot non confirmé ou calcul centré n'entrera dans les
+features ; la séparation restera chronologique et le test final gelé ne servira
+ni à la sélection de features ni au réglage.
+
+### Livrables Phase 8.1
+
+- `docs/audits/indicator-catalog-v1.md` ;
+- `docs/audits/indicator-catalog-v1.json` ;
+- `docs/audits/indicator-complementarity-matrix-v1.md` ;
+- `docs/architecture/indicator-extension-contract-v1.md` ;
+- `docs/roadmaps/indicator-expansion-v1.md`.
+
+Limites : la baseline comporte seulement 22 trades full sur cinq plages
+majoritairement USDC, les candidats non implémentés n'ont pas de corrélation
+historique mesurable, le volume Binance n'est pas le volume du marché global,
+et les warmups Wilder recommandés devront être caractérisés avant d'être figés.
+
+### Phase 8.2 implémentée
+
+ATR/NATR, ADX/DMI et Supertrend sont maintenant des observations optionnelles
+désactivées par défaut. Le backend partage True Range, lissage Wilder et ATR
+entre scanner, marché et replay. Le contrat `IndicatorSignal` possède des
+`components` additifs ; TypeScript, Zod et les cartes UI les exposent.
+
+La stratégie et les résultats métiers restent figés : aucun nouveau filtre,
+poids de confluence, critère `accepted`, outcome, trade ou calcul de portefeuille
+n'utilise ces valeurs. Les baselines et conclusions Phase 7 demeurent intactes.
+
+### Phase 8.3 implémentée
+
+Bollinger expose six composants additionnels : bande centrale, bandes
+haute/basse, largeur absolue, largeur normalisée en pourcentage et position non
+bornée. Son verdict historique reste identique hors nouveau bloc `components`.
+
+Donchian et Keltner sont deux observations versionnées, optionnelles et
+désactivées par défaut. Donchian sépare le canal descriptif courant des bornes
+précédentes utilisées pour les cassures strictes. Keltner partage l'EMA
+canonique et l'ATR Wilder et compare le close aux bandes précédentes afin de ne
+pas répéter les événements. Scanner, marché live, replay, API, TypeScript, Zod,
+formulaire et cartes utilisent les mêmes calculs.
+
+La neutralité est verrouillée : aucune modification des filtres structurés v1,
+de la confluence, d'accepted, des outcomes, ordres, exécutions, trades, equity
+ou métriques portefeuille. Aucun squeeze, indicateur de volume, structure
+composite, régime ou modèle IA n'est commencé.

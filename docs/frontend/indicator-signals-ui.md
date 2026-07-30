@@ -218,3 +218,34 @@ Le replay ne possède ni trade, ni position, ni capital. Aucun rapprochement
 heuristique avec un trade n'est donc effectué. La note anti-look-ahead rappelle
 que chaque observation confirmed est construite sur les seules bougies closes
 disponibles à cet instant.
+
+## Extension Phase 8.2
+
+L'ordre canonique comprend désormais ATR/NATR, ADX/DMI et Supertrend après les
+six indicateurs historiques. Une carte non compacte affiche leurs composants
+nommés avec unités ; la vue compacte conserve statut, direction, événement et
+force. Les composants sont validés par des objets Zod stricts.
+
+Le formulaire matérialise les blocs historiques absents avec des valeurs
+désactivées (`14`, `14/20/25`, `10 × 3`). L'activation reste une observation :
+les cartes précisent qu'aucun filtre ni poids de confluence n'est ajouté.
+
+## Extension Phase 8.3
+
+La carte Bollinger conserve ses informations historiques et affiche en plus :
+bandes haute/centrale/basse, largeur en unité de prix, largeur normalisée en
+pourcentage et position du prix comme ratio non borné.
+
+L'ordre canonique ajoute ensuite « Canaux de Donchian » et « Canaux de
+Keltner ». Donchian affiche bornes courantes et précédentes, milieu, largeur,
+position, état et éventuelle cassure. Keltner affiche ligne centrale, bornes,
+ATR utilisé, largeur, position, état et cassure. Les libellés
+`breakout_up/down` et `above/below/inside_channel` sont traduits en français ;
+le texte accompagne toujours la direction.
+
+Le formulaire ajoute Donchian (activation, période `20`) et Keltner
+(activation, EMA `20`, ATR `10`, multiplicateur `2`), tous deux désactivés par
+défaut. Les cartes s'empilent sur mobile et utilisent `Field`, labels associés,
+descriptions et erreurs RHF/Zod. Une ancienne configuration est normalisée
+localement avec les deux blocs désactivés. Le payload validé ne mute pas la
+configuration source. Aucun filtre, poids ou seuil de trading n'est créé.

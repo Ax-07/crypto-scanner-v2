@@ -151,3 +151,30 @@ Les règles figées, fingerprints, oracles et compteurs Phase 5.8 sont dans
 4. traiter/signaliser les trous dans scanner/live ;
 5. décider si la tendance marché doit exposer l’agrégation multi-TF ;
 6. conserver l’interprétation non probabiliste et les corrélations de facteurs.
+
+## Phase 8.2 — observations ATR/ADX/Supertrend
+
+Le contrat accepte désormais `atr`, `adx` et `supertrend`, ainsi qu'un champ
+optionnel `components`. ATR expose TR/ATR/NATR/variation et reste
+directionnellement neutre. ADX expose ADX/+DI/-DI/DX. Supertrend expose sa ligne,
+ses bandes, son ATR et sa distance normalisée.
+
+Les blocs de configuration version 1 sont optionnels et désactivés par défaut.
+Ils empruntent le builder partagé scanner/marché/replay. La confluence reçoit
+toujours exclusivement les indicateurs historiques, et les nouveaux noms ne
+sont pas admissibles dans les filtres structurés v1.
+
+## Phase 8.3 — largeur Bollinger, Donchian et Keltner
+
+Bollinger expose ses bandes, leur largeur absolue et normalisée et la position
+non bornée du prix dans `components`, sans modifier son signal, state,
+direction, strength, reason ni son usage historique. Donchian sépare le canal
+descriptif incluant `t` du canal précédent arrêté à `t-1`. Keltner réutilise
+l'EMA et l'ATR Wilder ; ses événements comparent le close courant aux bandes
+précédentes et ne se répètent pas hors canal.
+
+Donchian (`20`) et Keltner (`EMA 20`, `ATR 10`, multiplicateur `2`) sont des
+blocs versionnés optionnels, désactivés par défaut. Ils traversent scanner,
+marché, replay, API et frontend. Aucun n'est admissible dans les filtres v1 ou
+dans la confluence, et ils ne modifient ni accepted, outcomes, trades, equity
+ou résumé portefeuille. Aucun squeeze ou régime n'est détecté.

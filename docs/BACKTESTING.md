@@ -118,3 +118,28 @@ paginées et filtrées restent disponibles pour les autres analyses.
 complète et ses outcomes chiffrés à 1/3/6 bougies. Toute modification
 intentionnelle de l'algorithme exige une nouvelle version de fixture et une
 justification.
+
+## Observations Phase 8.2
+
+Le replay peut persister ATR/NATR, ADX/DMI et Supertrend dans
+`indicator_signals`. Les calculs utilisent uniquement l'information close
+disponible au temps de décision et les mêmes fonctions que le marché. Les
+fingerprints historiques restent identiques quand les trois blocs optionnels
+sont absents ; une configuration qui les déclare est, elle, fingerprintée.
+
+Ces features n'affectent ni `accepted`, ni le funnel, ni les outcomes futurs, ni
+les étapes d'exécution ou les résultats du portefeuille. Aucune baseline Phase
+7 n'a été recalculée ou modifiée.
+
+## Observations Phase 8.3
+
+Le replay persiste aussi les composants Bollinger enrichis et, lorsqu'ils sont
+activés, Donchian et Keltner. Donchian compare `close_t` aux extrema des
+`period` bougies terminées à `t-1`. Keltner compare `close_t` aux bandes
+EMA/ATR de `t-1`. Les égalités Donchian ne cassent pas le canal et les sorties
+Keltner persistantes ne répètent pas l'événement.
+
+Les fingerprints historiques restent inchangés lorsque les blocs optionnels
+Donchian/Keltner sont absents. Toute présence ou modification de leur
+configuration est fingerprintée. Ces observations ne sont lues par aucun
+filtre, outcome, ordre, exécution, trade ou calcul d'equity.
