@@ -190,6 +190,11 @@ GET  /api/backtests/{id}/divergences
 GET  /api/backtests/{id}/ablations
 GET  /api/backtests/{id}/exports
 GET  /api/backtests/{id}/export.csv
+GET  /api/backtests/{id}/portfolio
+GET  /api/backtests/{id}/trades
+GET  /api/backtests/{id}/equity
+GET  /api/backtests/{id}/trades/export.csv
+GET  /api/backtests/{id}/equity/export.csv
 ```
 
 Des routes complètes existent aussi pour les jobs d'expériences, candidats,
@@ -239,8 +244,9 @@ confluence, traces, provenance, qualité et
 `BacktestSummary.trade_simulation_included` vaut `False` sans configuration et
 `True` après une simulation réussie. Son champ optionnel
 `portfolio_simulation` expose seulement version, quote asset, résumé et
-indicateurs de présence des détails. `BacktestJob` conserve le résultat complet
-en mémoire sans le sérialiser.
+indicateurs de présence des détails. Depuis la Phase 6.4, les détails sont dans
+les cinq tables `backtest_portfolio_*` de la migration 8 et
+`BacktestJob.portfolio_result` est libéré après la transaction.
 
 Il n'existe pas de modèle Pydantic `MarketSnapshot`; le marché retourne des
 dictionnaires. Scanner et backtest ont donc une validation Pydantic/OpenAPI
@@ -453,9 +459,12 @@ Avec `portfolio_simulation.version=1`, le replay exige un symbole et
 `every_bar`, adapte exactement `source_open_time` à la bougie primaire déjà
 chargée, rejette tout gap, puis lance le moteur après la constitution des
 observations et outcomes. Les outcomes ne sont jamais lus par la simulation.
-Les détails restent en mémoire; seul un résumé décimal sérialisé en chaînes est
-public. La reprise reconstruit le portefeuille à la fin et aucun résumé partiel
-n'est publié après annulation.
+Les détails sont persistés atomiquement par lots de 1 000 ; le résumé décimal
+reste borné dans le job. Trades et equity sont paginés, l'equity peut être
+échantillonnée sans interpolation et les exports v1 sont lus en flux. La reprise
+reconstruit le portefeuille à la fin et aucun résultat partiel n'est publié
+après annulation. Voir
+[`docs/backend/portfolio-persistence-api-v1.md`](backend/portfolio-persistence-api-v1.md).
 
 ## 15. Contrat `IndicatorSignal`
 
@@ -1049,8 +1058,8 @@ Le code backend lit `os.getenv`; charger explicitement `.env` ou utiliser
   sa docstring de module à corriger si ce contrat change.
 - Frontend : scanner, marché et backtest structurés sont intégrés ; les champs
   legacy restent volontairement présents.
-- Backtest : simulation v1 optionnelle intégrée au résumé; détails non
-  persistés, sans endpoints paginés ni frontend.
+- Backtest : simulation v1 optionnelle, détails persistés, endpoints
+  trades/equity et exports disponibles ; frontend portefeuille non intégré.
 - Versions Python non figées exactement.
 - Artefacts lourds présents localement mais ignorés : `dist`, `node_modules`,
   environnements virtuels, caches, logs, bases locales et `.env`.

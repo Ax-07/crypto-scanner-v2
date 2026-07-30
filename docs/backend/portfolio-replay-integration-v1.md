@@ -185,11 +185,12 @@ métrique n'est recalculée. Le drawdown reste positif. `win_rate` et
 `average_trade_return` restent `null` sans trade. Avec `force_close`,
 `open_position_count` vaut normalement zéro.
 
-Le `PortfolioSimulationResult` complet — ordres, exécutions, trades, equity,
-résumé et éventuelle position — réside dans l'attribut privé du `BacktestJob`
-en cache. Il n'est ni sérialisé dans la réponse principale, ni persisté en
-SQLite. Un redémarrage conserve le résumé public persisté, mais le détail devra
-être recalculé ou persisté par la Phase 6.4 avant d'être adressable.
+Depuis la Phase 6.4, le `PortfolioSimulationResult` complet — ordres,
+exécutions, trades, equity, métriques et éventuelle position — est persisté
+atomiquement avant le résumé public. L'attribut privé du `BacktestJob` est
+ensuite remis à `None`. Un redémarrage conserve le résumé et permet de relire
+les pages et exports depuis SQLite. Voir
+[`portfolio-persistence-api-v1.md`](portfolio-persistence-api-v1.md).
 
 ## Checkpoints, reprise et annulation
 
@@ -246,6 +247,6 @@ job, hors observations et trades. Cette estimation justifie la pagination,
 l'échantillonnage et/ou la persistance de la Phase 6.4; aucune limite arbitraire
 n'est ajoutée ici.
 
-Restent reportés : endpoints paginés trades/equity, exports versionnés,
-persistance des détails, frontend, multi-actifs, short, levier, pyramiding,
-stops, take profits et résultats partiels publics.
+Restent reportés : frontend, endpoints publics ordres/exécutions, filtre
+temporel d'equity, multi-actifs, short, levier, pyramiding, stops, take profits
+et résultats partiels publics.

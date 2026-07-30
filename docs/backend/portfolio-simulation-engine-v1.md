@@ -251,4 +251,7 @@ une suite primaire vérifiée et contiguë.
 La Phase 6.3 adapte exactement `source_open_time` vers la bougie primaire,
 rejette les gaps, ajoute la configuration et le résumé additifs, et reconstruit
 le résultat à la fin du replay. Elle n'alimente jamais la stratégie avec un
-`ForwardOutcome`. Les détails restent seulement en mémoire jusqu'à la Phase 6.4.
+`ForwardOutcome`. Depuis la Phase 6.4, le résultat est transmis sans recalcul à
+`PortfolioRepository`, puis libéré du job après la transaction. Le domaine ne
+dépend toujours pas de SQLite. Voir
+[`portfolio-persistence-api-v1.md`](portfolio-persistence-api-v1.md).

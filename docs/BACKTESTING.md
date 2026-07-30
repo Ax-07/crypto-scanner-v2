@@ -6,11 +6,14 @@
 > [`BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md`](BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md)
 > et résumée par
 > [`adr/ADR-portfolio-backtest-v1.md`](adr/ADR-portfolio-backtest-v1.md).
-> **Le moteur de portefeuille est intégré de manière optionnelle depuis la
-> Phase 6.3.** Le bloc absent conserve le replay historique. Un bloc présent
-> produit un résumé public; trades et equity détaillés restent internes. Voir
+> **Le moteur de portefeuille est intégré de manière optionnelle et ses détails
+> sont persistés depuis la Phase 6.4.** Le bloc absent conserve le replay
+> historique. Un bloc présent produit un résumé public, des pages trades/equity
+> et deux exports v1. Voir
 > [`backend/portfolio-simulation-engine-v1.md`](backend/portfolio-simulation-engine-v1.md)
 > et [`backend/portfolio-replay-integration-v1.md`](backend/portfolio-replay-integration-v1.md).
+> La persistance et les routes sont décrites dans
+> [`backend/portfolio-persistence-api-v1.md`](backend/portfolio-persistence-api-v1.md).
 
 ## Architecture et causalité
 
@@ -89,8 +92,17 @@ GET  /api/backtests/{job_id}/correlations
 GET  /api/backtests/{job_id}/ablations
 GET  /api/backtests/{job_id}/divergences
 GET  /api/backtests/{job_id}/exports
+GET  /api/backtests/{job_id}/portfolio
+GET  /api/backtests/{job_id}/trades
+GET  /api/backtests/{job_id}/equity
+GET  /api/backtests/{job_id}/trades/export.csv
+GET  /api/backtests/{job_id}/equity/export.csv
 WS   /api/backtests/{job_id}/ws
 ```
+
+Les pages de portefeuille lisent SQLite par séquence. L'equity propose un mode
+échantillonné déterministe qui ne fabrique aucun point. Les exports v1 sont lus
+par lots. L'interface React ne consomme pas encore ces routes.
 
 L'interface restaure l'historique persistant, rouvre les résultats et propose la
 reprise d'un job interrompu. Les tableaux de recherche et exports sont présents.

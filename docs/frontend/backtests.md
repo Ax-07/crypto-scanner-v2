@@ -2,9 +2,10 @@
 
 > La future interface de simulation est conçue dans
 > [`../BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md`](../BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md).
-> **Le backend peut désormais produire un résumé optionnel de simulation de
-> portefeuille.** L'interface ne configure ni n'affiche encore ce résumé.
-> Aucune section de trades ou courbe d'equity n'existe dans l'application.
+> **Le backend produit désormais un résumé optionnel et expose les métadonnées,
+> trades, equity et exports CSV v1 persistants.** L'interface ne configure ni
+> n'affiche encore ces données. Aucun graphique d'equity ni tableau de trades
+> n'existe dans l'application.
 
 ## Nature du module
 
@@ -73,6 +74,8 @@ DOM et la pagination possède un `nav` nommé.
 L'inventaire des champs persistés, de l'export observations et des conditions de
 dépréciation est dans l'[audit transversal](structured-signals-migration-audit.md).
 
-La Phase 6.4 devra fournir les endpoints paginés de trades/equity et leurs
-exports. Aucune donnée détaillée n'est actuellement consultable depuis
-l'interface.
+La Phase 6.4 fournit les endpoints paginés de trades/equity, l'échantillonnage
+et les exports. Aucune donnée détaillée n'est encore consultée par l'interface.
+La Phase 6.5 ajoutera les types et schémas frontend, le formulaire, le résumé,
+la courbe, la table et les liens d'export, dans une section distincte des
+outcomes.

@@ -1,12 +1,15 @@
 # Simulation de portefeuille du backtest — conception Phase 6.1
 
-Statut : **Phase 6.3 intégrée**, conception initiale auditée au commit `e61835b`.
+Statut : **Phase 6.4 intégrée**, conception initiale auditée au commit `e61835b`.
 
 La Phase 6.2 implémente le moteur de domaine pur sous
 `backend/app/domain/portfolio/`. La Phase 6.3 le relie désormais aux jobs et à
-un résumé public additif; les détails restent en mémoire et le frontend n'est
-pas intégré. Voir [`backend/portfolio-simulation-engine-v1.md`](backend/portfolio-simulation-engine-v1.md)
+un résumé public additif. La Phase 6.4 persiste, pagine et exporte les détails ;
+le frontend n'est pas intégré. Voir
+[`backend/portfolio-simulation-engine-v1.md`](backend/portfolio-simulation-engine-v1.md)
 et [`backend/portfolio-replay-integration-v1.md`](backend/portfolio-replay-integration-v1.md).
+La persistance est spécifiée dans
+[`backend/portfolio-persistence-api-v1.md`](backend/portfolio-persistence-api-v1.md).
 
 ## 1. Résumé exécutif
 
@@ -476,10 +479,10 @@ portfolio utilise des taux explicites afin d'éviter de changer leur sens.
 L'interface peut proposer de recopier les valeurs, jamais le faire
 silencieusement.
 
-## 17. Résultat Phase 6.3 et API futures
+## 17. Résultat Phase 6.3 et API Phase 6.4
 
-Le résumé du job contient désormais un aperçu borné. Les routes de détail
-ci-dessous restent réservées à la Phase 6.4 :
+Le résumé du job contient un aperçu borné. Les routes de détail ci-dessous sont
+implémentées par la Phase 6.4 :
 
 ```json
 {
@@ -506,6 +509,7 @@ routes existantes (qui n'ont pas de segment `/jobs`) :
 GET /api/backtests/{job_id}/portfolio
 GET /api/backtests/{job_id}/trades?offset=0&limit=100
 GET /api/backtests/{job_id}/equity?offset=0&limit=1000
+GET /api/backtests/{job_id}/equity?mode=sampled&max_points=1000
 GET /api/backtests/{job_id}/trades/export.csv
 GET /api/backtests/{job_id}/equity/export.csv
 ```
@@ -518,7 +522,7 @@ décision de contrat ultérieure explicite.
 Les listes renvoient `items,total,offset,limit`. Les endpoints actuels et
 `export.csv?dataset=...` restent inchangés.
 
-## 18. Exports futurs
+## 18. Exports Phase 6.4
 
 `trades-v1.csv` :
 
@@ -713,8 +717,9 @@ checkpoint vérifié.
   scénarios manuels et garanties anti-look-ahead.
 - **Phase 6.3 — Intégration au replay et contrats API** : bloc optionnel,
   causalité, fingerprint séparé, checkpoints et compatibilité.
-- **Phase 6.4 — Trades, equity, métriques et exports** : persistance,
-  pagination, drawdown, CSV versionnés.
+- **Phase 6.4 — Persistance, trades, equity et exports — implémentée** :
+  migration 8, transaction par lots, reprise, pagination, échantillonnage et
+  CSV versionnés.
 - **Phase 6.5 — Interface frontend du portefeuille** : formulaire, résumé,
   courbe, table et accessibilité.
 - **Phase 6.6 — Validation, performance et documentation finale** : matrice
