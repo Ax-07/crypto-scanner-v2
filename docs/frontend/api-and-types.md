@@ -84,6 +84,20 @@ Le type `SignalObservation` expose aussi les champs backend utilisés par le dé
 `accepted` reste un booléen d'acceptation par les filtres, pas une décision
 d'entrée/sortie.
 
+Depuis la Phase 6.5, `src/types/portfolio.ts` est la source canonique des
+contrats portefeuille et `src/schemas/portfolio.ts` leur validation Zod
+stricte. Versions, enums, timestamps, compteurs, champs nullables et clés
+inconnues sont contrôlés. Les décimaux comptables restent des chaînes exactes
+dans le store ; leur conversion en `number` est limitée à l'affichage et au
+graphique.
+
+`backtestApi.portfolio`, `trades` et `equity` valident leurs réponses avant de
+les retourner. L'equity visuelle demande `mode=sampled&max_points=1000`; les
+trades utilisent `offset` et `limit=50`. Les exports utilisent une réponse
+`Blob`, respectent `Content-Disposition` et révoquent leur URL objet. Les codes
+portfolio FastAPI structurés sont conservés sur `ApiError` puis traduits pour
+l'utilisateur.
+
 Utiliser l’union `message.type` pour réduire un message WebSocket. Éviter les copies locales partielles de ces contrats : elles dérivent rapidement du backend. Les exemples complets de payloads sont dans la [documentation WebSocket](websockets.md).
 
 ## Contrat des filtres structurés

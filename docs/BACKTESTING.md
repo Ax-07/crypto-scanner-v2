@@ -102,7 +102,8 @@ WS   /api/backtests/{job_id}/ws
 
 Les pages de portefeuille lisent SQLite par séquence. L'equity propose un mode
 échantillonné déterministe qui ne fabrique aucun point. Les exports v1 sont lus
-par lots. L'interface React ne consomme pas encore ces routes.
+par lots. Depuis la Phase 6.5, l'interface React consomme ces routes uniquement
+pour les jobs ayant demandé une simulation.
 
 L'interface restaure l'historique persistant, rouvre les résultats et propose la
 reprise d'un job interrompu. Les tableaux de recherche et exports sont présents.

@@ -1,11 +1,11 @@
 # Interface des backtests
 
-> La future interface de simulation est conçue dans
+> L'interface de simulation est conçue dans
 > [`../BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md`](../BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md).
 > **Le backend produit désormais un résumé optionnel et expose les métadonnées,
-> trades, equity et exports CSV v1 persistants.** L'interface ne configure ni
-> n'affiche encore ces données. Aucun graphique d'equity ni tableau de trades
-> n'existe dans l'application.
+> trades, equity et exports CSV v1 persistants.** Depuis la Phase 6.5,
+> l'interface configure la simulation, affiche son résumé, une equity
+> échantillonnée, les trades paginés et les deux exports.
 
 ## Nature du module
 
@@ -74,8 +74,8 @@ DOM et la pagination possède un `nav` nommé.
 L'inventaire des champs persistés, de l'export observations et des conditions de
 dépréciation est dans l'[audit transversal](structured-signals-migration-audit.md).
 
-La Phase 6.4 fournit les endpoints paginés de trades/equity, l'échantillonnage
-et les exports. Aucune donnée détaillée n'est encore consultée par l'interface.
-La Phase 6.5 ajoutera les types et schémas frontend, le formulaire, le résumé,
-la courbe, la table et les liens d'export, dans une section distincte des
-outcomes.
+La Phase 6.5 est détaillée dans
+[`portfolio-simulation-ui.md`](portfolio-simulation-ui.md). La section n'est
+montée que si `config.portfolio_simulation` existe. Un job historique conserve
+donc exactement ses résultats, observations, outcomes et exports historiques,
+sans appel aux endpoints portefeuille.

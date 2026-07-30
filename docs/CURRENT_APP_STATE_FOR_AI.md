@@ -31,9 +31,10 @@ Application locale d'analyse technique crypto comprenant :
 - un replay historique causal produisant des observations et des rendements futurs ;
 - un module d'expérimentation, de profils, de shadow et de promotion.
 
-Le produit ne passe aucun ordre. Il ne gère ni portefeuille, capital, taille de
-position, equity curve, stop-loss ni chevauchement de trades. Le « backtest » est un
-replay de signaux avec outcomes forward, pas un simulateur de portefeuille.
+Le produit ne passe aucun ordre réel. Le backtest peut désormais ajouter une
+simulation fictive de portefeuille v1, optionnelle et strictement séparée du
+replay de signaux et de ses outcomes forward. Il ne gère toujours ni short,
+levier, stop-loss, take profit ou multi-position.
 
 La Phase 6.1 a produit la conception
 [`BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md`](BACKTEST_PORTFOLIO_SIMULATION_DESIGN.md)
@@ -45,7 +46,8 @@ documentation technique est
 [`backend/portfolio-simulation-engine-v1.md`](backend/portfolio-simulation-engine-v1.md).
 L'intégration est détaillée dans
 [`backend/portfolio-replay-integration-v1.md`](backend/portfolio-replay-integration-v1.md).
-Le bloc absent conserve le comportement et les payloads historiques.
+Le bloc absent conserve le comportement et les payloads historiques. La Phase
+6.5 configure et présente désormais ce portefeuille dans le frontend.
 
 ## 3. État Git
 
@@ -1059,7 +1061,8 @@ Le code backend lit `os.getenv`; charger explicitement `.env` ou utiliser
 - Frontend : scanner, marché et backtest structurés sont intégrés ; les champs
   legacy restent volontairement présents.
 - Backtest : simulation v1 optionnelle, détails persistés, endpoints
-  trades/equity et exports disponibles ; frontend portefeuille non intégré.
+  trades/equity et exports disponibles ; frontend portefeuille intégré en
+  Phase 6.5 avec résumé, equity échantillonnée et trades paginés.
 - Versions Python non figées exactement.
 - Artefacts lourds présents localement mais ignorés : `dist`, `node_modules`,
   environnements virtuels, caches, logs, bases locales et `.env`.
@@ -1231,3 +1234,107 @@ Conclusion : la donnée structurée arrive jusqu'aux stores et les trois interfa
 la présentent sans recalcul. La suite doit être choisie à partir de mesures
 d'usage réelles : v2, dépréciation formelle ou nouvelle optimisation prouvée.
 Aucune suppression de champ ne doit précéder cette décision.
+
+## 44. Phase 6.6 — audit final du portefeuille
+
+Audit réalisé le 30 juillet 2026 au HEAD initial `770f002`, avec les changements
+frontend Phase 6.5 déjà présents dans l'arbre de travail. Aucun commit, `git add`,
+dépendance ou modification de lockfile n'a été créé.
+
+Le contrat Pydantic/OpenAPI a été aligné sur TypeScript/Zod : décimaux réseau
+en chaînes, nullabilité limitée à `win_rate`, `average_trade_return` et
+`exit_observation_id`, compteurs non négatifs, ratios bornés, prix/cash valides
+et timestamps avec fuseau. Un snapshot OpenAPI ciblé verrouille les huit
+contrats portefeuille.
+
+Un défaut de concurrence frontend démontré permettait à une réponse metadata
+du job précédent de revenir pendant le chargement d'un autre job. Le store
+retire maintenant immédiatement l'ancien job au début de `load`; les tests
+verrouillent metadata, trades, equity et erreurs tardives. Le graphique vérifie
+explicitement le désabonnement et `chart.remove()`.
+
+L'audit reproductible couvre 300 et 10 000 bougies moteur, puis 500 000 points
+de persistance. Sur la machine d'audit, le cas grand a utilisé 501 lots,
+13,910 s de persistance, 3,686 s d'échantillonnage, 41,462 s d'export pour
+500 001 lignes et environ 91,4 Mo de fichier SQLite cumulatif. Le pic
+`tracemalloc` indicatif était 85,6 Mo. WAL était actif et revenu à 0 après
+fermeture des connexions.
+
+Les rapports canoniques sont :
+
+- `docs/audits/portfolio-contract-audit.md`;
+- `docs/audits/portfolio-simulation-performance.md`;
+- `docs/audits/portfolio-e2e-audit.md`;
+- `docs/operations/backtest-portfolio-operations.md`.
+
+Il n'existe pas d'infrastructure Playwright/Cypress : les scénarios E2E sont des
+tests DOM Testing Library, pas des tests navigateur réels. SQLite est validé
+pour un usage local avancé. Une utilisation plus large reste conditionnée à
+une politique de rétention, au suivi disque et à une validation navigateur
+réelle. Aucun TTL de backtest, short, levier, stop, multi-actifs ou filtre
+temporel d'equity n'a été ajouté.
+
+Validation finale Phase 6.6 :
+
+- backend : 661 réussis, 1 ignoré, 27 subtests, 2 warnings pandas; compileall,
+  Black, Flake8 et mypy verts;
+- frontend : lockfile à jour, 335 paquets réutilisés, 0 téléchargé; typecheck
+  et lint verts; 48 fichiers/299 tests réussis; build Vite, 2 065 modules;
+- aucun scénario Playwright/Cypress disponible;
+- HEAD final toujours `770f002`; aucun commit créé.
+
+## 45. Phase 7.1 — baseline signaux et stratégie v1
+
+La baseline de mesure est figée au HEAD `770f002` et ne modifie aucun calcul
+d'indicateur, filtre, règle de confluence, stratégie, contrat public, endpoint ou
+fichier frontend. Le script interne
+`backend/scripts/audit_signal_strategy_baseline.py` ouvre la base historique en
+lecture seule, utilise `BacktestEngine`, les analytics/ablations existants et le
+moteur `accepted_state_transition_v1`, puis supprime sa base de résultats
+temporaire.
+
+Configuration canonique : `every_bar`, bougies confirmed, outcomes 1/3/6/12/24,
+exécution `next_open`, capital 10 000 USDC, sizing 100 % du cash, frais 0,1 %,
+slippage nul et `force_close`. Les paramètres `ScanConfig` de production restent
+inchangés. Les plages sont découpées chronologiquement 60/20/20 ; le test final
+est gelé pour les futures expériences.
+
+Inventaire local au 30 juillet 2026 : 127 776 bougies, 851 combinaisons et six
+timeframes. Le full sélectionne cinq plages fermées contiguës :
+
+- BTC/USDC 4h, 7 381 bougies, du 12 mars 2023 au 24 juillet 2026 ;
+- BTC/USDC 1d, 1 384 bougies, du 16 décembre 2018 au 30 septembre 2022 ;
+- LINK/USDC 4h, 1 208 bougies, du 4 janvier au 24 juillet 2026 ;
+- ONDO/USDC 1h, 1 500 bougies, du 22 mai au 23 juillet 2026 ;
+- SUI/USDC 1h, 1 500 bougies, du 23 mai au 24 juillet 2026.
+
+Résultat principal : 12 973 observations, 33 accepted et 22 trades. BTC 4h
+produit 21 trades, un rendement de -2,7543 %, un drawdown de 5,4849 %, 424,29
+USDC de frais et un profit factor de 0,7588. SUI 1h produit un seul trade
+(-0,1594 %). Les trois autres combinaisons ne produisent aucun trade. Tous les
+marchés restent sous le seuil pré-déclaré de 30 trades et sont donc classés
+faible échantillon ; aucune qualité d'indicateur n'est conclue.
+
+Le stade RSI rejette 11 763 observations et constitue le goulot dominant. La
+seule cible recommandée pour la Phase 7.2 est donc une expérience minimale sur
+ce stade, avec rendement validation comme métrique principale, drawdown, trades,
+frais et généralisation inter-marchés comme garde-fous. Cette recommandation
+n'autorise pas encore une modification : l'hypothèse et les seuils doivent être
+gelés, le développement puis la validation mesurés, et le test final ne doit être
+ouvert qu'après gel de la variante.
+
+Références :
+
+- `docs/audits/signal-strategy-baseline-v1-config.md` ;
+- `docs/audits/signal-strategy-baseline-v1-inventory.md` ;
+- `docs/audits/signal-strategy-baseline-v1.md` ;
+- `docs/audits/signal-strategy-baseline-v1-summary.json` ;
+- `docs/audits/signal-strategy-evaluation-methodology.md` ;
+- `backend/app/audits/signal_strategy_baseline.py` ;
+- `backend/tests/test_signal_strategy_baseline.py` ;
+- `backend/tests/test_signal_strategy_evaluation.py`.
+
+Limites : presque toutes les données sont cotées en USDC, la plupart des 851
+combinaisons ont un historique trop court, les résultats ne se généralisent pas
+entre marchés/timeframes et les ablations/corrélations existantes restent des
+analyses d'outcomes descriptives, non un P&L de portefeuille.
