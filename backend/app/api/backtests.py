@@ -72,7 +72,7 @@ async def backtest_capabilities() -> dict[str, Any]:
         },
         "resume": True,
         "checkpoint_schema_version": 1,
-        "trade_simulation": False,
+        "trade_simulation": True,
     }
 
 
@@ -109,7 +109,7 @@ async def get_summary(job_id: str, request: Request) -> dict[str, Any]:
     job = await _job_or_404(_manager(request), job_id)
     if job.summary is None:
         raise HTTPException(status_code=409, detail="Résumé indisponible avant la fin du backtest")
-    return job.summary.model_dump(mode="json")
+    return job.summary.public_payload()
 
 
 @router.get("/{job_id}/summary.json")
@@ -118,7 +118,7 @@ async def export_summary_json(job_id: str, request: Request) -> Response:
     if job.summary is None:
         raise HTTPException(status_code=409, detail="Résumé indisponible")
     return Response(
-        job.summary.model_dump_json(indent=2),
+        json.dumps(job.summary.public_payload(), ensure_ascii=False, indent=2),
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="backtest-{job_id}-summary.json"'},
     )

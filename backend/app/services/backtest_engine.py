@@ -15,9 +15,16 @@ from app.domain.backtesting import (
 from app.domain.signal_evaluation import evaluate_signal_snapshot
 from app.domain.candles import Candle, timeframe_milliseconds
 from app.domain.limits import ma_ohlcv_limit, primary_ohlcv_limit
+from app.domain.portfolio import simulate_portfolio
 from app.models.backtest import BacktestJob, BacktestProgress, BacktestSummary
 from app.repositories.backtest_repository import BacktestRepository
 from app.repositories.candle_repository import CandleRepository
+from app.services.portfolio_replay import (
+    backtest_config_fingerprint,
+    build_portfolio_simulation_steps,
+    to_internal_portfolio_config,
+    to_public_portfolio_result,
+)
 
 ProgressCallback = Callable[[BacktestProgress], Awaitable[None]]
 
@@ -159,6 +166,10 @@ class BacktestEngine:
             for symbol, series in sorted(loaded.items())
         )
         job.dataset_version = "sha256:" + hashlib.sha256(fingerprint_payload.encode()).hexdigest()
+        config_fingerprint = (
+            backtest_config_fingerprint(config) if config.portfolio_simulation is not None else None
+        )
+        job.config_fingerprint = config_fingerprint
         checkpoint = await self.results.get_checkpoint(job.id)
         resume_symbol_index = int(checkpoint.get("symbol_index", 0)) if checkpoint else 0
         resume_decision_index = int(checkpoint.get("decision_index", -1)) if checkpoint else -1
@@ -219,6 +230,8 @@ class BacktestEngine:
                     snapshot_status=config.snapshot_status,
                     dataset_version=job.dataset_version,
                 )
+                if config_fingerprint is not None:
+                    observation.profile_fingerprint = config_fingerprint
                 signature: list[object] = [
                     observation.accepted,
                     observation.rejection_stage,
@@ -266,6 +279,8 @@ class BacktestEngine:
                         "status": "running",
                         "last_state": last_state,
                     }
+                    if job.config_fingerprint is not None:
+                        checkpoint["config_fingerprint"] = job.config_fingerprint
                     job.checkpoint = checkpoint
                     await self.results.save_checkpoint(job.id, checkpoint)
                     if on_progress:
@@ -280,6 +295,24 @@ class BacktestEngine:
         summary, correlations, ablations = build_analytics(
             observations, outcomes, config, job.warnings
         )
+        if config.portfolio_simulation is not None:
+            symbol = config.symbols[0]
+            steps = build_portfolio_simulation_steps(
+                observations=observations,
+                primary_candles=loaded[symbol].candles,
+                symbol=symbol,
+                timeframe=config.signal_config.timeframe,
+            )
+            portfolio_result = simulate_portfolio(
+                symbol=symbol,
+                steps=steps,
+                config=to_internal_portfolio_config(config.portfolio_simulation),
+            )
+            job.set_portfolio_result(portfolio_result)
+            summary["trade_simulation_included"] = True
+            summary["portfolio_simulation"] = to_public_portfolio_result(
+                portfolio_result
+            ).model_dump(mode="json")
         job.summary = BacktestSummary.model_validate(summary)
         job.correlations = correlations
         job.ablations = ablations
@@ -309,6 +342,8 @@ class BacktestEngine:
             "dataset_version": job.dataset_version,
             "status": "completed",
         }
+        if job.config_fingerprint is not None:
+            final_checkpoint["config_fingerprint"] = job.config_fingerprint
         job.checkpoint = final_checkpoint
         await self.results.save_checkpoint(job.id, final_checkpoint)
         job.progress.phase = "completed"

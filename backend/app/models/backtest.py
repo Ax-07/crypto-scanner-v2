@@ -6,11 +6,16 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
 from app.core.settings import ScanConfig
 from app.domain.indicators import Availability, ConfluenceGrade, TrendState
+from app.domain.portfolio import PortfolioSimulationResult
 from app.models.scanner import IndicatorSignalModel
+from app.models.portfolio import (
+    PortfolioSimulationConfigV1,
+    PortfolioSimulationPublicResult,
+)
 
 
 class BacktestStatus(StrEnum):
@@ -36,6 +41,13 @@ class BacktestConfig(BaseModel):
     fee_bps: float = Field(default=0, ge=0, le=1_000)
     slippage_bps: float = Field(default=0, ge=0, le=1_000)
     snapshot_status: Literal["confirmed", "provisional"] = "confirmed"
+    portfolio_simulation: PortfolioSimulationConfigV1 | None = Field(
+        default=None,
+        description=(
+            "Simulation séquentielle optionnelle, distincte des rendements futurs "
+            "indépendants. Son absence conserve le replay historique."
+        ),
+    )
 
     @field_validator("symbols")
     @classmethod
@@ -64,6 +76,19 @@ class BacktestConfig(BaseModel):
     def validate_range(self) -> "BacktestConfig":
         if self.start >= self.end:
             raise ValueError("start doit précéder end")
+        portfolio = self.portfolio_simulation
+        if portfolio is not None:
+            if len(self.symbols) != 1:
+                raise ValueError("portfolio_simulation exige exactement un symbole")
+            if self.replay_mode != "every_bar":
+                raise ValueError("portfolio_simulation exige replay_mode='every_bar'")
+            symbol = self.symbols[0]
+            if "/" in symbol:
+                symbol_quote = symbol.rsplit("/", 1)[1]
+                if symbol_quote != portfolio.quote_asset:
+                    raise ValueError(
+                        "portfolio_simulation.quote_asset est incohérent avec le symbole"
+                    )
         return self
 
 
@@ -159,6 +184,12 @@ class BacktestSummary(BaseModel):
     filter_funnel: list[dict[str, Any]] = Field(default_factory=list)
     provisional_supported: bool = False
     trade_simulation_included: bool = False
+    portfolio_simulation: PortfolioSimulationPublicResult | None = None
+
+    def public_payload(self) -> dict[str, Any]:
+        """Omet le nouveau bloc lorsqu'il est absent pour préserver le JSON historique."""
+        exclude = {"portfolio_simulation"} if self.portfolio_simulation is None else None
+        return self.model_dump(mode="json", exclude=exclude)
 
 
 class BacktestJob(BaseModel):
@@ -177,8 +208,24 @@ class BacktestJob(BaseModel):
     dataset_version: str = "unknown"
     algorithm_version: str = "signal-evaluation-v2"
     checkpoint: dict[str, Any] | None = None
+    config_fingerprint: str | None = None
+    _portfolio_result: PortfolioSimulationResult | None = PrivateAttr(default=None)
+
+    @property
+    def portfolio_result(self) -> PortfolioSimulationResult | None:
+        """Retourne le résultat détaillé uniquement conservé en mémoire."""
+        return self._portfolio_result
+
+    def set_portfolio_result(self, result: PortfolioSimulationResult | None) -> None:
+        """Remplace atomiquement le détail interne non sérialisé."""
+        self._portfolio_result = result
 
     def public_payload(self) -> dict[str, Any]:
         payload = self.model_dump(mode="json")
+        if self.config.portfolio_simulation is None:
+            payload["config"].pop("portfolio_simulation", None)
+            payload.pop("config_fingerprint", None)
+        if self.summary is not None:
+            payload["summary"] = self.summary.public_payload()
         payload["progress"]["percent"] = self.progress.percent
         return payload

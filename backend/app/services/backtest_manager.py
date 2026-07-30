@@ -11,6 +11,7 @@ from app.models.backtest import BacktestConfig, BacktestJob, BacktestStatus
 from app.repositories.backtest_repository import BacktestRepository
 from app.repositories.candle_repository import CandleRepository
 from app.services.backtest_engine import BacktestEngine, SQLiteHistoricalRepository
+from app.services.portfolio_replay import backtest_config_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,8 @@ class BacktestManager:
 
     async def create_job(self, config: BacktestConfig) -> BacktestJob:
         job = BacktestJob(id=uuid4().hex, config=config)
+        if config.portfolio_simulation is not None:
+            job.config_fingerprint = backtest_config_fingerprint(config)
         self._jobs[job.id] = job
         self._conditions[job.id] = asyncio.Condition()
         self._versions[job.id] = 0
@@ -120,11 +123,19 @@ class BacktestManager:
         except asyncio.CancelledError:
             job.status = BacktestStatus.CANCELLED
             job.progress.phase = "cancelled"
+            job.set_portfolio_result(None)
+            if job.summary is not None and job.summary.portfolio_simulation is not None:
+                job.summary.portfolio_simulation = None
+                job.summary.trade_simulation_included = False
             logger.info("Backtest %s annulé", job.id)
         except Exception as exc:
             job.status = BacktestStatus.FAILED
             job.error = str(exc)
             job.progress.phase = "failed"
+            job.set_portfolio_result(None)
+            if job.summary is not None and job.summary.portfolio_simulation is not None:
+                job.summary.portfolio_simulation = None
+                job.summary.trade_simulation_included = False
             logger.exception("Échec du backtest %s", job.id)
         finally:
             job.completed_at = datetime.now(timezone.utc)

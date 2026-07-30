@@ -29,6 +29,14 @@ class BacktestRepository:
 
     async def save_job(self, job: BacktestJob) -> None:
         now = int(datetime.now(timezone.utc).timestamp() * 1_000)
+        config_exclude = (
+            {"portfolio_simulation"} if job.config.portfolio_simulation is None else None
+        )
+        summary_exclude = (
+            {"portfolio_simulation"}
+            if job.summary is not None and job.summary.portfolio_simulation is None
+            else None
+        )
         async with self.database.connection() as connection:
             await connection.execute(
                 """
@@ -49,9 +57,9 @@ class BacktestRepository:
                 (
                     job.id,
                     job.status.value,
-                    job.config.model_dump_json(),
+                    job.config.model_dump_json(exclude=config_exclude),
                     job.progress.model_dump_json(),
-                    job.summary.model_dump_json() if job.summary else None,
+                    (job.summary.model_dump_json(exclude=summary_exclude) if job.summary else None),
                     json.dumps(job.correlations, allow_nan=False) if job.correlations else None,
                     json.dumps(job.ablations, allow_nan=False) if job.ablations else None,
                     json.dumps(job.warnings),
@@ -95,6 +103,11 @@ class BacktestRepository:
                 else "signal-evaluation-v2"
             ),
             checkpoint=checkpoint,
+            config_fingerprint=(
+                str(checkpoint["config_fingerprint"])
+                if checkpoint and checkpoint.get("config_fingerprint")
+                else None
+            ),
         )
 
     async def list_jobs(
