@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { backtestApi, backtestJobSchema, parseSignalObservationPage } from "@/api/backtests"
+import {
+  portfolioEquityPage,
+  portfolioMetadata,
+  portfolioTradePage,
+} from "@/test/backtest-fixtures"
 
 const payload = {
   id: "job-1",
@@ -122,5 +127,54 @@ describe("backtest observations pagination", () => {
       "/api/backtests/job-1/observations?offset=50&limit=25",
     )
     expect(page).toMatchObject({ items: [], total: 125, offset: 50, limit: 25 })
+  })
+})
+
+describe("API portfolio", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("valide métadonnées, trades et equity et transmet leurs paramètres", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(portfolioMetadata), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(portfolioTradePage), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(portfolioEquityPage), { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await expect(backtestApi.portfolio("job-1")).resolves.toEqual(portfolioMetadata)
+    await expect(backtestApi.trades("job-1", 50, 25)).resolves.toEqual(portfolioTradePage)
+    await expect(backtestApi.equity("job-1", {
+      mode: "sampled",
+      maxPoints: 1000,
+    })).resolves.toEqual(portfolioEquityPage)
+
+    expect(String(fetchMock.mock.calls[1][0])).toContain("trades?offset=50&limit=25")
+    expect(String(fetchMock.mock.calls[2][0])).toContain("equity?mode=sampled&max_points=1000")
+  })
+
+  it("rejette une réponse portfolio avec clé inconnue", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ...portfolioMetadata, unexpected: true }), { status: 200 }),
+    ))
+    await expect(backtestApi.portfolio("job-1")).rejects.toThrow()
+  })
+
+  it("télécharge le blob sans parser le CSV puis révoque son URL", async () => {
+    const click = vi.fn()
+    const anchor = document.createElement("a")
+    vi.spyOn(document, "createElement").mockReturnValue(anchor)
+    anchor.click = click
+    const createObjectURL = vi.fn().mockReturnValue("blob:test")
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL })
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("a,b\r\n1,2", {
+      status: 200,
+      headers: { "Content-Disposition": 'attachment; filename="job-1-trades-v1.csv"' },
+    })))
+
+    await backtestApi.downloadPortfolioExport("job-1", "trades")
+
+    expect(anchor.download).toBe("job-1-trades-v1.csv")
+    expect(click).toHaveBeenCalledOnce()
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:test")
   })
 })

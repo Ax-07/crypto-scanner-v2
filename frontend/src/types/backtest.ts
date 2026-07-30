@@ -1,5 +1,9 @@
 import type { Availability, ConfluenceGrade, ScanConfig, TrendState } from "@/types/scanner"
 import type { IndicatorSignals } from "@/types/indicator-signals"
+import type {
+  PortfolioSimulationConfig,
+  PortfolioSimulationPublicResult,
+} from "@/types/portfolio"
 
 export type BacktestStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "interrupted"
 export type BacktestConfig = {
@@ -14,6 +18,7 @@ export type BacktestConfig = {
   fee_bps: number
   slippage_bps: number
   snapshot_status: "confirmed" | "provisional"
+  portfolio_simulation?: PortfolioSimulationConfig
 }
 
 export type BacktestSummary = {
@@ -27,6 +32,7 @@ export type BacktestSummary = {
   filter_funnel: Array<{ stage: string; input: number; passed: number; rejected: number }>
   provisional_supported: boolean
   trade_simulation_included: boolean
+  portfolio_simulation?: PortfolioSimulationPublicResult
 }
 
 export type BacktestJob = {

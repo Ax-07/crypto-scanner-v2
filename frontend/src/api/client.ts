@@ -14,6 +14,7 @@ export class ApiError extends Error {
     message: string,
     readonly status: number,
     readonly issues: ApiValidationIssue[] = [],
+    readonly code: string | null = null,
   ) {
     super(message)
     this.name = "ApiError"
@@ -36,7 +37,12 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
     const payload: unknown = await response.json().catch(() => null)
     const issues = readIssues(payload)
     const detail = readDetail(payload)
-    throw new ApiError(detail ?? `Erreur HTTP ${response.status}`, response.status, issues)
+    throw new ApiError(
+      detail ?? `Erreur HTTP ${response.status}`,
+      response.status,
+      issues,
+      readCode(payload),
+    )
   }
 
   if (response.status === 204) return undefined as T
@@ -55,6 +61,25 @@ function readIssues(payload: unknown): ApiValidationIssue[] {
 function readDetail(payload: unknown): string | null {
   if (!payload || typeof payload !== "object" || !("detail" in payload)) return null
   if (typeof payload.detail === "string") return payload.detail
+  if (
+    payload.detail
+    && typeof payload.detail === "object"
+    && "message" in payload.detail
+    && typeof payload.detail.message === "string"
+  ) return payload.detail.message
   const issues = readIssues(payload)
   return issues.length ? issues.map((issue) => `${issue.loc.join(".")}: ${issue.msg}`).join(" · ") : null
+}
+
+function readCode(payload: unknown): string | null {
+  if (
+    !payload
+    || typeof payload !== "object"
+    || !("detail" in payload)
+    || !payload.detail
+    || typeof payload.detail !== "object"
+    || !("code" in payload.detail)
+    || typeof payload.detail.code !== "string"
+  ) return null
+  return payload.detail.code
 }

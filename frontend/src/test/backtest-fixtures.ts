@@ -1,5 +1,11 @@
 import type { IndicatorSignal } from "@/types/indicator-signals"
 import type { BacktestConfig, BacktestJob, SignalObservation } from "@/types/backtest"
+import type {
+  PortfolioEquityPage,
+  PortfolioRunMetadata,
+  PortfolioSimulationPublicResult,
+  PortfolioTradePage,
+} from "@/types/portfolio"
 
 export const backtestSignal: IndicatorSignal = {
   status: "available",
@@ -9,6 +15,113 @@ export const backtestSignal: IndicatorSignal = {
   strength: 0.75,
   reason: "Signal technique calculé à cet instant.",
   raw_value: 31.4,
+}
+
+export const portfolioPublicResult: PortfolioSimulationPublicResult = {
+  version: 1,
+  quote_asset: "USDC",
+  summary: {
+    version: 1,
+    quote_asset: "USDC",
+    initial_capital: "10000",
+    final_cash: "10350.25",
+    final_equity: "10350.25",
+    net_profit: "350.25",
+    total_return_ratio: "0.035025",
+    realized_pnl: "350.25",
+    unrealized_pnl: "0",
+    total_fees: "20.1",
+    trade_count: 1,
+    winning_trade_count: 1,
+    losing_trade_count: 0,
+    breakeven_trade_count: 0,
+    win_rate: "1",
+    average_trade_return: "0.035025",
+    max_drawdown_ratio: "0.012",
+    exposure_ratio: "0.75",
+    open_position_count: 0,
+  },
+  has_trades: true,
+  has_equity_curve: true,
+}
+
+export const portfolioMetadata: PortfolioRunMetadata = {
+  version: 1,
+  schema_version: 1,
+  engine_version: "portfolio-engine-v1",
+  quote_asset: "USDC",
+  summary: portfolioPublicResult.summary,
+  details_status: "complete",
+  order_count: 2,
+  execution_count: 2,
+  trade_count: 1,
+  equity_point_count: 2,
+  available_after_restart: true,
+}
+
+export const portfolioTradePage: PortfolioTradePage = {
+  items: [{
+    version: 1,
+    sequence: 0,
+    trade_id: "trade-000001",
+    position_id: "position-000001",
+    symbol: "BTC/USDC",
+    quote_asset: "USDC",
+    entry_observation_id: "observation-1",
+    exit_observation_id: null,
+    entry_time: "2026-07-01T04:00:00Z",
+    exit_time: "2026-07-02T00:00:00Z",
+    entry_price: "100",
+    exit_price: "110",
+    quantity: "10",
+    entry_fee: "1",
+    exit_fee: "1.1",
+    gross_exit_proceeds: "1100",
+    net_exit_proceeds: "1098.9",
+    realized_pnl: "98.9",
+    return_ratio: "0.0989",
+    duration_bars: 5,
+    exit_reason: "end_of_test",
+  }],
+  total: 1,
+  offset: 0,
+  limit: 50,
+  has_more: false,
+}
+
+export const portfolioEquityPage: PortfolioEquityPage = {
+  items: [
+    {
+      version: 1,
+      sequence: 0,
+      timestamp: "2026-07-01T00:00:00Z",
+      cash: "10000",
+      position_value: "0",
+      equity: "10000",
+      realized_pnl_cumulative: "0",
+      unrealized_pnl: "0",
+      fees_cumulative: "0",
+      drawdown_ratio: "0",
+    },
+    {
+      version: 1,
+      sequence: 1,
+      timestamp: "2026-07-02T00:00:00Z",
+      cash: "10350.25",
+      position_value: "0",
+      equity: "10350.25",
+      realized_pnl_cumulative: "350.25",
+      unrealized_pnl: "0",
+      fees_cumulative: "20.1",
+      drawdown_ratio: "0.012",
+    },
+  ],
+  total: 2,
+  offset: 0,
+  limit: 1000,
+  has_more: false,
+  sampled: true,
+  source_point_count: 2,
 }
 
 export function createObservation(

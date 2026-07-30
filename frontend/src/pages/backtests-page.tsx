@@ -15,6 +15,12 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { backtestFormSchema, parseHorizons, type BacktestFormValues } from "@/features/backtests/backtest-schema";
 import { BacktestObservationsTable } from "@/features/backtests/components/backtest-observations-table";
+import { PortfolioResults } from "@/features/backtests/components/portfolio-results";
+import { PortfolioSimulationFields } from "@/features/backtests/components/portfolio-simulation-fields";
+import {
+  buildPortfolioSimulationPayload,
+  DEFAULT_PORTFOLIO_FORM_VALUES,
+} from "@/features/backtests/portfolio-utils";
 import { useBacktestStore } from "@/stores/backtest-store";
 import type { BacktestConfig, BacktestJob, BacktestSummary } from "@/types/backtest";
 import type { ScanConfig } from "@/types/scanner";
@@ -40,6 +46,7 @@ const defaults: BacktestFormValues = {
   min_trend_score: 2,
   use_confluence_score: true,
   min_confluence_score: 60,
+  ...DEFAULT_PORTFOLIO_FORM_VALUES,
 };
 
 export function BacktestsPage() {
@@ -86,6 +93,7 @@ export function BacktestsPage() {
       min_confluence_score: values.min_confluence_score,
     };
   
+    const portfolioSimulation = buildPortfolioSimulationPayload(values);
     const config: BacktestConfig = {
       symbols: values.symbols
         .split(",")
@@ -101,6 +109,7 @@ export function BacktestsPage() {
       fee_bps: values.fee_bps,
       slippage_bps: values.slippage_bps,
       snapshot_status: "confirmed",
+      ...(portfolioSimulation ? { portfolio_simulation: portfolioSimulation } : {}),
     };
     await start(config);
   });
@@ -162,6 +171,7 @@ export function BacktestsPage() {
                 <NumberField form={form} name="min_confluence_score" label="Score minimum" />
               </ToggleCard>
             </div>
+            <PortfolioSimulationFields form={form} disabled={busy} />
             <div className="flex justify-end gap-2">
               {busy ? (
                 <Button type="button" variant="outline" onClick={() => void cancel()}>
@@ -381,6 +391,7 @@ function Results({ job }: { job: BacktestJob }) {
           </Card>
         </>
       ) : null}
+      <PortfolioResults job={job} />
       <BacktestObservationsTable job={job} />
     </div>
   );
@@ -399,7 +410,10 @@ function HorizonTable({ summary }: { summary: BacktestSummary }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Rendements nets par horizon</CardTitle>
+        <CardTitle>Analyse des rendements futurs</CardTitle>
+        <CardDescription>
+          Mesures indépendantes calculées après chaque observation, sans séquence de portefeuille.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <Table>
