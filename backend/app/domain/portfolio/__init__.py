@@ -1,0 +1,88 @@
+"""API interne du moteur pur de simulation de portefeuille v1."""
+
+from app.domain.portfolio.accounting import value_open_position
+from app.domain.portfolio.decimal_utils import (
+    CASH_TOLERANCE,
+    DECIMAL_PRECISION,
+    PortfolioDomainError,
+    PortfolioExecutionError,
+    PortfolioInvariantError,
+    PortfolioValidationError,
+    require_non_negative_decimal,
+    require_positive_decimal,
+    to_finite_decimal,
+)
+from app.domain.portfolio.execution import (
+    EntryExecutionCalculation,
+    ExitExecutionCalculation,
+    calculate_entry_execution,
+    calculate_exit_execution,
+)
+from app.domain.portfolio.metrics import calculate_drawdown, calculate_portfolio_metrics
+from app.domain.portfolio.simulation import simulate_portfolio
+from app.domain.portfolio.sizing import calculate_percent_cash_allocation
+from app.domain.portfolio.strategy import evaluate_accepted_state_transition
+from app.domain.portfolio.types import (
+    EndOfTestPolicy,
+    EquityPoint,
+    ExecutionPolicy,
+    ExitReason,
+    OrderRejectionReason,
+    OrderSide,
+    OrderStatus,
+    PortfolioMetrics,
+    PortfolioSimulationConfig,
+    PortfolioSimulationResult,
+    PortfolioSimulationStep,
+    PositionSizingMode,
+    PositionStatus,
+    SimulatedExecution,
+    SimulatedOrder,
+    SimulatedPosition,
+    SimulatedTrade,
+    StrategyAction,
+    StrategyIntent,
+    StrategyReason,
+)
+
+__all__ = [
+    "CASH_TOLERANCE",
+    "DECIMAL_PRECISION",
+    "EndOfTestPolicy",
+    "EntryExecutionCalculation",
+    "EquityPoint",
+    "ExecutionPolicy",
+    "ExitExecutionCalculation",
+    "ExitReason",
+    "OrderRejectionReason",
+    "OrderSide",
+    "OrderStatus",
+    "PortfolioDomainError",
+    "PortfolioExecutionError",
+    "PortfolioInvariantError",
+    "PortfolioMetrics",
+    "PortfolioSimulationConfig",
+    "PortfolioSimulationResult",
+    "PortfolioSimulationStep",
+    "PortfolioValidationError",
+    "PositionSizingMode",
+    "PositionStatus",
+    "SimulatedExecution",
+    "SimulatedOrder",
+    "SimulatedPosition",
+    "SimulatedTrade",
+    "StrategyAction",
+    "StrategyIntent",
+    "StrategyReason",
+    "calculate_drawdown",
+    "calculate_entry_execution",
+    "calculate_exit_execution",
+    "calculate_percent_cash_allocation",
+    "calculate_portfolio_metrics",
+    "evaluate_accepted_state_transition",
+    "require_non_negative_decimal",
+    "require_positive_decimal",
+    "simulate_portfolio",
+    "to_finite_decimal",
+    "value_open_position",
+]
