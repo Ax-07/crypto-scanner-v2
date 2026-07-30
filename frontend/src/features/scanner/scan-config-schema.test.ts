@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { parsePeriodList, scanConfigSchema } from "@/features/scanner/scan-config-schema"
+import {
+  normalizeIndicatorExtensionConfig,
+  parsePeriodList,
+  scanConfigSchema,
+} from "@/features/scanner/scan-config-schema"
 import type { ScanConfig } from "@/types/scanner"
 
 const valid: ScanConfig = {
@@ -36,6 +40,47 @@ describe("scanConfigSchema", () => {
     ...valid,
     structured_signal_filters: { version: 2, indicators: {} },
   }).success).toBe(false))
+  it("accepte les trois blocs versionnés et refuse des seuils ADX inversés", () => {
+    const extensions = {
+      atr: { version: 1 as const, enabled: true, period: 14 },
+      adx: {
+        version: 1 as const,
+        enabled: true,
+        period: 14,
+        weak_threshold: 20,
+        strong_threshold: 25,
+      },
+      supertrend: { version: 1 as const, enabled: true, atr_period: 10, multiplier: 3 },
+      donchian: { version: 1 as const, enabled: true, period: 20 },
+      keltner: {
+        version: 1 as const,
+        enabled: true,
+        ema_period: 20,
+        atr_period: 10,
+        multiplier: 2,
+      },
+    }
+    expect(scanConfigSchema.safeParse({ ...valid, ...extensions }).success).toBe(true)
+    expect(scanConfigSchema.safeParse({
+      ...valid,
+      ...extensions,
+      adx: { ...extensions.adx, weak_threshold: 30 },
+    }).success).toBe(false)
+  })
+  it("normalise une configuration historique en extensions désactivées", () => {
+    const normalized = normalizeIndicatorExtensionConfig(valid)
+    expect(normalized.atr).toEqual({ version: 1, enabled: false, period: 14 })
+    expect(normalized.adx.enabled).toBe(false)
+    expect(normalized.supertrend).toMatchObject({ enabled: false, atr_period: 10 })
+    expect(normalized.donchian).toEqual({ version: 1, enabled: false, period: 20 })
+    expect(normalized.keltner).toEqual({
+      version: 1,
+      enabled: false,
+      ema_period: 20,
+      atr_period: 10,
+      multiplier: 2,
+    })
+  })
 })
 
 describe("parsePeriodList", () => {

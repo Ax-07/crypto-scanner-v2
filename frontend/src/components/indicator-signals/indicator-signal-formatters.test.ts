@@ -12,7 +12,19 @@ import {
 
 describe("indicator signal display configuration", () => {
   it("exposes every indicator label in canonical order", () => {
-    expect(INDICATOR_ORDER).toEqual(["rsi", "sma", "ema", "macd", "bollinger", "stochastic"])
+    expect(INDICATOR_ORDER).toEqual([
+      "rsi",
+      "sma",
+      "ema",
+      "macd",
+      "bollinger",
+      "stochastic",
+      "atr",
+      "adx",
+      "supertrend",
+      "donchian",
+      "keltner",
+    ])
     expect(INDICATOR_ORDER.map((name) => INDICATOR_LABELS[name])).toEqual([
       "RSI",
       "SMA",
@@ -20,6 +32,11 @@ describe("indicator signal display configuration", () => {
       "MACD",
       "Bollinger",
       "Stochastique",
+      "ATR / NATR",
+      "ADX / DMI",
+      "Supertrend",
+      "Canaux de Donchian",
+      "Canaux de Keltner",
     ])
     expect(INDICATOR_CONFIG.rsi.description).toBe("Indice de force relative")
   })

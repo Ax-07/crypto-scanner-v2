@@ -2,6 +2,13 @@ import { z } from "zod"
 
 import type { MarketIndicatorConfig } from "@/types/market"
 import type { ScanConfig } from "@/types/scanner"
+import {
+  adxConfigSchema,
+  atrConfigSchema,
+  donchianConfigSchema,
+  keltnerConfigSchema,
+  supertrendConfigSchema,
+} from "@/features/scanner/scan-config-schema"
 
 export const marketProfileSchema = z.object({
   rsi_period: z.number().int().min(2).max(100),
@@ -24,6 +31,11 @@ export const marketProfileSchema = z.object({
   stochastic_oversold: z.number().min(0).max(100),
   stochastic_overbought: z.number().min(0).max(100),
   use_stochastic: z.boolean(),
+  atr: atrConfigSchema.nullable().optional(),
+  adx: adxConfigSchema.nullable().optional(),
+  supertrend: supertrendConfigSchema.nullable().optional(),
+  donchian: donchianConfigSchema.nullable().optional(),
+  keltner: keltnerConfigSchema.nullable().optional(),
   use_confluence_score: z.boolean(),
   confluence_weights: z.record(z.string(), z.number().nonnegative()),
   origin: z.enum(["default", "scan", "custom"]),
@@ -70,6 +82,11 @@ export function marketProfileFromScan(config: ScanConfig): MarketIndicatorConfig
     stochastic_oversold: config.stochastic_oversold,
     stochastic_overbought: config.stochastic_overbought,
     use_stochastic: config.use_stochastic,
+    atr: config.atr,
+    adx: config.adx,
+    supertrend: config.supertrend,
+    donchian: config.donchian,
+    keltner: config.keltner,
     use_confluence_score: config.use_confluence_score,
     confluence_weights: config.confluence_weights,
     origin: "scan",

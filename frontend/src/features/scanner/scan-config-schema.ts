@@ -7,6 +7,36 @@ import { structuredSignalFiltersSchema } from "@/schemas/structured-signal-filte
 
 export const TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"] as const
 const periodList = z.array(z.number().int().min(2).max(1000)).min(1).refine((items) => new Set(items).size === items.length, "Les périodes doivent être uniques")
+export const atrConfigSchema = z.strictObject({
+  version: z.literal(1),
+  enabled: z.boolean(),
+  period: z.number().int().min(1).max(1000),
+})
+export const adxConfigSchema = z.strictObject({
+  version: z.literal(1),
+  enabled: z.boolean(),
+  period: z.number().int().min(1).max(1000),
+  weak_threshold: z.number().finite().min(0).max(100),
+  strong_threshold: z.number().finite().min(0).max(100),
+})
+export const supertrendConfigSchema = z.strictObject({
+  version: z.literal(1),
+  enabled: z.boolean(),
+  atr_period: z.number().int().min(1).max(1000),
+  multiplier: z.number().finite().gt(0).max(100),
+})
+export const donchianConfigSchema = z.strictObject({
+  version: z.literal(1),
+  enabled: z.boolean(),
+  period: z.number().int().min(1).max(1000),
+})
+export const keltnerConfigSchema = z.strictObject({
+  version: z.literal(1),
+  enabled: z.boolean(),
+  ema_period: z.number().int().min(1).max(1000),
+  atr_period: z.number().int().min(1).max(1000),
+  multiplier: z.number().finite().gt(0).max(100),
+})
 
 /** Contrat frontend de ScanConfig, aligné sur les contraintes utiles du modèle Pydantic. */
 export const scanConfigSchema = z.object({
@@ -27,6 +57,11 @@ export const scanConfigSchema = z.object({
   use_macd: z.boolean(), macd_fast_period: z.number().int().min(2).max(100), macd_slow_period: z.number().int().min(3).max(200), macd_signal_period: z.number().int().min(2).max(100),
   use_bollinger: z.boolean(), bollinger_period: z.number().int().min(2).max(200), bollinger_std_dev: z.number().gt(0).max(10),
   use_stochastic: z.boolean(), stochastic_k_period: z.number().int().min(2).max(200), stochastic_d_period: z.number().int().min(2).max(50), stochastic_oversold: z.number().min(0).max(100), stochastic_overbought: z.number().min(0).max(100),
+  atr: atrConfigSchema.nullable().optional(),
+  adx: adxConfigSchema.nullable().optional(),
+  supertrend: supertrendConfigSchema.nullable().optional(),
+  donchian: donchianConfigSchema.nullable().optional(),
+  keltner: keltnerConfigSchema.nullable().optional(),
   use_confluence_score: z.boolean(), min_confluence_score: z.number().min(0).max(100),
   confluence_weights: z.object({ rsi: z.number().nonnegative(), trend: z.number().nonnegative(), macd: z.number().nonnegative(), bollinger: z.number().nonnegative(), stochastic: z.number().nonnegative() }),
   filter_macd_signal: z.array(z.enum(["bullish", "bearish", "neutral"])).nullable(),
@@ -38,11 +73,51 @@ export const scanConfigSchema = z.object({
   // Ces relations entre champs reflètent les refus Pydantic les plus utiles à anticiper.
   if (config.macd_fast_period >= config.macd_slow_period) issue(["macd_fast_period"], "La période rapide doit être inférieure à la période lente")
   if (config.stochastic_oversold >= config.stochastic_overbought) issue(["stochastic_oversold"], "Le seuil de survente doit être inférieur au seuil de surachat")
+  if (config.adx && config.adx.weak_threshold >= config.adx.strong_threshold) issue(["adx", "weak_threshold"], "Le seuil faible doit être inférieur au seuil fort")
   if (config.use_ma && !config.use_sma && !config.use_ema) issue(["use_sma"], "Activez au moins SMA ou EMA")
   if (config.min_trend_score > config.ma_timeframes.length) issue(["min_trend_score"], "Le score ne peut pas dépasser le nombre de timeframes")
   const activeWeights = [config.use_rsi && config.confluence_weights.rsi, config.use_ma && config.confluence_weights.trend, config.use_macd && config.confluence_weights.macd, config.use_bollinger && config.confluence_weights.bollinger, config.use_stochastic && config.confluence_weights.stochastic]
   if (config.use_confluence_score && !activeWeights.some((weight) => Number(weight) > 0)) issue(["confluence_weights"], "Un indicateur actif doit avoir un poids positif")
 })
+
+/** Matérialise les blocs optionnels pour le formulaire sans altérer les anciens payloads. */
+export function normalizeIndicatorExtensionConfig<T extends {
+  atr?: unknown
+  adx?: unknown
+  supertrend?: unknown
+  donchian?: unknown
+  keltner?: unknown
+}>(config: T) {
+  return {
+    ...config,
+    atr: config.atr ?? { version: 1 as const, enabled: false, period: 14 },
+    adx: config.adx ?? {
+      version: 1 as const,
+      enabled: false,
+      period: 14,
+      weak_threshold: 20,
+      strong_threshold: 25,
+    },
+    supertrend: config.supertrend ?? {
+      version: 1 as const,
+      enabled: false,
+      atr_period: 10,
+      multiplier: 3,
+    },
+    donchian: config.donchian ?? {
+      version: 1 as const,
+      enabled: false,
+      period: 20,
+    },
+    keltner: config.keltner ?? {
+      version: 1 as const,
+      enabled: false,
+      ema_period: 20,
+      atr_period: 10,
+      multiplier: 2,
+    },
+  }
+}
 
 /** Convertit une saisie « 20, 50 » en périodes uniques et triées, ou null si elle est invalide. */
 export function parsePeriodList(value: string): number[] | null {

@@ -1,6 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import type { IndicatorName, IndicatorSignal } from "@/types/indicator-signals"
+import type {
+  IndicatorComponent,
+  IndicatorName,
+  IndicatorSignal,
+} from "@/types/indicator-signals"
 
 import { IndicatorDirectionBadge } from "./indicator-direction-badge"
 import { INDICATOR_CONFIG } from "./indicator-signal-config"
@@ -30,6 +34,15 @@ function DetailLine({ label, value }: { label: string; value: string }) {
       <span className="font-medium">{value}</span>
     </p>
   )
+}
+
+function formatComponentValue(component: IndicatorComponent): string {
+  if (component.value === null || !Number.isFinite(component.value)) return "—"
+  const value = new Intl.NumberFormat("fr-FR", {
+    maximumFractionDigits: component.unit === "price" ? 8 : 4,
+  }).format(component.value)
+  if (component.unit === "percent") return `${value} %`
+  return value
 }
 
 export function IndicatorSignalCard({
@@ -78,6 +91,21 @@ export function IndicatorSignalCard({
                     : formatIndicatorRawValue(indicator, signal.raw_value)}
                 />
               </div>
+            ) : null}
+
+            {!compact && signal.components ? (
+              <dl className="grid grid-cols-2 gap-x-3 gap-y-2 rounded-md border p-3 text-sm">
+                {Object.entries(signal.components).map(([name, component]) => (
+                  <div key={name} className="min-w-0">
+                    <dt className="truncate text-xs text-muted-foreground">
+                      {formatTechnicalLabel(name)}
+                    </dt>
+                    <dd className="truncate font-medium">
+                      {formatComponentValue(component)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
             ) : null}
 
             <IndicatorStrength value={signal.strength} compact={compact} />

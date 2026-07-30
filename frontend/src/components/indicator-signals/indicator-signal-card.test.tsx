@@ -105,9 +105,36 @@ describe("IndicatorSignalCard", () => {
     ["macd", "MACD"],
     ["bollinger", "Bollinger"],
     ["stochastic", "Stochastique"],
+    ["atr", "ATR / NATR"],
+    ["adx", "ADX / DMI"],
+    ["supertrend", "Supertrend"],
+    ["donchian", "Canaux de Donchian"],
+    ["keltner", "Canaux de Keltner"],
   ] as const)("renders the %s indicator as %s", (indicator: IndicatorName, label) => {
     render(<IndicatorSignalCard indicator={indicator} signal={completeSignal} />)
     expect(screen.getByRole("article", { name: `Signal ${label}` })).toBeInTheDocument()
+  })
+
+  it("renders named multi-value components with their units", () => {
+    render(
+      <IndicatorSignalCard
+        indicator="atr"
+        signal={{
+          ...completeSignal,
+          direction: "neutral",
+          raw_value: 1.25,
+          components: {
+            true_range: { value: 12, normalized_value: null, unit: "price" },
+            atr: { value: 10, normalized_value: null, unit: "price" },
+            natr: { value: 1.25, normalized_value: 0.0125, unit: "percent" },
+            natr_change: { value: 0.2, normalized_value: null, unit: "percent" },
+          },
+        }}
+      />,
+    )
+    const card = screen.getByRole("article", { name: "Signal ATR / NATR" })
+    expect(within(card).getByText("True range")).toBeVisible()
+    expect(within(card).getAllByText("1,25 %")).toHaveLength(2)
   })
 
   it("supports hiding a reason and applying a custom class", () => {
@@ -121,5 +148,43 @@ describe("IndicatorSignalCard", () => {
     )
     expect(screen.getByRole("article", { name: "Signal RSI" })).toHaveClass("test-card")
     expect(screen.queryByText(/Le RSI vient de sortir/)).not.toBeInTheDocument()
+  })
+
+  it("renders Donchian bounds, width, position, state and breakout in French", () => {
+    const price = { value: 100, normalized_value: null, unit: "price" } as const
+    render(
+      <IndicatorSignalCard
+        indicator="donchian"
+        signal={{
+          ...completeSignal,
+          signal: "breakout_up",
+          state: "above_channel",
+          components: {
+            upper_channel: price,
+            middle_channel: price,
+            lower_channel: price,
+            previous_upper_channel: price,
+            previous_lower_channel: price,
+            channel_width: price,
+            channel_width_percent: {
+              value: 10,
+              normalized_value: 0.1,
+              unit: "percent",
+            },
+            channel_position: {
+              value: 1.1,
+              normalized_value: 1.1,
+              unit: "ratio",
+            },
+          },
+        }}
+      />,
+    )
+    const card = screen.getByRole("article", { name: "Signal Canaux de Donchian" })
+    expect(within(card).getByText("Cassure haussière du canal")).toBeVisible()
+    expect(within(card).getByText("Prix au-dessus du canal")).toBeVisible()
+    expect(within(card).getByText("Borne haute")).toBeVisible()
+    expect(within(card).getByText("Largeur normalisée")).toBeVisible()
+    expect(within(card).getByText("Position du prix")).toBeVisible()
   })
 })

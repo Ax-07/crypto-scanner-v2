@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeAll, describe, expect, it, vi } from "vitest"
 
 import { ScannerConfigForm } from "@/features/scanner/components/scanner-config-form"
@@ -83,5 +83,43 @@ describe("ScannerConfigForm structured filters", () => {
     )
     expect(screen.getByLabelText("Direction haussière")).toBeDisabled()
     expect(screen.getByRole("button", { name: "Appliquer et lancer" })).toBeDisabled()
+  })
+
+  it("active Donchian et Keltner et soumet leurs paramètres exacts", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(
+      <ScannerConfigForm
+        config={createScanConfig()}
+        busy={false}
+        onSubmit={onSubmit}
+      />,
+    )
+    const donchianCard = screen.getByText("Canaux de Donchian").closest("[data-slot=card]")
+    const keltnerCard = screen.getByText("Canaux de Keltner").closest("[data-slot=card]")
+    expect(donchianCard).not.toBeNull()
+    expect(keltnerCard).not.toBeNull()
+    fireEvent.click(within(donchianCard as HTMLElement).getByLabelText("Activer"))
+    fireEvent.click(within(keltnerCard as HTMLElement).getByLabelText("Activer"))
+    fireEvent.change(within(donchianCard as HTMLElement).getByLabelText("Période"), {
+      target: { value: "25" },
+    })
+    fireEvent.change(within(keltnerCard as HTMLElement).getByLabelText("Multiplicateur"), {
+      target: { value: "2.5" },
+    })
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Appliquer et lancer" })).toBeEnabled(),
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Appliquer et lancer" }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      donchian: { version: 1, enabled: true, period: 25 },
+      keltner: {
+        version: 1,
+        enabled: true,
+        ema_period: 20,
+        atr_period: 10,
+        multiplier: 2.5,
+      },
+    })
   })
 })

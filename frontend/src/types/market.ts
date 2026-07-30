@@ -1,8 +1,13 @@
 import type {
+  AdxIndicatorConfig,
+  AtrIndicatorConfig,
   Availability,
   ConfluenceFactorDetail,
   ConfluenceGrade,
   TrendState,
+  SupertrendIndicatorConfig,
+  DonchianIndicatorConfig,
+  KeltnerIndicatorConfig,
 } from "@/types/scanner"
 import type { IndicatorSignals } from "@/types/indicator-signals"
 
@@ -94,6 +99,11 @@ export interface MarketIndicatorConfig {
   stochastic_oversold: number
   stochastic_overbought: number
   use_stochastic: boolean
+  atr?: AtrIndicatorConfig | null
+  adx?: AdxIndicatorConfig | null
+  supertrend?: SupertrendIndicatorConfig | null
+  donchian?: DonchianIndicatorConfig | null
+  keltner?: KeltnerIndicatorConfig | null
   use_confluence_score: boolean
   confluence_weights: Record<string, number>
   origin: "default" | "scan" | "custom"

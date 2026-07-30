@@ -12,6 +12,11 @@ export const INDICATOR_ORDER = [
   "macd",
   "bollinger",
   "stochastic",
+  "atr",
+  "adx",
+  "supertrend",
+  "donchian",
+  "keltner",
 ] as const satisfies readonly IndicatorName[]
 
 export const INDICATOR_CONFIG: Record<IndicatorName, IndicatorDisplayConfig> = {
@@ -38,6 +43,26 @@ export const INDICATOR_CONFIG: Record<IndicatorName, IndicatorDisplayConfig> = {
   stochastic: {
     label: "Stochastique",
     description: "Oscillateur stochastique",
+  },
+  atr: {
+    label: "ATR / NATR",
+    description: "Amplitude et évolution de la volatilité",
+  },
+  adx: {
+    label: "ADX / DMI",
+    description: "Direction et intensité de la tendance",
+  },
+  supertrend: {
+    label: "Supertrend",
+    description: "Régime directionnel fondé sur l'ATR",
+  },
+  donchian: {
+    label: "Canaux de Donchian",
+    description: "Bornes roulantes et cassures causales",
+  },
+  keltner: {
+    label: "Canaux de Keltner",
+    description: "Canal de volatilité fondé sur EMA et ATR",
   },
 }
 

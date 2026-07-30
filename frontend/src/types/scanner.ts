@@ -32,6 +32,41 @@ export type ConfluenceIndicator =
   | "bollinger"
   | "stochastic"
 
+export type AtrIndicatorConfig = {
+  version: 1
+  enabled: boolean
+  period: number
+}
+
+export type AdxIndicatorConfig = {
+  version: 1
+  enabled: boolean
+  period: number
+  weak_threshold: number
+  strong_threshold: number
+}
+
+export type SupertrendIndicatorConfig = {
+  version: 1
+  enabled: boolean
+  atr_period: number
+  multiplier: number
+}
+
+export type DonchianIndicatorConfig = {
+  version: 1
+  enabled: boolean
+  period: number
+}
+
+export type KeltnerIndicatorConfig = {
+  version: 1
+  enabled: boolean
+  ema_period: number
+  atr_period: number
+  multiplier: number
+}
+
 /** Configuration complète envoyée à la création d'un job scanner. */
 export type ScanConfig = {
   exchange_id: string
@@ -66,6 +101,11 @@ export type ScanConfig = {
   stochastic_d_period: number
   stochastic_oversold: number
   stochastic_overbought: number
+  atr?: AtrIndicatorConfig | null
+  adx?: AdxIndicatorConfig | null
+  supertrend?: SupertrendIndicatorConfig | null
+  donchian?: DonchianIndicatorConfig | null
+  keltner?: KeltnerIndicatorConfig | null
   use_confluence_score: boolean
   min_confluence_score: number
   confluence_weights: Record<ConfluenceIndicator, number>

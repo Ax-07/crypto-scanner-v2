@@ -1,5 +1,13 @@
 import { useEffect } from "react";
-import { Controller, useForm, useWatch, type Control, type FieldPathByValue, type Resolver } from "react-hook-form";
+import {
+  Controller,
+  useForm,
+  useWatch,
+  type Control,
+  type FieldPath,
+  type FieldPathByValue,
+  type Resolver,
+} from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import { ApiError } from "@/api/client";
@@ -19,7 +27,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { formatTechnicalLabel } from "@/components/indicator-signals";
-import { parsePeriodList, scanConfigSchema, TIMEFRAMES } from "@/features/scanner/scan-config-schema";
+import {
+  normalizeIndicatorExtensionConfig,
+  parsePeriodList,
+  scanConfigSchema,
+  TIMEFRAMES,
+} from "@/features/scanner/scan-config-schema";
 import {
   migrateLegacySignalFilters,
   setStructuredFilterMatch,
@@ -35,12 +48,18 @@ type Props = { config: ScanConfig; busy: boolean; onSubmit: (config: ScanConfig)
 
 /** Édite une copie locale de ScanConfig et ne publie qu'une valeur validée par Zod. */
 export function ScannerConfigForm({ config, busy, onSubmit }: Props) {
+  const normalizedConfig = normalizeIndicatorExtensionConfig(
+    migrateLegacySignalFilters(config),
+  ) as ScanConfig;
   const form = useForm<ScanConfig>({
     resolver: zodResolver(scanConfigSchema) as Resolver<ScanConfig>,
-    defaultValues: migrateLegacySignalFilters(config),
+    defaultValues: normalizedConfig,
     mode: "onChange",
   });
-  useEffect(() => form.reset(migrateLegacySignalFilters(config)), [config, form]);
+  useEffect(
+    () => form.reset(normalizeIndicatorExtensionConfig(migrateLegacySignalFilters(config)) as ScanConfig),
+    [config, form],
+  );
   const values = useWatch({ control: form.control }) as ScanConfig;
   const active = [
     values.use_rsi && "RSI",
@@ -48,6 +67,11 @@ export function ScannerConfigForm({ config, busy, onSubmit }: Props) {
     values.use_macd && "MACD",
     values.use_bollinger && "Bollinger",
     values.use_stochastic && "Stochastique",
+    values.atr?.enabled && "ATR/NATR",
+    values.adx?.enabled && "ADX/DMI",
+    values.supertrend?.enabled && "Supertrend",
+    values.donchian?.enabled && "Donchian",
+    values.keltner?.enabled && "Keltner",
   ].filter(Boolean);
   const activeWeight =
     (values.use_rsi ? values.confluence_weights.rsi : 0) +
@@ -281,6 +305,99 @@ export function ScannerConfigForm({ config, busy, onSubmit }: Props) {
             />
           </div>
         </IndicatorCard>
+        <IndicatorCard title="ATR / NATR" control={form.control} enabledName="atr.enabled" busy={busy}>
+          <NumberField
+            control={form.control}
+            name="atr.period"
+            label="Période ATR"
+            disabled={busy || !values.atr?.enabled}
+          />
+          <FieldDescription>
+            Observation de volatilité uniquement ; elle ne filtre aucun résultat.
+          </FieldDescription>
+        </IndicatorCard>
+        <IndicatorCard title="ADX / DMI" control={form.control} enabledName="adx.enabled" busy={busy}>
+          <div className="grid grid-cols-3 gap-3">
+            <NumberField
+              control={form.control}
+              name="adx.period"
+              label="Période"
+              disabled={busy || !values.adx?.enabled}
+            />
+            <NumberField
+              control={form.control}
+              name="adx.weak_threshold"
+              label="Seuil faible"
+              disabled={busy || !values.adx?.enabled}
+            />
+            <NumberField
+              control={form.control}
+              name="adx.strong_threshold"
+              label="Seuil fort"
+              disabled={busy || !values.adx?.enabled}
+            />
+          </div>
+          <FieldDescription>
+            Mesure direction et force de tendance sans participer à la confluence.
+          </FieldDescription>
+        </IndicatorCard>
+        <IndicatorCard title="Supertrend" control={form.control} enabledName="supertrend.enabled" busy={busy}>
+          <div className="grid grid-cols-2 gap-3">
+            <NumberField
+              control={form.control}
+              name="supertrend.atr_period"
+              label="Période ATR"
+              disabled={busy || !values.supertrend?.enabled}
+            />
+            <NumberField
+              control={form.control}
+              name="supertrend.multiplier"
+              label="Multiplicateur"
+              disabled={busy || !values.supertrend?.enabled}
+              step={0.1}
+            />
+          </div>
+          <FieldDescription>
+            Régime directionnel observable uniquement ; aucun filtre n'est ajouté.
+          </FieldDescription>
+        </IndicatorCard>
+        <IndicatorCard title="Canaux de Donchian" control={form.control} enabledName="donchian.enabled" busy={busy}>
+          <NumberField
+            control={form.control}
+            name="donchian.period"
+            label="Période"
+            disabled={busy || !values.donchian?.enabled}
+          />
+          <FieldDescription>
+            Canal descriptif et cassures causales ; aucun filtre n'est ajouté.
+          </FieldDescription>
+        </IndicatorCard>
+        <IndicatorCard title="Canaux de Keltner" control={form.control} enabledName="keltner.enabled" busy={busy}>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <NumberField
+              control={form.control}
+              name="keltner.ema_period"
+              label="Période EMA"
+              disabled={busy || !values.keltner?.enabled}
+            />
+            <NumberField
+              control={form.control}
+              name="keltner.atr_period"
+              label="Période ATR"
+              disabled={busy || !values.keltner?.enabled}
+            />
+            <NumberField
+              control={form.control}
+              name="keltner.multiplier"
+              label="Multiplicateur"
+              disabled={busy || !values.keltner?.enabled}
+              step={0.1}
+            />
+          </div>
+          <FieldDescription>
+            Canal observable uniquement ; il ne modifie ni filtres ni confluence.
+          </FieldDescription>
+        </IndicatorCard>
         <IndicatorCard title="Confluence" control={form.control} enabledName="use_confluence_score" busy={busy}>
           <NumberField
             control={form.control}
@@ -383,7 +500,7 @@ export function ScannerConfigForm({ config, busy, onSubmit }: Props) {
           type="button"
           variant="outline"
           disabled={!form.formState.isDirty || form.formState.isSubmitting}
-          onClick={() => form.reset(migrateLegacySignalFilters(config))}
+          onClick={() => form.reset(normalizeIndicatorExtensionConfig(migrateLegacySignalFilters(config)) as ScanConfig)}
         >
           Annuler les modifications
         </Button>
@@ -395,7 +512,18 @@ export function ScannerConfigForm({ config, busy, onSubmit }: Props) {
   );
 }
 
-type NumberName = FieldPathByValue<ScanConfig, number>;
+type NumberName =
+  | FieldPathByValue<ScanConfig, number>
+  | "atr.period"
+  | "adx.period"
+  | "adx.weak_threshold"
+  | "adx.strong_threshold"
+  | "supertrend.atr_period"
+  | "supertrend.multiplier"
+  | "donchian.period"
+  | "keltner.ema_period"
+  | "keltner.atr_period"
+  | "keltner.multiplier";
 function NumberField({
   control,
   name,
@@ -411,7 +539,7 @@ function NumberField({
 }) {
   return (
     <Controller
-      name={name}
+      name={name as FieldPath<ScanConfig>}
       control={control}
       render={({ field, fieldState }) => (
         <Field data-invalid={fieldState.invalid}>
@@ -492,6 +620,14 @@ function TextField({
     />
   );
 }
+type BooleanName =
+  | FieldPathByValue<ScanConfig, boolean>
+  | "atr.enabled"
+  | "adx.enabled"
+  | "supertrend.enabled"
+  | "donchian.enabled"
+  | "keltner.enabled";
+
 function BooleanField({
   control,
   name,
@@ -499,19 +635,19 @@ function BooleanField({
   disabled,
 }: {
   control: Control<ScanConfig>;
-  name: FieldPathByValue<ScanConfig, boolean>;
+  name: BooleanName;
   label: string;
   disabled: boolean;
 }) {
   return (
     <Controller
-      name={name}
+      name={name as FieldPath<ScanConfig>}
       control={control}
       render={({ field, fieldState }) => (
         <Field className="flex grid-cols-[auto_1fr] items-center gap-2">
           <Switch
             id={field.name}
-            checked={field.value}
+            checked={Boolean(field.value)}
             disabled={disabled}
             onCheckedChange={field.onChange}
             aria-invalid={fieldState.invalid}
@@ -532,7 +668,7 @@ function IndicatorCard({
 }: {
   title: string;
   control: Control<ScanConfig>;
-  enabledName: FieldPathByValue<ScanConfig, boolean>;
+  enabledName: BooleanName;
   busy: boolean;
   children: React.ReactNode;
 }) {

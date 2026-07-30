@@ -18,6 +18,7 @@ export const INDICATOR_DIRECTION_LABELS: Record<IndicatorSignalDirection, string
 }
 
 const TECHNICAL_LABELS: Record<string, string> = {
+  atr: "ATR utilisé",
   exit_oversold: "Sortie de survente",
   exit_overbought: "Sortie de surachat",
   bullish_cross: "Croisement haussier",
@@ -39,6 +40,41 @@ const TECHNICAL_LABELS: Record<string, string> = {
   overbought: "Surachat",
   oversold: "Survente",
   neutral: "Neutre",
+  volatility_expansion: "Expansion de volatilité",
+  volatility_contraction: "Contraction de volatilité",
+  volatility_stable: "Volatilité stable",
+  expanding: "En expansion",
+  contracting: "En contraction",
+  stable: "Stable",
+  weak_trend: "Tendance faible",
+  developing_trend: "Tendance en développement",
+  strong_trend: "Tendance forte",
+  trend_strengthening: "Renforcement de tendance",
+  trend_weakening: "Affaiblissement de tendance",
+  bullish_flip: "Bascule haussière",
+  bearish_flip: "Bascule baissière",
+  uptrend: "Tendance haussière",
+  downtrend: "Tendance baissière",
+  breakout_up: "Cassure haussière du canal",
+  breakout_down: "Cassure baissière du canal",
+  above_channel: "Prix au-dessus du canal",
+  below_channel: "Prix sous le canal",
+  inside_channel: "Prix à l’intérieur du canal",
+  middle_band: "Bande centrale",
+  upper_band: "Bande haute",
+  lower_band: "Bande basse",
+  band_width: "Largeur des bandes",
+  band_width_percent: "Largeur normalisée",
+  band_position: "Position du prix",
+  upper_channel: "Borne haute",
+  middle_channel: "Milieu du canal",
+  lower_channel: "Borne basse",
+  previous_upper_channel: "Borne haute précédente",
+  previous_lower_channel: "Borne basse précédente",
+  channel_width: "Largeur du canal",
+  channel_width_percent: "Largeur normalisée",
+  channel_position: "Position du prix",
+  middle_line: "Ligne centrale",
 }
 
 function humanizeSnakeCase(value: string): string {
@@ -72,12 +108,18 @@ function maximumFractionDigits(indicator: IndicatorName, value: number): number 
   switch (indicator) {
     case "rsi":
     case "stochastic":
+    case "adx":
       return 2
+    case "atr":
+      return 4
     case "macd":
       return Math.abs(value) >= 1 ? 4 : 8
     case "sma":
     case "ema":
     case "bollinger":
+    case "supertrend":
+    case "donchian":
+    case "keltner":
       return priceFractionDigits(value)
   }
 }
@@ -88,8 +130,9 @@ export function formatIndicatorRawValue(
 ): string {
   if (value === null || !Number.isFinite(value)) return "—"
 
-  return new Intl.NumberFormat("fr-FR", {
+  const formatted = new Intl.NumberFormat("fr-FR", {
     maximumFractionDigits: maximumFractionDigits(indicator, value),
     useGrouping: true,
   }).format(value)
+  return indicator === "atr" ? `${formatted} %` : formatted
 }
