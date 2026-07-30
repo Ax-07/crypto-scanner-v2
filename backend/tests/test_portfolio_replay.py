@@ -11,7 +11,12 @@ from pydantic import ValidationError
 from app.domain.candles import Candle
 from app.domain.portfolio import PortfolioSimulationConfig, simulate_portfolio
 from app.models.backtest import BacktestConfig, SignalObservation
-from app.models.portfolio import PortfolioSimulationConfigV1
+from app.models.portfolio import (
+    PortfolioEquityPointV1,
+    PortfolioSimulationConfigV1,
+    PortfolioSimulationSummary,
+    PortfolioTradeV1,
+)
 from app.services.portfolio_replay import (
     PortfolioReplayError,
     backtest_config_fingerprint,
@@ -103,6 +108,8 @@ def test_public_portfolio_config_rejects_invalid_decimals(field: str, value: str
         {"quote_asset": "USDC", "position_sizing": {"mode": "fixed", "value": "10"}},
         {"quote_asset": "USDC", "position_sizing": {"value": "0"}},
         {"quote_asset": "USDC", "position_sizing": {"value": "100.01"}},
+        {"quote_asset": "USDC", "initial_capital": 10_000},
+        {"quote_asset": "USDC", "position_sizing": {"value": 100}},
         {"quote_asset": "USDC", "position_sizing": {"value": "50", "unknown": 1}},
     ],
 )
@@ -125,6 +132,74 @@ def test_public_portfolio_config_defaults_and_decimal_serialization() -> None:
         "slippage_rate": "0",
         "end_of_test_policy": "force_close",
     }
+
+
+def test_public_portfolio_contract_rejects_values_forbidden_by_frontend_schema() -> None:
+    summary = {
+        "quote_asset": "USDC",
+        "initial_capital": Decimal("1000"),
+        "final_cash": Decimal("1000"),
+        "final_equity": Decimal("1000"),
+        "net_profit": Decimal("0"),
+        "total_return_ratio": Decimal("0"),
+        "realized_pnl": Decimal("0"),
+        "unrealized_pnl": Decimal("0"),
+        "total_fees": Decimal("0"),
+        "trade_count": 0,
+        "winning_trade_count": 0,
+        "losing_trade_count": 0,
+        "breakeven_trade_count": 0,
+        "win_rate": None,
+        "average_trade_return": None,
+        "max_drawdown_ratio": Decimal("0"),
+        "exposure_ratio": Decimal("0"),
+        "open_position_count": 0,
+    }
+    with pytest.raises(ValidationError):
+        PortfolioSimulationSummary.model_validate({**summary, "trade_count": -1})
+    with pytest.raises(ValidationError):
+        PortfolioSimulationSummary.model_validate(
+            {**summary, "max_drawdown_ratio": Decimal("-0.01")}
+        )
+    with pytest.raises(ValidationError):
+        PortfolioTradeV1.model_validate(
+            {
+                "sequence": 0,
+                "trade_id": "trade-1",
+                "position_id": "position-1",
+                "symbol": "BTC/USDC",
+                "quote_asset": "USDC",
+                "entry_observation_id": "1",
+                "exit_observation_id": None,
+                "entry_time": START,
+                "exit_time": START + timedelta(minutes=1),
+                "entry_price": Decimal("-1"),
+                "exit_price": Decimal("1"),
+                "quantity": Decimal("1"),
+                "entry_fee": Decimal("0"),
+                "exit_fee": Decimal("0"),
+                "gross_exit_proceeds": Decimal("1"),
+                "net_exit_proceeds": Decimal("1"),
+                "realized_pnl": Decimal("0"),
+                "return_ratio": Decimal("0"),
+                "duration_bars": 1,
+                "exit_reason": "end_of_test",
+            }
+        )
+    with pytest.raises(ValidationError):
+        PortfolioEquityPointV1.model_validate(
+            {
+                "sequence": 0,
+                "timestamp": START,
+                "cash": Decimal("-1"),
+                "position_value": Decimal("0"),
+                "equity": Decimal("0"),
+                "realized_pnl_cumulative": Decimal("0"),
+                "unrealized_pnl": Decimal("0"),
+                "fees_cumulative": Decimal("0"),
+                "drawdown_ratio": Decimal("0"),
+            }
+        )
 
 
 def test_backtest_config_validates_symbol_quote_and_replay_mode() -> None:
@@ -327,3 +402,12 @@ def test_openapi_exposes_optional_strict_portfolio_v1_contract() -> None:
     assert portfolio_schema["additionalProperties"] is False
     assert sizing_schema["additionalProperties"] is False
     assert portfolio_schema["properties"]["version"]["const"] == 1
+    summary_schema = schemas["PortfolioSimulationSummary"]
+    assert summary_schema["properties"]["initial_capital"] == {
+        "type": "string",
+        "title": "Initial Capital",
+    }
+    assert summary_schema["properties"]["win_rate"]["anyOf"] == [
+        {"type": "string"},
+        {"type": "null"},
+    ]

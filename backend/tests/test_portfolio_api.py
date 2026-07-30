@@ -17,6 +17,7 @@ from app.api.backtests import (
     router,
 )
 from app.database.connection import Database
+from app.exporters.portfolio_csv import stream_equity_v1
 from app.models.backtest import BacktestStatus, BacktestSummary
 from app.repositories.backtest_repository import BacktestRepository
 from app.repositories.candle_repository import CandleRepository
@@ -175,6 +176,30 @@ async def test_versioned_csv_exports_are_streamed_with_stable_columns() -> None:
             "drawdown_ratio"
         )
         assert len(equity_lines) == len(result.equity_curve) + 1
+
+
+@pytest.mark.asyncio
+async def test_interrupted_equity_export_releases_its_read_connection() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        database = Database(Path(temporary) / "interrupted-export.sqlite3")
+        await database.initialize()
+        manager = BacktestManager(BacktestRepository(database), CandleRepository(database))
+        job, result = await _completed(manager, "interrupted-export")
+        stream = stream_equity_v1(manager.portfolio_repository, job.id)
+
+        header = await anext(stream)
+        first_batch = await anext(stream)
+        assert header.startswith("schema_version,job_id,sequence")
+        assert first_batch
+        await stream.aclose()
+
+        page = await manager.portfolio_repository.list_equity_points(
+            job_id=job.id,
+            offset=0,
+            limit=1,
+        )
+        assert page.total == len(result.equity_curve)
+        assert len(page.items) == 1
 
 
 def test_openapi_exposes_portfolio_v1_routes() -> None:

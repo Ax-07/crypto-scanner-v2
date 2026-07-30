@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -174,6 +175,50 @@ async def test_failed_replacement_rolls_back_and_preserves_previous_run() -> Non
                 config_fingerprint="sha256:invalid",
             )
         assert await repository.load_portfolio_simulation_result("rollback") == expected
+
+
+@pytest.mark.asyncio
+async def test_cancelled_batched_replacement_rolls_back_completely() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        database = Database(Path(temporary) / "cancelled-write.sqlite3")
+        await database.initialize()
+        await BacktestRepository(database).save_job(_job("cancelled-write"))
+        repository = PortfolioRepository(database)
+        expected = _result()
+        await repository.replace_simulation_result(
+            job_id="cancelled-write",
+            result=expected,
+            config_fingerprint="sha256:before-cancellation",
+        )
+        points = tuple(
+            EquityPoint(
+                timestamp=START + timedelta(minutes=sequence),
+                cash=Decimal("1000"),
+                position_value=Decimal("0"),
+                equity=Decimal("1000"),
+                realized_pnl_cumulative=Decimal("0"),
+                unrealized_pnl=Decimal("0"),
+                fees_cumulative=Decimal("0"),
+                drawdown_ratio=Decimal("0"),
+                exposed=False,
+            )
+            for sequence in range(2_001)
+        )
+        checks = 0
+
+        def cancellation_requested() -> bool:
+            nonlocal checks
+            checks += 1
+            return checks == 2
+
+        with pytest.raises(asyncio.CancelledError):
+            await repository.replace_simulation_result(
+                job_id="cancelled-write",
+                result=replace(expected, equity_curve=points),
+                config_fingerprint="sha256:cancelled",
+                cancellation_requested=cancellation_requested,
+            )
+        assert await repository.load_portfolio_simulation_result("cancelled-write") == expected
 
 
 @pytest.mark.asyncio
