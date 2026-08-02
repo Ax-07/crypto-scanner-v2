@@ -31,6 +31,7 @@ def _aligned_prices(
 
 
 def _valid_price_row(row: pd.Series) -> bool:
+    """Vérifie si une ligne de prix est valide."""
     values = (float(row["high"]), float(row["low"]), float(row["close"]))
     return all(math.isfinite(value) and value > 0 for value in values) and values[0] >= values[1]
 

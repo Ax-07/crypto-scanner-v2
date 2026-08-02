@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from app.domain.indicator_bundle import build_indicator_signals
+from app.domain.indicator_bundle import build_indicator_events, build_indicator_signals
 from app.domain.indicators import (
     calculate_bollinger_bands,
     calculate_ema,
@@ -163,3 +163,23 @@ def test_stochastic_at_least_two_valid_rows_is_available() -> None:
         stochastic_data={"k": k, "d": d},
     )
     assert signals["stochastic"]["status"] == "available"
+
+
+def test_build_indicator_events_aggregates_supertrend_flips() -> None:
+    extended_data = {
+        "supertrend": {
+            "trend": pd.Series([-1.0, -1.0, 1.0, 1.0, -1.0]),
+            "input_valid": pd.Series([True, True, True, True, True]),
+        }
+    }
+
+    events = build_indicator_events(
+        extended_data=extended_data,
+    )
+
+    assert [event["position"] for event in events] == [2, 4]
+    assert [event["event"] for event in events] == [
+        "bullish_flip",
+        "bearish_flip",
+    ]
+    assert all(event["indicator"] == "supertrend" for event in events)

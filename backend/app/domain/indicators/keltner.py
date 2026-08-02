@@ -10,12 +10,17 @@ from app.domain.indicators.atr import calculate_atr
 from app.domain.indicators.moving_averages import calculate_ema
 from app.domain.indicators.types import (
     IndicatorComponent,
+    IndicatorEvent,
     IndicatorSignal,
     _clamp_strength,
     _unavailable_signal,
 )
 
-__all__ = ["build_keltner_signal", "calculate_keltner_channels"]
+__all__ = [
+    "build_keltner_signal",
+    "calculate_keltner_channels",
+    "detect_keltner_events",
+]
 
 
 def calculate_keltner_channels(
@@ -167,3 +172,161 @@ def build_keltner_signal(
         raw_value=values["channel_position"],
         components=components,
     )
+
+
+def detect_keltner_events(
+    data: dict[str, pd.Series] | None,
+    close: pd.Series | None,
+    *,
+    only_last: bool = False,
+) -> list[IndicatorEvent]:
+    """Détecte les premières cassures des bandes Keltner précédentes.
+
+    Une cassure haussière est produite lorsque la clôture courante dépasse
+    la bande haute calculée sur la bougie précédente, alors que la clôture
+    précédente ne dépassait pas cette même bande.
+
+    Une cassure baissière applique la règle symétrique avec la bande basse.
+
+    Les positions restent alignées sur les bougies OHLCV d'origine.
+    """
+    if data is None or close is None:
+        return []
+
+    required = {
+        "upper_channel",
+        "lower_channel",
+        "atr",
+    }
+    if not required <= set(data):
+        return []
+
+    frame_columns = [
+        close.astype(float).rename("close"),
+        data["upper_channel"].astype(float).rename("upper_channel"),
+        data["lower_channel"].astype(float).rename("lower_channel"),
+        data["atr"].astype(float).rename("atr"),
+    ]
+
+    invalid_ohlc = data.get("_invalid_ohlc")
+    if invalid_ohlc is not None:
+        frame_columns.append(
+            invalid_ohlc.astype(float).rename("_invalid_ohlc")
+        )
+
+    frame = pd.concat(
+        frame_columns,
+        axis=1,
+    ).reset_index(drop=True)
+
+    if len(frame) < 2:
+        return []
+
+    start_position = len(frame) - 1 if only_last else 1
+    events: list[IndicatorEvent] = []
+
+    for position in range(start_position, len(frame)):
+        previous = frame.iloc[position - 1]
+        current = frame.iloc[position]
+
+        raw_values = (
+            previous["close"],
+            previous["upper_channel"],
+            previous["lower_channel"],
+            current["close"],
+            current["atr"],
+        )
+
+        if any(pd.isna(value) for value in raw_values):
+            continue
+
+        previous_close = float(previous["close"])
+        previous_upper = float(previous["upper_channel"])
+        previous_lower = float(previous["lower_channel"])
+        current_close = float(current["close"])
+        current_atr = float(current["atr"])
+
+        numeric_values = (
+            previous_close,
+            previous_upper,
+            previous_lower,
+            current_close,
+            current_atr,
+        )
+
+        if not all(math.isfinite(value) for value in numeric_values):
+            continue
+
+        if (
+            previous_close <= 0
+            or current_close <= 0
+            or previous_upper <= 0
+            or previous_lower < 0
+            or previous_upper < previous_lower
+            or current_atr < 0
+        ):
+            continue
+
+        if "_invalid_ohlc" in frame.columns:
+            previous_invalid = bool(previous["_invalid_ohlc"])
+            current_invalid = bool(current["_invalid_ohlc"])
+
+            if previous_invalid or current_invalid:
+                continue
+
+        breakout_up = (
+            current_close > previous_upper
+            and previous_close <= previous_upper
+        )
+        breakout_down = (
+            current_close < previous_lower
+            and previous_close >= previous_lower
+        )
+
+        if breakout_up:
+            distance_atr = (
+                current_close - previous_upper
+            ) / max(current_atr, 1e-12)
+
+            events.append(
+                IndicatorEvent(
+                    indicator="keltner",
+                    position=position,
+                    direction="bullish",
+                    event="breakout_up",
+                    kind="breakout",
+                    strength=_clamp_strength(distance_atr),
+                    metadata={
+                        "previous_close": previous_close,
+                        "previous_reference": previous_upper,
+                        "current_close": current_close,
+                        "current_atr": current_atr,
+                        "distance_atr": distance_atr,
+                    },
+                )
+            )
+
+        elif breakout_down:
+            distance_atr = (
+                previous_lower - current_close
+            ) / max(current_atr, 1e-12)
+
+            events.append(
+                IndicatorEvent(
+                    indicator="keltner",
+                    position=position,
+                    direction="bearish",
+                    event="breakout_down",
+                    kind="breakout",
+                    strength=_clamp_strength(distance_atr),
+                    metadata={
+                        "previous_close": previous_close,
+                        "previous_reference": previous_lower,
+                        "current_close": current_close,
+                        "current_atr": current_atr,
+                        "distance_atr": distance_atr,
+                    },
+                )
+            )
+
+    return events

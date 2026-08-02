@@ -9,6 +9,7 @@ import pandas as pd
 
 from app.domain.indicators.types import (
     IndicatorComponent,
+    IndicatorEvent,
     IndicatorSignal,
     SignalDirection,
     _clamp_strength,
@@ -20,7 +21,11 @@ from app.domain.indicators.wilder import (
     wilder_smoothing,
 )
 
-__all__ = ["build_adx_signal", "calculate_adx_dmi"]
+__all__ = [
+    "build_adx_signal",
+    "calculate_adx_dmi",
+    "detect_adx_events",
+]
 
 
 def calculate_adx_dmi(
@@ -156,3 +161,156 @@ def build_adx_signal(
             "dx": _component(dx),
         },
     )
+
+
+def detect_adx_events(
+    data: dict[str, pd.Series] | None,
+    *,
+    weak_threshold: float = 20,
+    only_last: bool = False,
+) -> list[IndicatorEvent]:
+    """Détecte les croisements DMI confirmés par une force ADX suffisante.
+
+    Un événement haussier est produit lorsque +DI croise au-dessus de -DI
+    et que l'ADX courant est supérieur ou égal au seuil faible.
+
+    Un événement baissier est produit lorsque -DI croise au-dessus de +DI
+    avec la même condition de force.
+
+    Les croisements lorsque l'ADX est inférieur au seuil sont ignorés afin
+    de réduire les signaux produits dans les marchés sans tendance.
+    """
+    if data is None:
+        return []
+
+    required = {
+        "adx",
+        "plus_di",
+        "minus_di",
+    }
+    if not required <= set(data):
+        return []
+
+    if not math.isfinite(weak_threshold) or not 0 <= weak_threshold <= 100:
+        return []
+
+    frame_columns = [
+        data["adx"].astype(float).rename("adx"),
+        data["plus_di"].astype(float).rename("plus_di"),
+        data["minus_di"].astype(float).rename("minus_di"),
+    ]
+
+    true_range = data.get("true_range")
+    if true_range is not None:
+        frame_columns.append(
+            true_range.astype(float).rename("true_range")
+        )
+
+    frame = pd.concat(
+        frame_columns,
+        axis=1,
+    ).reset_index(drop=True)
+
+    if len(frame) < 2:
+        return []
+
+    start_position = len(frame) - 1 if only_last else 1
+    events: list[IndicatorEvent] = []
+
+    for position in range(start_position, len(frame)):
+        previous = frame.iloc[position - 1]
+        current = frame.iloc[position]
+
+        raw_values = (
+            previous["plus_di"],
+            previous["minus_di"],
+            current["adx"],
+            current["plus_di"],
+            current["minus_di"],
+        )
+
+        if any(pd.isna(value) for value in raw_values):
+            continue
+
+        previous_plus = float(previous["plus_di"])
+        previous_minus = float(previous["minus_di"])
+        current_adx = float(current["adx"])
+        current_plus = float(current["plus_di"])
+        current_minus = float(current["minus_di"])
+
+        numeric_values = (
+            previous_plus,
+            previous_minus,
+            current_adx,
+            current_plus,
+            current_minus,
+        )
+
+        if not all(math.isfinite(value) for value in numeric_values):
+            continue
+
+        if "true_range" in frame.columns:
+            current_true_range = current["true_range"]
+
+            if pd.isna(current_true_range):
+                continue
+
+            if not math.isfinite(float(current_true_range)):
+                continue
+
+        # Le croisement est ignoré lorsque la tendance est trop faible.
+        if current_adx < weak_threshold:
+            continue
+
+        bullish_cross = (
+            previous_plus <= previous_minus
+            and current_plus > current_minus
+        )
+        bearish_cross = (
+            previous_plus >= previous_minus
+            and current_minus > current_plus
+        )
+
+        strength = _clamp_strength(current_adx / 50.0)
+
+        if bullish_cross:
+            events.append(
+                IndicatorEvent(
+                    indicator="adx",
+                    position=position,
+                    direction="bullish",
+                    event="bullish_cross",
+                    kind="cross",
+                    strength=strength,
+                    metadata={
+                        "previous_plus_di": previous_plus,
+                        "previous_minus_di": previous_minus,
+                        "current_plus_di": current_plus,
+                        "current_minus_di": current_minus,
+                        "current_adx": current_adx,
+                        "weak_threshold": weak_threshold,
+                    },
+                )
+            )
+
+        elif bearish_cross:
+            events.append(
+                IndicatorEvent(
+                    indicator="adx",
+                    position=position,
+                    direction="bearish",
+                    event="bearish_cross",
+                    kind="cross",
+                    strength=strength,
+                    metadata={
+                        "previous_plus_di": previous_plus,
+                        "previous_minus_di": previous_minus,
+                        "current_plus_di": current_plus,
+                        "current_minus_di": current_minus,
+                        "current_adx": current_adx,
+                        "weak_threshold": weak_threshold,
+                    },
+                )
+            )
+
+    return events

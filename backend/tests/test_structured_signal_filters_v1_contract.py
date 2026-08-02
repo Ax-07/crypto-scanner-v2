@@ -56,6 +56,9 @@ def profile_fingerprint(config: ScanConfig) -> str:
             "supertrend",
             "donchian",
             "keltner",
+            "relative_volume",
+            "cmf",
+            "obv",
             "structured_signal_filters",
         )
         if getattr(config, name) is None

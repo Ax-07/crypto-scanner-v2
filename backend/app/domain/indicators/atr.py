@@ -10,13 +10,19 @@ import pandas as pd
 from app.domain.indicators.types import (
     IndicatorComponent,
     IndicatorComponentUnit,
+    IndicatorEvent,
     IndicatorSignal,
     _clamp_strength,
     _unavailable_signal,
 )
 from app.domain.indicators.wilder import calculate_true_range, wilder_smoothing
 
-__all__ = ["build_atr_signal", "calculate_atr", "calculate_natr"]
+__all__ = [
+    "build_atr_signal",
+    "calculate_atr",
+    "calculate_natr",
+    "detect_atr_events",
+]
 
 
 def calculate_atr(
@@ -124,3 +130,138 @@ def build_atr_signal(
         raw_value=current_natr,
         components=components,
     )
+
+
+def detect_atr_events(
+    data: dict[str, pd.Series] | None,
+    *,
+    only_last: bool = False,
+) -> list[IndicatorEvent]:
+    """Détecte les changements de régime de volatilité du NATR.
+
+    Une expansion est produite lorsque le NATR commence à augmenter après
+    une phase stable ou décroissante.
+
+    Une contraction est produite lorsque le NATR commence à diminuer après
+    une phase stable ou croissante.
+
+    Les périodes restant durablement dans le même régime ne produisent pas
+    de nouvel événement. Les transitions vers un état stable sont également
+    ignorées afin de ne pas surcharger le graphique.
+    """
+    if data is None:
+        return []
+
+    natr = data.get("natr")
+    if natr is None:
+        return []
+
+    values = pd.to_numeric(
+        natr.reset_index(drop=True),
+        errors="coerce",
+    )
+
+    # Trois valeurs sont nécessaires :
+    # t-2 -> t-1 pour le régime précédent,
+    # t-1 -> t pour le régime courant.
+    if len(values) < 3:
+        return []
+
+    start_position = len(values) - 1 if only_last else 2
+    events: list[IndicatorEvent] = []
+
+    for position in range(start_position, len(values)):
+        before_previous_raw = values.iloc[position - 2]
+        previous_raw = values.iloc[position - 1]
+        current_raw = values.iloc[position]
+
+        raw_values = (
+            before_previous_raw,
+            previous_raw,
+            current_raw,
+        )
+
+        if any(pd.isna(value) for value in raw_values):
+            continue
+
+        before_previous = float(before_previous_raw)
+        previous = float(previous_raw)
+        current = float(current_raw)
+
+        if not all(
+            math.isfinite(value)
+            for value in (
+                before_previous,
+                previous,
+                current,
+            )
+        ):
+            continue
+
+        if before_previous < 0 or previous < 0 or current < 0:
+            continue
+
+        previous_state = _volatility_state(
+            before_previous,
+            previous,
+        )
+        current_state = _volatility_state(
+            previous,
+            current,
+        )
+
+        # Aucun événement lorsque le régime ne change pas.
+        if current_state == previous_state:
+            continue
+
+        # Le retour vers un état stable est volontairement ignoré.
+        if current_state == "stable":
+            continue
+
+        change = current - previous
+        relative_change = abs(change) / max(abs(previous), 1e-12)
+        strength = _clamp_strength(relative_change)
+
+        if current_state == "expanding":
+            events.append(
+                IndicatorEvent(
+                    indicator="atr",
+                    position=position,
+                    direction="neutral",
+                    event="volatility_expansion",
+                    kind="volatility_regime",
+                    strength=strength,
+                    metadata={
+                        "before_previous_natr": before_previous,
+                        "previous_natr": previous,
+                        "current_natr": current,
+                        "previous_state": previous_state,
+                        "current_state": current_state,
+                        "natr_change": change,
+                        "relative_change": relative_change,
+                    },
+                )
+            )
+
+        elif current_state == "contracting":
+            events.append(
+                IndicatorEvent(
+                    indicator="atr",
+                    position=position,
+                    direction="neutral",
+                    event="volatility_contraction",
+                    kind="volatility_regime",
+                    strength=strength,
+                    metadata={
+                        "before_previous_natr": before_previous,
+                        "previous_natr": previous,
+                        "current_natr": current,
+                        "previous_state": previous_state,
+                        "current_state": current_state,
+                        "natr_change": change,
+                        "relative_change": relative_change,
+                    },
+                )
+            )
+
+    return events

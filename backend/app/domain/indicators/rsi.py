@@ -8,13 +8,19 @@ import numpy as np
 import pandas as pd
 
 from app.domain.indicators.types import (
+    IndicatorEvent,
     IndicatorSignal,
     SignalDirection,
     _clamp_strength,
     _unavailable_signal,
 )
 
-__all__ = ["calculate_rsi", "get_latest_rsi", "detect_rsi_signal"]
+__all__ = [
+    "calculate_rsi",
+    "get_latest_rsi",
+    "detect_rsi_events",
+    "detect_rsi_signal",
+]
 
 
 def calculate_rsi(close: pd.Series, period: int = 14) -> pd.Series:
@@ -151,3 +157,91 @@ def detect_rsi_signal(
         reason=f"RSI en zone {state} ({current_value:.2f})",
         raw_value=current_value,
     )
+
+
+def detect_rsi_events(
+    rsi: pd.Series | None,
+    oversold_level: float = 30,
+    overbought_level: float = 70,
+    *,
+    only_last: bool = False,
+) -> list[IndicatorEvent]:
+    """Détecte les sorties ponctuelles des zones extrêmes du RSI.
+
+    Une sortie de survente est haussière lorsque le RSI passe d'une valeur
+    inférieure ou égale au seuil de survente à une valeur supérieure.
+
+    Une sortie de surachat est baissière lorsque le RSI passe d'une valeur
+    supérieure ou égale au seuil de surachat à une valeur inférieure.
+
+    Args:
+        rsi: Série RSI alignée sur les bougies OHLCV.
+        oversold_level: Seuil de survente.
+        overbought_level: Seuil de surachat.
+        only_last: Lorsque vrai, évalue uniquement la dernière position.
+
+    Returns:
+        Les événements RSI détectés avec leur position dans la série.
+    """
+    if rsi is None:
+        return []
+
+    values = pd.to_numeric(
+        rsi.reset_index(drop=True),
+        errors="coerce",
+    )
+
+    if len(values) < 2:
+        return []
+
+    start_position = len(values) - 1 if only_last else 1
+    events: list[IndicatorEvent] = []
+
+    for position in range(start_position, len(values)):
+        previous_raw = values.iloc[position - 1]
+        current_raw = values.iloc[position]
+
+        if pd.isna(previous_raw) or pd.isna(current_raw):
+            continue
+
+        previous_value = float(previous_raw)
+        current_value = float(current_raw)
+
+        if not math.isfinite(previous_value) or not math.isfinite(current_value):
+            continue
+
+        if previous_value <= oversold_level < current_value:
+            events.append(
+                IndicatorEvent(
+                    indicator="rsi",
+                    position=position,
+                    direction="bullish",
+                    event="exit_oversold",
+                    kind="threshold_exit",
+                    strength=0.75,
+                    metadata={
+                        "previous_value": previous_value,
+                        "current_value": current_value,
+                        "threshold": oversold_level,
+                    },
+                )
+            )
+
+        elif previous_value >= overbought_level > current_value:
+            events.append(
+                IndicatorEvent(
+                    indicator="rsi",
+                    position=position,
+                    direction="bearish",
+                    event="exit_overbought",
+                    kind="threshold_exit",
+                    strength=0.75,
+                    metadata={
+                        "previous_value": previous_value,
+                        "current_value": current_value,
+                        "threshold": overbought_level,
+                    },
+                )
+            )
+
+    return events

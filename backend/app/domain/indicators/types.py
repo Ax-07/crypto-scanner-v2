@@ -40,6 +40,17 @@ IndicatorName: TypeAlias = Literal[
     "keltner",
 ]
 
+#: Catégorie générique d'un événement ponctuel produit par un indicateur.
+IndicatorEventKind: TypeAlias = Literal[
+    "trend_change",
+    "cross",
+    "breakout",
+    "reentry",
+    "threshold_entry",
+    "threshold_exit",
+    "volatility_regime",
+]
+
 IndicatorComponentUnit: TypeAlias = Literal[
     "price", "percent", "ratio", "index", "volume", "unitless"
 ]
@@ -90,6 +101,33 @@ class IndicatorSignal(TypedDict):
     components: NotRequired[Mapping[str, IndicatorComponent] | None]
 
 
+class IndicatorEvent(TypedDict):
+    """Événement ponctuel détecté dans l'historique d'un indicateur.
+
+    Contrairement à :class:`IndicatorSignal`, qui décrit principalement
+    l'état courant d'un indicateur, cet objet représente un changement précis
+    survenu à une position donnée de l'historique.
+
+    Attributes:
+        indicator: Indicateur ayant produit l'événement.
+        position: Position entière dans les séries ayant servi au calcul.
+            Le timestamp reste ajouté par la couche appelante.
+        direction: Direction associée à l'événement.
+        event: Nom natif de l'événement, par exemple ``"bullish_flip"``.
+        kind: Famille générique de l'événement.
+        strength: Force facultative bornée dans ``[0.0, 1.0]``.
+        metadata: Données métier supplémentaires propres à l'indicateur.
+    """
+
+    indicator: IndicatorName
+    position: int
+    direction: SignalDirection
+    event: SignalEvent
+    kind: IndicatorEventKind
+    strength: NotRequired[float]
+    metadata: NotRequired[Mapping[str, object]]
+    
+    
 #: Ensemble des signaux structurés d'un même snapshot d'indicateurs, indexés
 #: par nom (utilisé par ``calculate_confluence_score`` en mode structuré).
 IndicatorSignals: TypeAlias = Mapping[IndicatorName, IndicatorSignal]
@@ -132,4 +170,6 @@ __all__ = [
     "IndicatorComponent",
     "IndicatorComponentUnit",
     "IndicatorSignals",
+    "IndicatorEventKind",
+    "IndicatorEvent",
 ]

@@ -8,12 +8,17 @@ import pandas as pd
 
 from app.domain.indicators.types import (
     IndicatorComponent,
+    IndicatorEvent,
     IndicatorSignal,
     _clamp_strength,
     _unavailable_signal,
 )
 
-__all__ = ["build_donchian_signal", "calculate_donchian_channels"]
+__all__ = [
+    "build_donchian_signal",
+    "calculate_donchian_channels",
+    "detect_donchian_events",
+]
 
 
 def calculate_donchian_channels(
@@ -163,3 +168,152 @@ def build_donchian_signal(
         raw_value=values["channel_position"],
         components=components,
     )
+
+
+def detect_donchian_events(
+    data: dict[str, pd.Series] | None,
+    close: pd.Series | None,
+    *,
+    only_last: bool = False,
+) -> list[IndicatorEvent]:
+    """Détecte les premières cassures du canal Donchian précédent.
+
+    La borne de référence est calculée exclusivement avec les bougies
+    terminées à t-1, afin d'éviter tout look-ahead.
+
+    Une cassure n'est émise que lors de la première clôture hors du canal.
+    Les bougies suivantes restant hors du canal ne génèrent pas de nouvel
+    événement.
+    """
+    if data is None or close is None:
+        return []
+
+    required = {
+        "previous_upper_channel",
+        "previous_lower_channel",
+    }
+    if not required <= set(data):
+        return []
+
+    frame_columns = [
+        close.astype(float).rename("close"),
+        data["previous_upper_channel"].astype(float).rename(
+            "previous_upper_channel"
+        ),
+        data["previous_lower_channel"].astype(float).rename(
+            "previous_lower_channel"
+        ),
+    ]
+
+    invalid_ohlc = data.get("_invalid_ohlc")
+    if invalid_ohlc is not None:
+        frame_columns.append(
+            invalid_ohlc.astype(float).rename("_invalid_ohlc")
+        )
+
+    frame = pd.concat(frame_columns, axis=1).reset_index(drop=True)
+
+    if len(frame) < 2:
+        return []
+
+    start_position = len(frame) - 1 if only_last else 1
+    events: list[IndicatorEvent] = []
+
+    for position in range(start_position, len(frame)):
+        previous = frame.iloc[position - 1]
+        current = frame.iloc[position]
+
+        raw_values = (
+            previous["close"],
+            previous["previous_upper_channel"],
+            previous["previous_lower_channel"],
+            current["close"],
+            current["previous_upper_channel"],
+            current["previous_lower_channel"],
+        )
+
+        if any(pd.isna(value) for value in raw_values):
+            continue
+
+        previous_close = float(previous["close"])
+        previous_upper = float(previous["previous_upper_channel"])
+        previous_lower = float(previous["previous_lower_channel"])
+
+        current_close = float(current["close"])
+        current_upper = float(current["previous_upper_channel"])
+        current_lower = float(current["previous_lower_channel"])
+
+        numeric_values = (
+            previous_close,
+            previous_upper,
+            previous_lower,
+            current_close,
+            current_upper,
+            current_lower,
+        )
+
+        if not all(math.isfinite(value) for value in numeric_values):
+            continue
+
+        if current_close <= 0:
+            continue
+
+        if "_invalid_ohlc" in frame.columns:
+            previous_invalid = bool(previous["_invalid_ohlc"])
+            current_invalid = bool(current["_invalid_ohlc"])
+
+            if previous_invalid or current_invalid:
+                continue
+
+        if current_upper < current_lower:
+            continue
+
+        currently_above = current_close > current_upper
+        previously_above = previous_close > previous_upper
+
+        currently_below = current_close < current_lower
+        previously_below = previous_close < previous_lower
+
+        if currently_above and not previously_above:
+            distance = abs(current_close - current_upper) / current_close
+
+            events.append(
+                IndicatorEvent(
+                    indicator="donchian",
+                    position=position,
+                    direction="bullish",
+                    event="breakout_up",
+                    kind="breakout",
+                    strength=_clamp_strength(distance),
+                    metadata={
+                        "previous_close": previous_close,
+                        "previous_reference": previous_upper,
+                        "current_close": current_close,
+                        "current_reference": current_upper,
+                        "distance_percent": distance * 100.0,
+                    },
+                )
+            )
+
+        elif currently_below and not previously_below:
+            distance = abs(current_close - current_lower) / current_close
+
+            events.append(
+                IndicatorEvent(
+                    indicator="donchian",
+                    position=position,
+                    direction="bearish",
+                    event="breakout_down",
+                    kind="breakout",
+                    strength=_clamp_strength(distance),
+                    metadata={
+                        "previous_close": previous_close,
+                        "previous_reference": previous_lower,
+                        "current_close": current_close,
+                        "current_reference": current_lower,
+                        "distance_percent": distance * 100.0,
+                    },
+                )
+            )
+
+    return events

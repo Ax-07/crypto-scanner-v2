@@ -10,13 +10,18 @@ import pandas as pd
 from app.domain.indicators.atr import calculate_atr
 from app.domain.indicators.types import (
     IndicatorComponent,
+    IndicatorEvent,
     IndicatorSignal,
     SignalDirection,
     _clamp_strength,
     _unavailable_signal,
 )
 
-__all__ = ["build_supertrend_signal", "calculate_supertrend"]
+__all__ = [
+    "build_supertrend_signal",
+    "calculate_supertrend",
+    "detect_supertrend_events",
+]
 
 
 def calculate_supertrend(
@@ -115,6 +120,80 @@ def calculate_supertrend(
         "trend": trend,
         "input_valid": input_valid,
     }
+
+
+def detect_supertrend_events(
+    data: dict[str, pd.Series],
+    *,
+    only_last: bool = False,
+) -> list[IndicatorEvent]:
+    """Détecte les changements confirmés de régime Supertrend.
+
+    La fonction ne produit un événement que lorsque deux positions
+    consécutives et valides passent d'un régime baissier à haussier,
+    ou inversement.
+
+    Args:
+        data: Résultat retourné par :func:`calculate_supertrend`.
+        only_last: Lorsque vrai, ne vérifie que la dernière position.
+
+    Returns:
+        Les événements Supertrend ordonnés chronologiquement.
+    """
+    trend = data.get("trend")
+    if trend is None or len(trend) < 2:
+        return []
+
+    input_valid = data.get("input_valid")
+    if input_valid is not None and len(input_valid) != len(trend):
+        return []
+
+    start_position = len(trend) - 1 if only_last else 1
+    events: list[IndicatorEvent] = []
+
+    for position in range(start_position, len(trend)):
+        previous_position = position - 1
+
+        if input_valid is not None:
+            previous_valid = bool(input_valid.iloc[previous_position])
+            current_valid = bool(input_valid.iloc[position])
+
+            # Ne pas comparer deux régimes séparés par une donnée invalide.
+            if not previous_valid or not current_valid:
+                continue
+
+        previous_trend = float(trend.iloc[previous_position])
+        current_trend = float(trend.iloc[position])
+
+        if not math.isfinite(previous_trend):
+            continue
+
+        if not math.isfinite(current_trend):
+            continue
+
+        previous_bullish = previous_trend > 0
+        current_bullish = current_trend > 0
+
+        if previous_bullish == current_bullish:
+            continue
+
+        bullish = current_bullish
+
+        events.append(
+            IndicatorEvent(
+                indicator="supertrend",
+                position=position,
+                direction="bullish" if bullish else "bearish",
+                event="bullish_flip" if bullish else "bearish_flip",
+                kind="trend_change",
+                metadata={
+                    "previous_trend": previous_trend,
+                    "current_trend": current_trend,
+                },
+            )
+        )
+
+    return events
 
 
 def _price_component(value: float) -> IndicatorComponent:

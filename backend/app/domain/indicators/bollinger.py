@@ -10,6 +10,7 @@ from app.domain.indicators.moving_averages import calculate_sma
 from app.domain.indicators.types import (
     BollingerPosition,
     IndicatorComponent,
+    IndicatorEvent,
     IndicatorSignal,
     SignalDirection,
     _clamp_strength,
@@ -19,6 +20,7 @@ from app.domain.indicators.types import (
 __all__ = [
     "calculate_bollinger_bands",
     "calculate_bollinger_band_width",
+    "detect_bollinger_events",
     "detect_bollinger_signal",
     "is_bollinger_degenerate",
     "build_bollinger_signal",
@@ -134,6 +136,143 @@ def _classify_position(
     if position >= 0.85:
         return "near_overbought"
     return "neutral"
+
+
+def detect_bollinger_events(
+    close: pd.Series | None,
+    bands: dict[str, pd.Series] | None,
+    *,
+    only_last: bool = False,
+) -> list[IndicatorEvent]:
+    """Détecte les réintégrations ponctuelles des bandes de Bollinger.
+
+    Une réintégration de la bande basse est haussière lorsque la clôture
+    précédente se trouvait sous ou sur la bande basse et que la clôture
+    courante repasse au-dessus de sa bande basse.
+
+    Une réintégration de la bande haute est baissière lorsque la clôture
+    précédente se trouvait au-dessus ou sur la bande haute et que la clôture
+    courante repasse sous sa bande haute.
+
+    Les positions restent alignées sur les bougies OHLCV d'origine.
+    """
+    if close is None or bands is None:
+        return []
+
+    if not {"upper", "lower"} <= set(bands):
+        return []
+
+    frame = pd.concat(
+        [
+            close.astype(float).rename("close"),
+            bands["upper"].astype(float).rename("upper"),
+            bands["lower"].astype(float).rename("lower"),
+        ],
+        axis=1,
+    ).reset_index(drop=True)
+
+    if len(frame) < 2:
+        return []
+
+    start_position = len(frame) - 1 if only_last else 1
+    events: list[IndicatorEvent] = []
+
+    for position in range(start_position, len(frame)):
+        previous = frame.iloc[position - 1]
+        current = frame.iloc[position]
+
+        raw_values = (
+            previous["close"],
+            previous["upper"],
+            previous["lower"],
+            current["close"],
+            current["upper"],
+            current["lower"],
+        )
+
+        if any(pd.isna(value) for value in raw_values):
+            continue
+
+        previous_close = float(previous["close"])
+        previous_upper = float(previous["upper"])
+        previous_lower = float(previous["lower"])
+        current_close = float(current["close"])
+        current_upper = float(current["upper"])
+        current_lower = float(current["lower"])
+
+        numeric_values = (
+            previous_close,
+            previous_upper,
+            previous_lower,
+            current_close,
+            current_upper,
+            current_lower,
+        )
+
+        if not all(math.isfinite(value) for value in numeric_values):
+            continue
+
+        previous_width = previous_upper - previous_lower
+        current_width = current_upper - current_lower
+
+        previous_degenerate = (
+            previous_width <= 1e-12
+            or previous_width / max(abs(previous_close), 1e-12) <= 1e-10
+        )
+        current_degenerate = (
+            current_width <= 1e-12
+            or current_width / max(abs(current_close), 1e-12) <= 1e-10
+        )
+
+        if previous_degenerate or current_degenerate:
+            continue
+
+        lower_reentry = (
+            previous_close <= previous_lower
+            and current_close > current_lower
+        )
+        upper_reentry = (
+            previous_close >= previous_upper
+            and current_close < current_upper
+        )
+
+        if lower_reentry:
+            events.append(
+                IndicatorEvent(
+                    indicator="bollinger",
+                    position=position,
+                    direction="bullish",
+                    event="lower_band_reentry",
+                    kind="reentry",
+                    strength=0.6,
+                    metadata={
+                        "previous_close": previous_close,
+                        "previous_band": previous_lower,
+                        "current_close": current_close,
+                        "current_band": current_lower,
+                    },
+                )
+            )
+
+        elif upper_reentry:
+            events.append(
+                IndicatorEvent(
+                    indicator="bollinger",
+                    position=position,
+                    direction="bearish",
+                    event="upper_band_reentry",
+                    kind="reentry",
+                    strength=0.6,
+                    metadata={
+                        "previous_close": previous_close,
+                        "previous_band": previous_upper,
+                        "current_close": current_close,
+                        "current_band": current_upper,
+                    },
+                )
+            )
+
+    return events
 
 
 def detect_bollinger_signal(close: pd.Series, bands: dict[str, pd.Series]) -> BollingerPosition:

@@ -18,6 +18,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from app.core.settings import MarketIndicatorConfig
 from app.domain.candles import candle_from_ohlcv, is_candle_closed, timeframe_seconds
 from app.domain.indicator_bundle import (
+    build_indicator_events,
     build_indicator_signals,
     calculate_extended_indicator_bundle,
 )
@@ -58,6 +59,67 @@ INCLUDE_HIDDEN_DIVERGENCES = os.getenv("INCLUDE_HIDDEN_DIVERGENCES", "true").low
 
 CALCULATION_LIMIT = max(CALCULATION_LIMIT, DISPLAY_LIMIT, 100)
 
+
+DEFAULT_EXTENDED_MARKET_INDICATORS: dict[str, dict[str, Any]] = {
+    "atr": {
+        "enabled": True,
+        "period": 14,
+    },
+    "adx": {
+        "enabled": True,
+        "period": 14,
+        "weak_threshold": 20,
+        "strong_threshold": 25,
+    },
+    "supertrend": {
+        "enabled": True,
+        "atr_period": 10,
+        "multiplier": 3.0,
+    },
+    "donchian": {
+        "enabled": True,
+        "period": 20,
+    },
+    "keltner": {
+        "enabled": True,
+        "ema_period": 20,
+        "atr_period": 10,
+        "multiplier": 2.0,
+    },
+}
+
+
+def ensure_market_chart_profile(
+    profile: MarketIndicatorConfig | None,
+) -> MarketIndicatorConfig:
+    """Active les indicateurs graphiques étendus absents du profil reçu.
+
+    Une configuration explicitement fournie, y compris ``enabled=False``, est
+    conservée. Seules les sections encore à ``None`` reçoivent les valeurs par
+    défaut du graphique temps réel.
+    """
+    current = profile or MarketIndicatorConfig()
+    payload = current.model_dump(mode="python")
+
+    for indicator_name, default_config in DEFAULT_EXTENDED_MARKET_INDICATORS.items():
+        if payload.get(indicator_name) is None:
+            payload[indicator_name] = default_config.copy()
+
+    return MarketIndicatorConfig.model_validate(payload)
+
+
+MarkerIndicator: TypeAlias = Literal[
+    "ema",
+    "macd",
+    "supertrend",
+    "rsi",
+    "stochastic",
+    "bollinger",
+    "adx",
+    "atr",
+    "donchian",
+    "keltner",
+]
 MarkerPosition: TypeAlias = Literal["aboveBar", "belowBar", "inBar"]
 MarkerShape: TypeAlias = Literal["circle", "square", "arrowUp", "arrowDown"]
 MarkerCategory: TypeAlias = Literal["signal", "divergence"]
@@ -74,6 +136,7 @@ class MarketMarker(TypedDict, total=False):
     color: str
     text: str
     category: MarkerCategory
+    indicator: MarkerIndicator
     source: DivergenceSource
     divergence_type: DivergenceType
     first_time: int
@@ -182,7 +245,7 @@ def calculate_indicator_bundle(
     profile: MarketIndicatorConfig | None = None,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Calcule les indicateurs actifs du profil partagé."""
-    profile = profile or MarketIndicatorConfig()
+    profile = ensure_market_chart_profile(profile)
     dataframe = candles_to_dataframe(candles)
 
     if dataframe.empty:
@@ -228,6 +291,8 @@ def calculate_indicator_bundle(
             k_period=profile.stochastic_k_period,
             d_period=profile.stochastic_d_period,
         )
+        bundle["_stochastic_oversold_level"] = profile.stochastic_oversold
+        bundle["_stochastic_overbought_level"] = profile.stochastic_overbought
     atr_config = profile.atr
     adx_config = profile.adx
     supertrend_config = profile.supertrend
@@ -256,6 +321,14 @@ def calculate_indicator_bundle(
     if extended_data:
         bundle["_extended_data"] = extended_data
         bundle["_extended_signals"] = extended_signals
+
+    if adx_config is not None and adx_config.enabled:
+        bundle["_adx_weak_threshold"] = float(
+            adx_config.weak_threshold
+        )
+        bundle["_adx_strong_threshold"] = float(
+            adx_config.strong_threshold
+        )
 
     return dataframe, bundle
 
@@ -305,6 +378,102 @@ def bundle_to_chart_data(
         result["stochastic_k"] = series_to_chart_points(timestamps, stochastic_data.get("k"), limit)
         result["stochastic_d"] = series_to_chart_points(timestamps, stochastic_data.get("d"), limit)
 
+    extended_data = cast(
+        dict[str, dict[str, pd.Series]] | None,
+        bundle.get("_extended_data"),
+    )
+
+    if extended_data:
+        atr_data = extended_data.get("atr")
+        if atr_data:
+            result["atr"] = series_to_chart_points(
+                timestamps,
+                atr_data.get("atr"),
+                limit,
+            )
+            result["natr"] = series_to_chart_points(
+                timestamps,
+                atr_data.get("natr"),
+                limit,
+            )
+
+        adx_data = extended_data.get("adx")
+        if adx_data:
+            result["adx"] = series_to_chart_points(
+                timestamps,
+                adx_data.get("adx"),
+                limit,
+            )
+            result["adx_plus_di"] = series_to_chart_points(
+                timestamps,
+                adx_data.get("plus_di"),
+                limit,
+            )
+            result["adx_minus_di"] = series_to_chart_points(
+                timestamps,
+                adx_data.get("minus_di"),
+                limit,
+            )
+
+        supertrend_data = extended_data.get("supertrend")
+        if supertrend_data:
+            result["supertrend"] = series_to_chart_points(
+                timestamps,
+                supertrend_data.get("supertrend"),
+                limit,
+            )
+            result["supertrend_trend"] = series_to_chart_points(
+                timestamps,
+                supertrend_data.get("trend"),
+                limit,
+            )
+            result["supertrend_upper_band"] = series_to_chart_points(
+                timestamps,
+                supertrend_data.get("upper_band"),
+                limit,
+            )
+            result["supertrend_lower_band"] = series_to_chart_points(
+                timestamps,
+                supertrend_data.get("lower_band"),
+                limit,
+            )
+
+        donchian_data = extended_data.get("donchian")
+        if donchian_data:
+            result["donchian_upper_channel"] = series_to_chart_points(
+                timestamps,
+                donchian_data.get("upper_channel"),
+                limit,
+            )
+            result["donchian_middle_channel"] = series_to_chart_points(
+                timestamps,
+                donchian_data.get("middle_channel"),
+                limit,
+            )
+            result["donchian_lower_channel"] = series_to_chart_points(
+                timestamps,
+                donchian_data.get("lower_channel"),
+                limit,
+            )
+
+        keltner_data = extended_data.get("keltner")
+        if keltner_data:
+            result["keltner_upper_channel"] = series_to_chart_points(
+                timestamps,
+                keltner_data.get("upper_channel"),
+                limit,
+            )
+            result["keltner_middle_line"] = series_to_chart_points(
+                timestamps,
+                keltner_data.get("middle_line"),
+                limit,
+            )
+            result["keltner_lower_channel"] = series_to_chart_points(
+                timestamps,
+                keltner_data.get("lower_channel"),
+                limit,
+            )
+
     return result
 
 
@@ -321,7 +490,7 @@ def calculate_market_snapshot(
     profile: MarketIndicatorConfig | None = None,
 ) -> dict[str, Any]:
     """Construit une vue de signaux avec disponibilité explicite."""
-    profile = profile or MarketIndicatorConfig()
+    profile = ensure_market_chart_profile(profile)
     if dataframe.empty:
         availability = {
             name: "disabled" if not enabled else "insufficient_data"
@@ -547,7 +716,7 @@ def calculate_market_snapshots(
     now_ms: int | None = None,
 ) -> dict[str, Any]:
     """Produit les vues confirmée/provisoire et les anciens champs dérivés."""
-    profile = profile or MarketIndicatorConfig()
+    profile = ensure_market_chart_profile(profile)
     closed = select_closed_ohlcv(history, timeframe, now_ms=now_ms)
     closed_frame, closed_bundle = calculate_indicator_bundle(closed, profile)
     confirmed = calculate_market_snapshot(closed_frame, closed_bundle, profile)
@@ -615,6 +784,7 @@ def build_crossover_markers(
                             "color": "#22c55e",
                             "text": "BUY EMA 20/50",
                             "category": "signal",
+                            "indicator": "ema",
                         }
                     )
                 elif short_previous >= long_previous and short_current < long_current:
@@ -626,6 +796,7 @@ def build_crossover_markers(
                             "color": "#ef4444",
                             "text": "SELL EMA 20/50",
                             "category": "signal",
+                            "indicator": "ema",
                         }
                     )
 
@@ -643,6 +814,7 @@ def build_crossover_markers(
                             "color": "#38bdf8",
                             "text": "MACD haussier",
                             "category": "signal",
+                            "indicator": "macd",
                         }
                     )
                 elif previous_histogram >= 0 > current_histogram:
@@ -654,8 +826,165 @@ def build_crossover_markers(
                             "color": "#f59e0b",
                             "text": "MACD baissier",
                             "category": "signal",
+                            "indicator": "macd",
                         }
                     )
+
+    return markers
+
+
+def build_indicator_event_markers(
+    dataframe: pd.DataFrame,
+    bundle: dict[str, Any],
+    minimum_time: int | None = None,
+    only_last_candle: bool = False,
+) -> list[dict[str, Any]]:
+    """Convertit les événements métier des indicateurs en marqueurs graphiques.
+
+    Les événements sont détectés par les modules d'indicateurs puis agrégés
+    par :func:`app.domain.indicator_bundle.build_indicator_events`.
+
+    Cette fonction ne contient aucune règle de détection technique : elle ne
+    fait qu'ajouter le timestamp et les propriétés de présentation attendues
+    par Lightweight Charts.
+
+    Args:
+        dataframe: Historique OHLCV correspondant aux séries du bundle.
+        bundle: Bundle d'indicateurs calculé.
+        minimum_time: Timestamp minimal, en secondes, à conserver.
+        only_last_candle: Lorsque vrai, ne recherche que les événements de la
+            dernière bougie.
+
+    Returns:
+        Les marqueurs graphiques sérialisables.
+    """
+    if dataframe.empty or len(dataframe) < 2:
+        return []
+
+    extended_data = cast(
+        dict[str, dict[str, pd.Series]] | None,
+        bundle.get("_extended_data"),
+    )
+    rsi_series = cast(
+        pd.Series | None,
+        bundle.get("rsi"),
+    )
+    stochastic_data = cast(
+        dict[str, pd.Series] | None,
+        bundle.get("stochastic"),
+    )
+    close_series = dataframe["close"].reset_index(drop=True)
+
+    bollinger_bands = cast(
+        dict[str, pd.Series] | None,
+        bundle.get("bollinger"),
+    )
+
+    if (
+        rsi_series is None
+        and stochastic_data is None
+        and bollinger_bands is None
+        and not extended_data
+    ):
+        return []
+
+    events = build_indicator_events(
+        close_series=close_series,
+        rsi_series=rsi_series,
+        bollinger_bands=bollinger_bands,
+        stochastic_data=stochastic_data,
+        stochastic_oversold_level=float(
+            bundle.get("_stochastic_oversold_level", 20)
+        ),
+        stochastic_overbought_level=float(
+            bundle.get("_stochastic_overbought_level", 80)
+        ),
+        adx_weak_threshold=float(
+            bundle.get("_adx_weak_threshold", 20)
+        ),
+        extended_data=extended_data,
+        only_last=only_last_candle,
+    )
+
+    timestamps = dataframe["timestamp"].reset_index(drop=True)
+    markers: list[dict[str, Any]] = []
+
+    labels: dict[tuple[str, str], str] = {
+        ("supertrend", "bullish_flip"): "Supertrend BUY",
+        ("supertrend", "bearish_flip"): "Supertrend SELL",
+        ("rsi", "exit_oversold"): "RSI sortie survente",
+        ("rsi", "exit_overbought"): "RSI sortie surachat",
+        ("stochastic", "bullish_cross"): "Stochastique BUY",
+        ("stochastic", "bearish_cross"): "Stochastique SELL",
+        ("bollinger", "lower_band_reentry"): "Bollinger BUY",
+        ("bollinger", "upper_band_reentry"): "Bollinger SELL",
+        ("donchian", "breakout_up"): "Donchian BUY",
+        ("donchian", "breakout_down"): "Donchian SELL",
+        ("keltner", "breakout_up"): "Keltner BUY",
+        ("keltner", "breakout_down"): "Keltner SELL",
+        ("adx", "bullish_cross"): "ADX/DMI BUY",
+        ("adx", "bearish_cross"): "ADX/DMI SELL",
+        ("atr", "volatility_expansion"): "Volatilité en hausse",
+        ("atr", "volatility_contraction"): "Volatilité en baisse",
+    }
+
+    for event in events:
+        position = event["position"]
+
+        # Protection contre un éventuel désalignement entre les séries et
+        # le DataFrame fourni par l'appelant.
+        if position < 0 or position >= len(timestamps):
+            continue
+
+        marker_time = int(float(timestamps.iloc[position]) / 1000)
+
+        if minimum_time is not None and marker_time < minimum_time:
+            continue
+
+        direction = event["direction"]
+        indicator = event["indicator"]
+        event_name = event["event"]
+
+        if direction == "bullish":
+            marker_position: MarkerPosition = "belowBar"
+            marker_shape: MarkerShape = "arrowUp"
+            marker_color = "#22c55e"
+        elif direction == "bearish":
+            marker_position = "aboveBar"
+            marker_shape = "arrowDown"
+            marker_color = "#ef4444"
+        else:
+            marker_position = "inBar"
+            marker_shape = "circle"
+            marker_color = "#94a3b8"
+        if indicator == "bollinger":
+            marker_shape = "square"
+        if indicator == "atr":
+            marker_shape = "circle"
+
+            if event_name == "volatility_expansion":
+                marker_position = "aboveBar"
+                marker_color = "#f59e0b"
+            else:
+                marker_position = "belowBar"
+                marker_color = "#3b82f6"
+
+        marker_text = labels.get(
+            (indicator, event_name),
+            f"{indicator.upper()} {event_name.replace('_', ' ')}",
+        )
+
+        markers.append(
+            {
+                "time": marker_time,
+                "position": marker_position,
+                "shape": marker_shape,
+                "color": marker_color,
+                "text": marker_text,
+                "category": "signal",
+                "indicator": event["indicator"],
+            }
+        )
 
     return markers
 
@@ -986,7 +1315,7 @@ async def websocket_market_data(
         timeframe: Timeframe vérifié par le domaine des bougies.
     """
     await websocket.accept()
-    profile = profile or MarketIndicatorConfig()
+    profile = ensure_market_chart_profile(profile)
 
     symbol = symbol.strip().upper()
     timeframe = timeframe.strip()
@@ -1077,6 +1406,11 @@ async def websocket_market_data(
 
         historical_markers = sort_markers(
             build_crossover_markers(
+                closed_dataframe,
+                closed_bundle,
+                minimum_time=visible_start_time,
+            )
+            + build_indicator_event_markers(
                 closed_dataframe,
                 closed_bundle,
                 minimum_time=visible_start_time,
@@ -1175,6 +1509,11 @@ async def websocket_market_data(
 
                 new_markers = sort_markers(
                     build_crossover_markers(
+                        closed_dataframe,
+                        closed_bundle,
+                        only_last_candle=True,
+                    )
+                    + build_indicator_event_markers(
                         closed_dataframe,
                         closed_bundle,
                         only_last_candle=True,

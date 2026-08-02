@@ -8,13 +8,19 @@ import numpy as np
 import pandas as pd
 
 from app.domain.indicators.types import (
+    IndicatorEvent,
     IndicatorSignal,
     StochasticSignal,
     _clamp_strength,
     _unavailable_signal,
 )
 
-__all__ = ["calculate_stochastic", "detect_stochastic_signal", "build_stochastic_signal"]
+__all__ = [
+    "calculate_stochastic",
+    "detect_stochastic_events",
+    "detect_stochastic_signal",
+    "build_stochastic_signal",
+]
 
 
 def calculate_stochastic(
@@ -152,3 +158,152 @@ def build_stochastic_signal(
         reason="Stochastique en zone neutre",
         raw_value=current_k,
     )
+
+
+def detect_stochastic_events(
+    data: dict[str, pd.Series] | None,
+    oversold_level: float = 20,
+    overbought_level: float = 80,
+    *,
+    only_last: bool = False,
+) -> list[IndicatorEvent]:
+    """Détecte les croisements du stochastique dans les zones extrêmes.
+
+    Un événement haussier est produit lorsque %K croise au-dessus de %D
+    alors que le croisement se déroule dans ou à proximité immédiate de la
+    zone de survente.
+
+    Un événement baissier est produit lorsque %K croise sous %D dans ou à
+    proximité immédiate de la zone de surachat.
+
+    Les positions restent alignées sur les bougies OHLCV d'origine.
+    """
+    if data is None:
+        return []
+
+    k_series = data.get("k")
+    d_series = data.get("d")
+
+    if k_series is None or d_series is None:
+        return []
+
+    k_values = pd.to_numeric(
+        k_series.reset_index(drop=True),
+        errors="coerce",
+    )
+    d_values = pd.to_numeric(
+        d_series.reset_index(drop=True),
+        errors="coerce",
+    )
+
+    length = min(len(k_values), len(d_values))
+    if length < 2:
+        return []
+
+    start_position = length - 1 if only_last else 1
+    events: list[IndicatorEvent] = []
+
+    for position in range(start_position, length):
+        previous_k_raw = k_values.iloc[position - 1]
+        previous_d_raw = d_values.iloc[position - 1]
+        current_k_raw = k_values.iloc[position]
+        current_d_raw = d_values.iloc[position]
+
+        values = (
+            previous_k_raw,
+            previous_d_raw,
+            current_k_raw,
+            current_d_raw,
+        )
+
+        if any(pd.isna(value) for value in values):
+            continue
+
+        previous_k = float(previous_k_raw)
+        previous_d = float(previous_d_raw)
+        current_k = float(current_k_raw)
+        current_d = float(current_d_raw)
+
+        if not all(
+            math.isfinite(value)
+            for value in (
+                previous_k,
+                previous_d,
+                current_k,
+                current_d,
+            )
+        ):
+            continue
+
+        bullish_cross = (
+            previous_k <= previous_d
+            and current_k > current_d
+        )
+        bearish_cross = (
+            previous_k >= previous_d
+            and current_k < current_d
+        )
+
+        # Le croisement peut faire sortir %K de la zone extrême sur la
+        # bougie courante. On accepte donc la zone précédente ou actuelle.
+        bullish_extreme_zone = (
+            (
+                previous_k <= oversold_level
+                and previous_d <= oversold_level
+            )
+            or (
+                current_k <= oversold_level
+                and current_d <= oversold_level
+            )
+        )
+
+        bearish_extreme_zone = (
+            (
+                previous_k >= overbought_level
+                and previous_d >= overbought_level
+            )
+            or (
+                current_k >= overbought_level
+                and current_d >= overbought_level
+            )
+        )
+
+        if bullish_cross and bullish_extreme_zone:
+            events.append(
+                IndicatorEvent(
+                    indicator="stochastic",
+                    position=position,
+                    direction="bullish",
+                    event="bullish_cross",
+                    kind="cross",
+                    strength=1.0,
+                    metadata={
+                        "previous_k": previous_k,
+                        "previous_d": previous_d,
+                        "current_k": current_k,
+                        "current_d": current_d,
+                        "oversold_level": oversold_level,
+                    },
+                )
+            )
+
+        elif bearish_cross and bearish_extreme_zone:
+            events.append(
+                IndicatorEvent(
+                    indicator="stochastic",
+                    position=position,
+                    direction="bearish",
+                    event="bearish_cross",
+                    kind="cross",
+                    strength=1.0,
+                    metadata={
+                        "previous_k": previous_k,
+                        "previous_d": previous_d,
+                        "current_k": current_k,
+                        "current_d": current_d,
+                        "overbought_level": overbought_level,
+                    },
+                )
+            )
+
+    return events

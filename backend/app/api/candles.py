@@ -20,6 +20,7 @@ from app.services.market_history import MarketHistoryResult, MarketHistoryServic
 from app.services.market_stream import (
     build_crossover_markers,
     build_divergence_markers,
+    build_indicator_event_markers,
     bundle_to_chart_data,
     calculate_indicator_bundle,
     calculate_market_snapshots,
@@ -487,9 +488,14 @@ async def _historical_analysis(
     closed = [item for item in combined if item.is_closed]
     closed_dataframe, closed_bundle = calculate_indicator_bundle(
         [item.to_ohlcv() for item in closed], profile
-    )
+        )
     marker_data = sort_markers(
         build_crossover_markers(
+            closed_dataframe,
+            closed_bundle,
+            minimum_time=minimum_seconds,
+        )
+        + build_indicator_event_markers(
             closed_dataframe,
             closed_bundle,
             minimum_time=minimum_seconds,
