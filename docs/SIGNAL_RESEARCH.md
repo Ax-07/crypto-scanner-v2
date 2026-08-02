@@ -22,3 +22,15 @@ de production appartient à une phase ultérieure.
 Un résultat publié doit joindre configuration et dataset, dates UTC, univers,
 timeframe, horizons, décision, entrée, frais, slippage, trous, censure, effectifs par
 cellule et nombre de comparaisons. Il ne doit promettre aucune performance.
+
+## Clarification du 2 août 2026 — événements visuels
+
+Un marqueur graphique n’est pas une observation indépendante ni une preuve de
+rentabilité. Les événements RSI, Stochastique, Bollinger, Donchian, Keltner,
+ADX/DMI, Supertrend et ATR/NATR doivent être rejoués causalement et évalués comme
+des features datées avant toute conclusion.
+
+Le simple fait qu’un événement soit visible dans l’historique ne l’autorise pas
+à entrer dans les filtres ou la confluence de production. Les règles de gel,
+d’embargo, d’effectif et de validation hors échantillon restent inchangées.
+

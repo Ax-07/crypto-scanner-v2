@@ -8,14 +8,14 @@ tests exécutés localement.
 
 ## Statut
 
-| Périmètre | Statut | Preuve principale |
-|---|---|---|
-| Phases 1–2 existantes | validées avec corrections | primitives, contrats et suites scanner/market |
-| Phase 3 confirmed/close-only | complète | moteur causal, observation v2, outcomes, stats, checkpoint/reprise |
-| Phase 3 provisional historique | indisponible par conception | capability explicite ; aucune donnée intrabar fidèle |
-| Phase 4 protocole expérimental | complète | split, double embargo, sélection validation, OOS, test final |
-| Phase 4 gouvernance/shadow | complète hors outcomes shadow futurs | profils immuables, lifecycle, promotion, calcul automatique |
-| Visualisations avancées | partielle | tableaux/cartes présents, graphiques de sensibilité absents |
+| Périmètre                      | Statut                               | Preuve principale                                                  |
+| ------------------------------ | ------------------------------------ | ------------------------------------------------------------------ |
+| Phases 1–2 existantes          | validées avec corrections            | primitives, contrats et suites scanner/market                      |
+| Phase 3 confirmed/close-only   | complète                             | moteur causal, observation v2, outcomes, stats, checkpoint/reprise |
+| Phase 3 provisional historique | indisponible par conception          | capability explicite ; aucune donnée intrabar fidèle               |
+| Phase 4 protocole expérimental | complète                             | split, double embargo, sélection validation, OOS, test final       |
+| Phase 4 gouvernance/shadow     | complète hors outcomes shadow futurs | profils immuables, lifecycle, promotion, calcul automatique        |
+| Visualisations avancées        | partielle                            | tableaux/cartes présents, graphiques de sensibilité absents        |
 
 ## Changements structurants
 
@@ -54,3 +54,30 @@ fixtures ; aucun appel réel à Binance n'est requis.
 Résultat final : backend 251 passed, 1 skipped (benchmark opt-in), 22 subtests ;
 benchmark opt-in 1 passed ; frontend 52 passed ; Black, Flake8, mypy, ESLint,
 TypeScript et build Vite réussis.
+
+## Addendum du 2 août 2026 — événements et marqueurs du marché
+
+Cet addendum ne réécrit pas l’audit du 24 juillet et ne modifie pas ses nombres de
+tests. Il documente une évolution ultérieure confirmée fonctionnellement.
+
+La couche de marqueurs du marché a été généralisée avec un contrat
+`IndicatorEvent` et un agrégateur commun. Les marqueurs close-only couvrent
+désormais EMA, MACD, Supertrend, RSI, Stochastique, Bollinger, Donchian, Keltner,
+ADX/DMI et ATR/NATR.
+
+La responsabilité est répartie ainsi :
+
+- chaque module d’indicateur détecte ses événements ;
+- `indicator_bundle.build_indicator_events` agrège sans recalcul ;
+- `market_stream.build_indicator_event_markers` ajoute timestamp et présentation ;
+- REST et WebSocket réutilisent le même chemin ;
+- le frontend normalise, fusionne et filtre par visibilité.
+
+Le correctif d’affichage ATR a porté sur la combinaison
+`visibility.signals`/`visibility.volatility` et sur la reconnaissance des anciens
+libellés de volatilité sans champ `indicator`.
+
+Cette évolution reste neutre pour les filtres de production, la confluence,
+`accepted`, les outcomes et la simulation de portefeuille. La référence détaillée
+est `docs/backend/indicator-events-and-market-markers.md`.
+

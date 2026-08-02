@@ -249,3 +249,11 @@ défaut. Les cartes s'empilent sur mobile et utilisent `Field`, labels associés
 descriptions et erreurs RHF/Zod. Une ancienne configuration est normalisée
 localement avec les deux blocs désactivés. Le payload validé ne mute pas la
 configuration source. Aucun filtre, poids ou seuil de trading n'est créé.
+
+## Extension Phase 8.4
+
+L'ordre canonique ajoute Volume relatif, CMF et OBV. Les cartes affichent leurs
+valeurs brutes et composants avec les unités volume ou ratio; les états et
+directions restent ceux fournis par le backend. Les trois blocs de formulaire
+sont optionnels et désactivés par défaut. Leur activation enrichit l'observation
+sans recalcul frontend et sans modifier la décision historique.

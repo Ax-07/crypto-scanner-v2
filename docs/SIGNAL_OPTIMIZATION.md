@@ -74,3 +74,16 @@ La page Expériences affiche les splits, résultats, folds/OOS, test final,
 correction BH, exports, profils versionnés, hash, passage en shadow, promotion
 explicite et résumé shadow. Les visualisations sont actuellement des tableaux et
 cartes ; aucun graphique interactif de courbe de sensibilité n'est encore fourni.
+
+## Clarification du 2 août 2026 — marqueurs graphiques
+
+Les nouveaux événements et marqueurs multi-indicateurs sont une couche
+d’observation et de présentation. Leur présence sur le graphique ne constitue
+pas une variante expérimentale et ne doit pas être interprétée comme une
+modification de stratégie.
+
+Toute utilisation future d’ATR/NATR, ADX/DMI, Supertrend, Donchian ou Keltner
+dans un filtre, un poids ou un critère d’acceptation doit suivre le protocole
+ci-dessus : hypothèse préenregistrée, split chronologique, garde-fous et validation
+hors échantillon.
+

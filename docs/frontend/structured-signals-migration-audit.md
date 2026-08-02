@@ -28,23 +28,23 @@ Les documents de reprise ont été relus, puis confrontés au code actif.
 
 ## 2. Matrice de l'état réel
 
-| Fonctionnalité | Scanner | Marché | Backtest |
-|---|---|---|---|
-| Contrat `indicator_signals` | oui, `ScanResult` optionnel | oui, `SignalView` optionnel | oui, `SignalObservation` optionnel |
-| Validation Zod | oui, enveloppe additive | oui, vues/messages stricts | oui, enveloppe additive |
-| Conservation dans le store | oui, résultat complet | oui, snapshot complet REST/WS | oui, page d'observations |
-| Résumé compact | oui | non, inutile dans les cartes dédiées | oui |
-| Détail complet | oui, `Sheet` | oui, panneaux confirmed/provisional | oui, `Sheet` |
-| Champ absent géré | oui, payload historique | oui, payload historique | oui, payload historique |
-| Objet vide géré | oui, message distinct | oui, message distinct | oui, message distinct |
-| Dictionnaire partiel | oui, sans synthèse | oui, sans synthèse | oui, sans synthèse |
-| Statuts indisponibles | transmis aux cartes | transmis aux cartes | transmis aux cartes |
-| Confluence affichée | score/grade historique | objet backend | facteurs/poids/contributions backend |
-| Intensité expliquée | note commune | note commune + note trend | note commune + causalité |
-| Ancien payload compatible | oui | oui | oui |
-| Tests dédiés | oui | oui | oui |
-| Responsive | table + `Sheet` | onglets mobile, 2 colonnes desktop | table + `Sheet` |
-| Accessibilité | titre/description/focus/Échap | tablist clavier et titres | titre/description/focus/Échap/nav |
+| Fonctionnalité              | Scanner                       | Marché                               | Backtest                             |
+| --------------------------- | ----------------------------- | ------------------------------------ | ------------------------------------ |
+| Contrat `indicator_signals` | oui, `ScanResult` optionnel   | oui, `SignalView` optionnel          | oui, `SignalObservation` optionnel   |
+| Validation Zod              | oui, enveloppe additive       | oui, vues/messages stricts           | oui, enveloppe additive              |
+| Conservation dans le store  | oui, résultat complet         | oui, snapshot complet REST/WS        | oui, page d'observations             |
+| Résumé compact              | oui                           | non, inutile dans les cartes dédiées | oui                                  |
+| Détail complet              | oui, `Sheet`                  | oui, panneaux confirmed/provisional  | oui, `Sheet`                         |
+| Champ absent géré           | oui, payload historique       | oui, payload historique              | oui, payload historique              |
+| Objet vide géré             | oui, message distinct         | oui, message distinct                | oui, message distinct                |
+| Dictionnaire partiel        | oui, sans synthèse            | oui, sans synthèse                   | oui, sans synthèse                   |
+| Statuts indisponibles       | transmis aux cartes           | transmis aux cartes                  | transmis aux cartes                  |
+| Confluence affichée         | score/grade historique        | objet backend                        | facteurs/poids/contributions backend |
+| Intensité expliquée         | note commune                  | note commune + note trend            | note commune + causalité             |
+| Ancien payload compatible   | oui                           | oui                                  | oui                                  |
+| Tests dédiés                | oui                           | oui                                  | oui                                  |
+| Responsive                  | table + `Sheet`               | onglets mobile, 2 colonnes desktop   | table + `Sheet`                      |
+| Accessibilité               | titre/description/focus/Échap | tablist clavier et titres            | titre/description/focus/Échap/nav    |
 
 Les trois pages sont donc réellement intégrées. Le marché n'est pas une phase à
 réaliser : `MarketSignalsSection` est monté dans `MarketPage` et lit séparément
@@ -71,14 +71,14 @@ confluence, ni recommandation.
 
 ## 4. Composants communs
 
-| Composant | Props principales | Responsabilité | Utilisation et tests |
-|---|---|---|---|
-| `IndicatorStatusBadge` | `status`, `compact?`, `className?` | statut textuel, icône et style | utilisé par `IndicatorSignalCard`, testé via badges/cartes |
-| `IndicatorDirectionBadge` | `direction`, `compact?`, `className?` | direction technique non prescriptive | cartes et résumés scanner/backtest, testé |
-| `IndicatorStrength` | `value`, `showValue?`, `compact?`, `className?` | intensité 0–100 et progressbar | utilisé par la carte, tests dédiés |
-| `IndicatorStrengthNote` | `className?` | convention pédagogique commune | scanner, marché, backtest, assertions transversales |
-| `IndicatorSignalCard` | `indicator`, `signal`, options d'affichage | détail d'un signal et diagnostic d'indisponibilité | utilisé par le panneau, tests dédiés |
-| `IndicatorSignalsPanel` | `signals`, compact/filtre/raison/message | ordre canonique et grille de cartes | utilisé dans les trois features, tests dédiés |
+| Composant                 | Props principales                               | Responsabilité                                     | Utilisation et tests                                       |
+| ------------------------- | ----------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------- |
+| `IndicatorStatusBadge`    | `status`, `compact?`, `className?`              | statut textuel, icône et style                     | utilisé par `IndicatorSignalCard`, testé via badges/cartes |
+| `IndicatorDirectionBadge` | `direction`, `compact?`, `className?`           | direction technique non prescriptive               | cartes et résumés scanner/backtest, testé                  |
+| `IndicatorStrength`       | `value`, `showValue?`, `compact?`, `className?` | intensité 0–100 et progressbar                     | utilisé par la carte, tests dédiés                         |
+| `IndicatorStrengthNote`   | `className?`                                    | convention pédagogique commune                     | scanner, marché, backtest, assertions transversales        |
+| `IndicatorSignalCard`     | `indicator`, `signal`, options d'affichage      | détail d'un signal et diagnostic d'indisponibilité | utilisé par le panneau, tests dédiés                       |
+| `IndicatorSignalsPanel`   | `signals`, compact/filtre/raison/message        | ordre canonique et grille de cartes                | utilisé dans les trois features, tests dédiés              |
 
 Les helpers communs sont :
 
@@ -92,18 +92,18 @@ Les helpers communs sont :
 
 ## 5. Composants spécifiques conservés
 
-| Composant | Props | Rôle spécifique | Utilisé / testé |
-|---|---|---|---|
-| `ScannerResultSignals` | `result` | résumé et ouverture locale du `Sheet` scanner | table scanner / oui |
-| `ScannerResultSignalsSummary` | `signals` | résumé compact d'une cellule | scanner / oui |
-| `ScannerResultSignalsDetails` | `result` | confluence historique et signaux du résultat | `Sheet` scanner / oui |
-| `MarketSignalSnapshot` | `kind`, `snapshot`, `symbol`, `timeframe` | vue confirmed ou provisional | section marché / oui |
-| `MarketSignalsSection` | `symbol`, `timeframe` | sélecteurs Zustand fins et onglets responsive | page marché / oui |
-| `MarketConnectionStatus` | aucune | état réel de la socket et erreur persistante | page marché / oui |
-| `BacktestObservationSummary` | `observation` | décision, confluence et résumé compact | table backtest / oui |
-| `BacktestObservationDetails` | `observation`, `entryPolicy` | causalité, rejet, confluence et `Sheet` | table backtest / oui |
-| `BacktestObservationsTable` | `job` | pagination et états réseau | page backtest / oui |
-| `BacktestDecisionBadge` | `accepted`, `className?` | acceptation des filtres, jamais un trade | résumé/détail / oui |
+| Composant                     | Props                                     | Rôle spécifique                               | Utilisé / testé       |
+| ----------------------------- | ----------------------------------------- | --------------------------------------------- | --------------------- |
+| `ScannerResultSignals`        | `result`                                  | résumé et ouverture locale du `Sheet` scanner | table scanner / oui   |
+| `ScannerResultSignalsSummary` | `signals`                                 | résumé compact d'une cellule                  | scanner / oui         |
+| `ScannerResultSignalsDetails` | `result`                                  | confluence historique et signaux du résultat  | `Sheet` scanner / oui |
+| `MarketSignalSnapshot`        | `kind`, `snapshot`, `symbol`, `timeframe` | vue confirmed ou provisional                  | section marché / oui  |
+| `MarketSignalsSection`        | `symbol`, `timeframe`                     | sélecteurs Zustand fins et onglets responsive | page marché / oui     |
+| `MarketConnectionStatus`      | aucune                                    | état réel de la socket et erreur persistante  | page marché / oui     |
+| `BacktestObservationSummary`  | `observation`                             | décision, confluence et résumé compact        | table backtest / oui  |
+| `BacktestObservationDetails`  | `observation`, `entryPolicy`              | causalité, rejet, confluence et `Sheet`       | table backtest / oui  |
+| `BacktestObservationsTable`   | `job`                                     | pagination et états réseau                    | page backtest / oui   |
+| `BacktestDecisionBadge`       | `accepted`, `className?`                  | acceptation des filtres, jamais un trade      | résumé/détail / oui   |
 
 Aucun de ces composants n'est inutilisé. Les recherches d'import confirment leur
 montage réel ; aucune suppression ou fusion n'est proposée dans cette phase.
@@ -148,11 +148,11 @@ Extractions réalisées :
 
 État structurel du dictionnaire :
 
-| Entrée | État | Affichage |
-|---|---|---|
-| `undefined` | `legacy_absent` | « Les signaux structurés ne sont pas disponibles pour … » |
-| `{}` | `empty` | « Aucun signal structuré n’a été produit pour … » |
-| au moins une clé reconnue | `available` | clés reçues uniquement |
+| Entrée                    | État            | Affichage                                                 |
+| ------------------------- | --------------- | --------------------------------------------------------- |
+| `undefined`               | `legacy_absent` | « Les signaux structurés ne sont pas disponibles pour … » |
+| `{}`                      | `empty`         | « Aucun signal structuré n’a été produit pour … »         |
+| au moins une clé reconnue | `available`     | clés reçues uniquement                                    |
 
 Une collection `available` peut ne contenir que des signaux
 `insufficient_data`, `invalid_data` ou `disabled`. Ces statuts individuels ne
@@ -192,17 +192,17 @@ Aucun texte d'achat ou de vente n'est produit.
 
 Inventaire réel :
 
-| Valeur | Formatter | Convention |
-|---|---|---|
-| `raw_value` | `formatIndicatorRawValue` | `fr-FR`, précision par indicateur, aucune unité inventée |
-| intensité | `IndicatorStrength` | ratio backend 0–1 affiché 0–100 |
-| prix scanner | formatter local | `fr-FR`, 8 chiffres significatifs |
-| prix marché/backtest | `Intl.NumberFormat` local | `fr-FR`, jusqu'à 8 décimales |
-| confluence | formatters locaux | score `/100`, grade backend |
-| timestamps | `toLocaleString("fr-FR")` dans les nouveaux composants | locale explicite |
-| rendement | page backtest | ratio multiplié par 100 et suffixe `%` |
-| frais/slippage | formulaire backtest | unité métier `bps`, inchangée |
-| durée/horizon | backtest | nombre de bougies, inchangé |
+| Valeur               | Formatter                                              | Convention                                               |
+| -------------------- | ------------------------------------------------------ | -------------------------------------------------------- |
+| `raw_value`          | `formatIndicatorRawValue`                              | `fr-FR`, précision par indicateur, aucune unité inventée |
+| intensité            | `IndicatorStrength`                                    | ratio backend 0–1 affiché 0–100                          |
+| prix scanner         | formatter local                                        | `fr-FR`, 8 chiffres significatifs                        |
+| prix marché/backtest | `Intl.NumberFormat` local                              | `fr-FR`, jusqu'à 8 décimales                             |
+| confluence           | formatters locaux                                      | score `/100`, grade backend                              |
+| timestamps           | `toLocaleString("fr-FR")` dans les nouveaux composants | locale explicite                                         |
+| rendement            | page backtest                                          | ratio multiplié par 100 et suffixe `%`                   |
+| frais/slippage       | formulaire backtest                                    | unité métier `bps`, inchangée                            |
+| durée/horizon        | backtest                                               | nombre de bougies, inchangé                              |
 
 Seuls les formatters strictement identiques de signaux ont été partagés. Aucune
 devise, conversion monétaire ou unité supplémentaire n'est supposée.
@@ -213,25 +213,25 @@ Les API scanner/backtest utilisent des enveloppes additives et ne revalident pas
 chaque champ historique ; le marché les valide dans `api/market.ts`. Les stores
 conservent l'objet métier entier plutôt que chaque champ séparément.
 
-| Champ | Déclaration / flux | Affichage et tests | Équivalent structuré | Remplaçable ? / information conservée |
-|---|---|---|---|---|
-| `rsi` | scanner, marché, observation | table scanner, `MarketMetrics`, fixtures/tests | `rsi.raw_value` | partiellement ; scalaire utile aux anciens clients/CSV |
-| `trend` | marché | `MarketMetrics`, tests marché | SMA/EMA | non ; classification historique mono-timeframe |
-| `trend_score` | scanner, observation | table scanner, fixtures/tests | aucun exact | non ; agrégation multi-timeframes |
-| `trend_states` | scanner, observation | détail historique scanner, tests | aucun exact | non ; dictionnaire multi-timeframes |
-| `trend_net_score` | scanner, observation | table scanner, tests | aucun exact | non ; score signé multi-timeframes |
-| `moving_averages` | scanner | contrat, CSV, tests | `sma/ema.raw_value` | non ; dictionnaire de périodes/timeframes |
-| `macd` | scanner, marché | CSV, graphique/métriques, tests | `macd.raw_value` | non ; les séries/valeurs MACD restent plus riches |
-| `macd_signal_type` | scanner | colonne, filtre, CSV, tests | `macd.direction/state` | partiellement ; vocabulaire du filtre |
-| `bollinger` | marché | graphique/métriques | `bollinger.state/raw_value` | non ; vue legacy et bandes graphiques |
-| `bb_position` | scanner | colonne, filtre, CSV, tests | `bollinger.state` | partiellement ; contrat de filtre |
-| `stochastic` | marché | graphique/métriques | `stochastic.state/signal` | non ; séries `%K/%D` séparées |
-| `stoch_signal` | scanner | colonne, filtre, CSV, tests | signal stochastique | partiellement ; contrat de filtre |
-| `confluence_score` | scanner, observation | tableaux/détails, CSV, tests | aucun | non ; calcul backend distinct |
-| `confluence_grade` | scanner, observation | tableaux/détails, CSV, tests | aucun | non |
-| `confluence_breakdown` | scanner, observation | détail backtest, CSV scanner, tests | aucun | non ; contributions par facteur |
-| `effective_weights` / `confluence_effective_weights` | backtest / scanner | détail backtest, CSV scanner, tests | aucun | non ; poids renormalisés |
-| `availability` / `indicator_availability` | marché/backtest / scanner | métriques marché, recherche backtest, tests | statuts individuels partiels | non ; inclut `trend` et les indicateurs omis |
+| Champ                                                | Déclaration / flux           | Affichage et tests                             | Équivalent structuré         | Remplaçable ? / information conservée                  |
+| ---------------------------------------------------- | ---------------------------- | ---------------------------------------------- | ---------------------------- | ------------------------------------------------------ |
+| `rsi`                                                | scanner, marché, observation | table scanner, `MarketMetrics`, fixtures/tests | `rsi.raw_value`              | partiellement ; scalaire utile aux anciens clients/CSV |
+| `trend`                                              | marché                       | `MarketMetrics`, tests marché                  | SMA/EMA                      | non ; classification historique mono-timeframe         |
+| `trend_score`                                        | scanner, observation         | table scanner, fixtures/tests                  | aucun exact                  | non ; agrégation multi-timeframes                      |
+| `trend_states`                                       | scanner, observation         | détail historique scanner, tests               | aucun exact                  | non ; dictionnaire multi-timeframes                    |
+| `trend_net_score`                                    | scanner, observation         | table scanner, tests                           | aucun exact                  | non ; score signé multi-timeframes                     |
+| `moving_averages`                                    | scanner                      | contrat, CSV, tests                            | `sma/ema.raw_value`          | non ; dictionnaire de périodes/timeframes              |
+| `macd`                                               | scanner, marché              | CSV, graphique/métriques, tests                | `macd.raw_value`             | non ; les séries/valeurs MACD restent plus riches      |
+| `macd_signal_type`                                   | scanner                      | colonne, filtre, CSV, tests                    | `macd.direction/state`       | partiellement ; vocabulaire du filtre                  |
+| `bollinger`                                          | marché                       | graphique/métriques                            | `bollinger.state/raw_value`  | non ; vue legacy et bandes graphiques                  |
+| `bb_position`                                        | scanner                      | colonne, filtre, CSV, tests                    | `bollinger.state`            | partiellement ; contrat de filtre                      |
+| `stochastic`                                         | marché                       | graphique/métriques                            | `stochastic.state/signal`    | non ; séries `%K/%D` séparées                          |
+| `stoch_signal`                                       | scanner                      | colonne, filtre, CSV, tests                    | signal stochastique          | partiellement ; contrat de filtre                      |
+| `confluence_score`                                   | scanner, observation         | tableaux/détails, CSV, tests                   | aucun                        | non ; calcul backend distinct                          |
+| `confluence_grade`                                   | scanner, observation         | tableaux/détails, CSV, tests                   | aucun                        | non                                                    |
+| `confluence_breakdown`                               | scanner, observation         | détail backtest, CSV scanner, tests            | aucun                        | non ; contributions par facteur                        |
+| `effective_weights` / `confluence_effective_weights` | backtest / scanner           | détail backtest, CSV scanner, tests            | aucun                        | non ; poids renormalisés                               |
+| `availability` / `indicator_availability`            | marché/backtest / scanner    | métriques marché, recherche backtest, tests    | statuts individuels partiels | non ; inclut `trend` et les indicateurs omis           |
 
 Champs associés également bloquants : `macd_signal`, `macd_histogram`,
 `bb_upper`, `bb_middle`, `bb_lower`, `stoch_k`, `stoch_d`, `trends`,
@@ -241,34 +241,34 @@ dictionnaire complet.
 
 ## 12. Matrice de dépréciation
 
-| Champ historique | Flux | Usage actuel | Équivalent structuré | Remplaçable ? | Condition préalable | Statut |
-|---|---|---|---|---:|---|---|
-| `rsi` | scanner/marché/backtest | UI, CSV scanner, contrats | `rsi.raw_value` | partiellement | clients et export versionnés | candidat futur |
-| `trend` | marché | métriques/confluence | SMA/EMA partiels | non | nouveau contrat de tendance | non remplaçable |
-| `trend_score` | scanner/backtest | filtre, UI, CSV | aucun | non | remplacement multi-TF | non remplaçable |
-| `trend_states` | scanner/backtest | confluence, UI, persistance | aucun | non | contrat multi-TF | non remplaçable |
-| `trend_net_score` | scanner/backtest | UI/persistance | aucun | non | contrat multi-TF | non remplaçable |
-| `moving_averages` | scanner | CSV et valeurs multi-périodes | SMA/EMA `raw_value` | non | contrat de séries/périodes | non remplaçable |
-| `macd` et lignes associées | scanner/marché | graphique, CSV, métriques | `macd.raw_value` | non | préserver les trois séries | non remplaçable |
-| `macd_signal_type` | scanner | colonne, filtre, CSV | `macd.direction` | partiellement | filtre et CSV migrés | dépréciation bloquée |
-| bandes Bollinger | scanner/marché | graphique, CSV, métriques | signal Bollinger | non | contrat de bandes | non remplaçable |
-| `bb_position` | scanner | colonne, filtre, CSV | `bollinger.state` | partiellement | filtre et CSV migrés | dépréciation bloquée |
-| séries stochastiques | scanner/marché | graphique, CSV, métriques | signal stochastique | non | préserver `%K/%D` | non remplaçable |
-| `stoch_signal` | scanner | colonne, filtre, CSV | signal structuré | partiellement | filtre et CSV migrés | dépréciation bloquée |
-| confluence score/grade | trois flux | UI, filtres/analyses, CSV | aucun | non | contrat dédié inchangé | non remplaçable |
-| breakdown/poids/détails | trois flux | explication, analyses, CSV | aucun | non | remplacement complet | non remplaçable |
-| availability | trois flux | diagnostics/recherche | statuts partiels | non | couvrir trend et indicateurs omis | non remplaçable |
+| Champ historique           | Flux                    | Usage actuel                  | Équivalent structuré | Remplaçable ? | Condition préalable               | Statut               |
+| -------------------------- | ----------------------- | ----------------------------- | -------------------- | ------------: | --------------------------------- | -------------------- |
+| `rsi`                      | scanner/marché/backtest | UI, CSV scanner, contrats     | `rsi.raw_value`      | partiellement | clients et export versionnés      | candidat futur       |
+| `trend`                    | marché                  | métriques/confluence          | SMA/EMA partiels     |           non | nouveau contrat de tendance       | non remplaçable      |
+| `trend_score`              | scanner/backtest        | filtre, UI, CSV               | aucun                |           non | remplacement multi-TF             | non remplaçable      |
+| `trend_states`             | scanner/backtest        | confluence, UI, persistance   | aucun                |           non | contrat multi-TF                  | non remplaçable      |
+| `trend_net_score`          | scanner/backtest        | UI/persistance                | aucun                |           non | contrat multi-TF                  | non remplaçable      |
+| `moving_averages`          | scanner                 | CSV et valeurs multi-périodes | SMA/EMA `raw_value`  |           non | contrat de séries/périodes        | non remplaçable      |
+| `macd` et lignes associées | scanner/marché          | graphique, CSV, métriques     | `macd.raw_value`     |           non | préserver les trois séries        | non remplaçable      |
+| `macd_signal_type`         | scanner                 | colonne, filtre, CSV          | `macd.direction`     | partiellement | filtre et CSV migrés              | dépréciation bloquée |
+| bandes Bollinger           | scanner/marché          | graphique, CSV, métriques     | signal Bollinger     |           non | contrat de bandes                 | non remplaçable      |
+| `bb_position`              | scanner                 | colonne, filtre, CSV          | `bollinger.state`    | partiellement | filtre et CSV migrés              | dépréciation bloquée |
+| séries stochastiques       | scanner/marché          | graphique, CSV, métriques     | signal stochastique  |           non | préserver `%K/%D`                 | non remplaçable      |
+| `stoch_signal`             | scanner                 | colonne, filtre, CSV          | signal structuré     | partiellement | filtre et CSV migrés              | dépréciation bloquée |
+| confluence score/grade     | trois flux              | UI, filtres/analyses, CSV     | aucun                |           non | contrat dédié inchangé            | non remplaçable      |
+| breakdown/poids/détails    | trois flux              | explication, analyses, CSV    | aucun                |           non | remplacement complet              | non remplaçable      |
+| availability               | trois flux              | diagnostics/recherche         | statuts partiels     |           non | couvrir trend et indicateurs omis | non remplaçable      |
 
 Aucun champ n'est « supprimé ». « Candidat futur » signifie seulement qu'une
 équivalence partielle mérite une étude après migration des consommateurs.
 
 ## 13. Filtres historiques bloquants
 
-| Filtre | Options formulaire, type TS et Zod | Valeurs backend | Relation structurée |
-|---|---|---|---|
-| `filter_macd_signal` | `bullish`, `bearish`, `neutral` | même union `MacdSignal` | proche de `macd.direction`, pas migré |
-| `filter_bb_position` | `oversold`, `near_oversold`, `neutral`, `near_overbought`, `overbought` | même union `BollingerPosition` | proche de `bollinger.state` |
-| `filter_stoch_signal` | `oversold`, `overbought`, `bullish_cross`, `bearish_cross`, `neutral` | union historique équivalente | proche de `stochastic.signal/state` |
+| Filtre                | Options formulaire, type TS et Zod                                      | Valeurs backend                | Relation structurée                   |
+| --------------------- | ----------------------------------------------------------------------- | ------------------------------ | ------------------------------------- |
+| `filter_macd_signal`  | `bullish`, `bearish`, `neutral`                                         | même union `MacdSignal`        | proche de `macd.direction`, pas migré |
+| `filter_bb_position`  | `oversold`, `near_oversold`, `neutral`, `near_overbought`, `overbought` | même union `BollingerPosition` | proche de `bollinger.state`           |
+| `filter_stoch_signal` | `oversold`, `overbought`, `bullish_cross`, `bearish_cross`, `neutral`   | union historique équivalente   | proche de `stochastic.signal/state`   |
 
 Le formulaire envoie `null` si aucune case n'est cochée. `ScanConfig`,
 `scanConfigSchema`, le modèle backend et `check_signal_filters` consomment encore
@@ -279,11 +279,11 @@ presets, scanner et replay.
 
 ### Matrice de migration des filtres — Phase 5.7
 
-| Filtre | Valeurs exactes | Dimension de parité |
-|---|---|---|
-| `filter_macd_signal` | `bullish`, `bearish`, `neutral` | `direction` |
-| `filter_bb_position` | `oversold`, `near_oversold`, `neutral`, `near_overbought`, `overbought` | `state` |
-| `filter_stoch_signal` | `bullish_cross`, `oversold`, `neutral`, `bearish_cross`, `overbought` | `signal` |
+| Filtre                | Valeurs exactes                                                         | Dimension de parité |
+| --------------------- | ----------------------------------------------------------------------- | ------------------- |
+| `filter_macd_signal`  | `bullish`, `bearish`, `neutral`                                         | `direction`         |
+| `filter_bb_position`  | `oversold`, `near_oversold`, `neutral`, `near_overbought`, `overbought` | `state`             |
+| `filter_stoch_signal` | `bullish_cross`, `oversold`, `neutral`, `bearish_cross`, `overbought`   | `signal`            |
 
 Le Stochastique reste conceptuellement ambigu : les valeurs historiques
 contiennent événements et zones. Le code actif recopie toutefois la
@@ -418,17 +418,17 @@ des garanties est dans le
 
 Frontend :
 
-| Commande | Résultat |
-|---|---|
-| `pnpm install --frozen-lockfile` | réussi après une première tentative sandbox expirée ; 335 paquets réutilisés, 0 téléchargé, lockfile inchangé |
-| `pnpm exec vitest run src/components/indicator-signals` | 6 fichiers, 68 tests réussis |
-| `pnpm exec vitest run src/features/scanner` | 3 fichiers, 21 tests réussis |
-| `pnpm exec vitest run src/features/market` | 8 fichiers, 31 tests réussis |
-| `pnpm exec vitest run src/features/backtests` | 5 fichiers, 21 tests réussis |
-| `pnpm run typecheck` | réussi |
-| `pnpm run lint` | réussi, aucun avertissement |
-| `pnpm run test` | 37 fichiers, 213 réussis, 0 ignoré, 0 échoué |
-| `pnpm run build` | réussi, 2 054 modules transformés |
+| Commande                                                | Résultat                                                                                                      |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `pnpm install --frozen-lockfile`                        | réussi après une première tentative sandbox expirée ; 335 paquets réutilisés, 0 téléchargé, lockfile inchangé |
+| `pnpm exec vitest run src/components/indicator-signals` | 6 fichiers, 68 tests réussis                                                                                  |
+| `pnpm exec vitest run src/features/scanner`             | 3 fichiers, 21 tests réussis                                                                                  |
+| `pnpm exec vitest run src/features/market`              | 8 fichiers, 31 tests réussis                                                                                  |
+| `pnpm exec vitest run src/features/backtests`           | 5 fichiers, 21 tests réussis                                                                                  |
+| `pnpm run typecheck`                                    | réussi                                                                                                        |
+| `pnpm run lint`                                         | réussi, aucun avertissement                                                                                   |
+| `pnpm run test`                                         | 37 fichiers, 213 réussis, 0 ignoré, 0 échoué                                                                  |
+| `pnpm run build`                                        | réussi, 2 054 modules transformés                                                                             |
 
 Backend, sans modification de source :
 

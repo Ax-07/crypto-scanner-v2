@@ -35,12 +35,12 @@ Les pages orchestrent les features. React Hook Form conserve la configuration en
 
 ## Routes
 
-| URL | Rôle |
-| --- | --- |
-| `/` | Redirection vers `/scanner` |
-| `/scanner` | Configuration, progression et résultats |
-| `/market?symbol=BTC%2FUSDC&timeframe=1h` | Marché temps réel |
-| `*` | Page 404 |
+| URL                                      | Rôle                                    |
+| ---------------------------------------- | --------------------------------------- |
+| `/`                                      | Redirection vers `/scanner`             |
+| `/scanner`                               | Configuration, progression et résultats |
+| `/market?symbol=BTC%2FUSDC&timeframe=1h` | Marché temps réel                       |
+| `*`                                      | Page 404                                |
 
 ## Parcours recommandé
 
@@ -75,16 +75,16 @@ pnpm run measure:history
 
 ## Carte rapide du code
 
-| Répertoire | Responsabilité |
-| --- | --- |
-| `src/app/` | Routeur, providers et layout partagé |
-| `src/pages/` | Assemblage des écrans routés |
-| `src/features/` | Logique et composants propres au scanner et au marché |
-| `src/api/` | Transport HTTP et endpoints métier |
-| `src/stores/` | État global des flux asynchrones |
-| `src/types/` | Contrats TypeScript du domaine |
-| `src/components/ui/` | Primitives Shadcn réutilisables |
-| `src/components/dashboard/` | Visualisations et contrôles du marché |
+| Répertoire                  | Responsabilité                                        |
+| --------------------------- | ----------------------------------------------------- |
+| `src/app/`                  | Routeur, providers et layout partagé                  |
+| `src/pages/`                | Assemblage des écrans routés                          |
+| `src/features/`             | Logique et composants propres au scanner et au marché |
+| `src/api/`                  | Transport HTTP et endpoints métier                    |
+| `src/stores/`               | État global des flux asynchrones                      |
+| `src/types/`                | Contrats TypeScript du domaine                        |
+| `src/components/ui/`        | Primitives Shadcn réutilisables                       |
+| `src/components/dashboard/` | Visualisations et contrôles du marché                 |
 
 ## Règles de contribution
 

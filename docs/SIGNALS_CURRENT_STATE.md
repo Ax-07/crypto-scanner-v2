@@ -1,13 +1,13 @@
 # État actuel des signaux
 
-État revérifié le 29 juillet 2026. Ce document décrit le code actif, pas l’intention historique.
+État revérifié le 2 août 2026. Ce document décrit le code actif, pas l’intention historique.
 
 L'audit frontend transversal, l'inventaire legacy et le plan de dépréciation sont
 dans [`frontend/structured-signals-migration-audit.md`](frontend/structured-signals-migration-audit.md).
 
 ## Sources canoniques
 
-- Formules/classes/confluence : `backend/app/domain/indicators.py`.
+- Formules/classes/confluence : modules sous `backend/app/domain/indicators/` ; `types.py` porte les contrats partagés et `indicator_bundle.py` agrège les signaux et événements.
 - Normalisation et clôtures : `backend/app/domain/candles.py`.
 - Assemblage scanner : `backend/app/services/scanner.py`.
 - Snapshots/graphiques/marqueurs live : `backend/app/services/market_stream.py`.
@@ -87,17 +87,65 @@ Le résultat contient score, grade, breakdown, poids effectifs et, par facteur, 
 
 La confluence n’est ni une probabilité, ni un ensemble de facteurs indépendants. RSI/Stochastique/Bollinger et EMA/MACD sont corrélés ; le score est orienté long/repli et n’a pas de miroir short.
 
-## Croisements et divergences
+## Événements, marqueurs et divergences
 
-Les marqueurs live close-only couvrent :
+Les marqueurs confirmés utilisent deux chemins complémentaires :
 
-- croisement EMA des deux premières périodes disponibles ;
-- passage du MACD autour de sa ligne signal ;
-- divergences RSI et MACD régulières/cachées.
+- `build_crossover_markers` pour EMA et MACD ;
+- `build_indicator_events` puis `build_indicator_event_markers` pour les
+  événements natifs des autres indicateurs.
 
-Pivots : fenêtre gauche/droite stricte de 3 ; distance 5 à 60 ; variation de prix minimale 0,1 % ; delta RSI minimal 2 ; delta MACD minimal 0 (égalité acceptée, règle caractérisée). Le marqueur contient temps, position, forme, couleur, texte, catégorie, source, type et détails des deux pivots. Il est placé au second pivot, bien qu’il ne soit connu qu’après la fenêtre droite : l’UI peut donc sembler « backdater » visuellement.
+Chaque module d’indicateur détecte ses propres événements. L’agrégateur commun
+n’effectue aucun recalcul et conserve les positions alignées sur les bougies.
+Le service marché ajoute ensuite timestamp, forme, position, couleur, texte,
+`category="signal"` et `indicator`.
 
-Les divergences ne participent ni au scanner, ni à la confluence, ni au replay phase 3.
+Matrice active :
+
+| Indicateur | Événements de marqueur |
+|---|---|
+| EMA | croisement rapide/lente haussier ou baissier |
+| MACD | histogramme traversant zéro |
+| Supertrend | `bullish_flip`, `bearish_flip` |
+| RSI | `exit_oversold`, `exit_overbought` |
+| Stochastique | croisements `%K/%D` dans les zones extrêmes |
+| Bollinger | réintégration de la bande basse ou haute |
+| Donchian | première cassure des bornes calculées jusqu’à `t-1` |
+| Keltner | cassure des bandes de la bougie précédente |
+| ADX/DMI | croisement `+DI/-DI` avec ADX supérieur ou égal au seuil faible |
+| ATR/NATR | bascule vers expansion ou contraction ; direction neutre |
+
+Les événements ATR/NATR vers `stable` sont ignorés. Les événements Donchian et
+Keltner ne sont pas répétés sur chaque bougie restant hors canal.
+
+Le contrat `IndicatorEvent` contient :
+
+```python
+indicator, position, direction, event, kind, strength?, metadata?
+```
+
+Le contrat `MarketMarker` contient notamment :
+
+```text
+time, position, shape, color, text, category, indicator
+```
+
+Le frontend exige `visibility.signals` et la visibilité de l’indicateur. ATR
+utilise la clé `visibility.volatility`. Les payloads historiques sans
+`indicator` sont normalisés depuis le texte ; les libellés de volatilité sont
+reconnus comme ATR.
+
+Les divergences RSI et MACD régulières/cachées restent séparées. Pivots : fenêtre
+gauche/droite stricte de 3 ; distance 5 à 60 ; variation de prix minimale 0,1 % ;
+delta RSI minimal 2 ; delta MACD minimal 0. Le marqueur reste placé au second
+pivot alors qu’il n’est connu qu’après la fenêtre droite.
+
+Tous les marqueurs de signal et de divergence restent close-only. Ils ne
+participent ni aux filtres de production, ni à la confluence, ni à la décision
+du replay.
+
+Référence détaillée :
+[`backend/indicator-events-and-market-markers.md`](backend/indicator-events-and-market-markers.md).
 
 ## Contrats backend/frontend
 
@@ -107,6 +155,20 @@ contrôle les six clés d'indicateur et conserve `indicator_signals` dans les fl
 scanner, marché et backtest jusqu'aux stores. Le champ reste optionnel pour les
 anciens payloads. Les interfaces scanner, marché et backtest le présentent avec
 la bibliothèque visuelle partagée, sans recalcul.
+
+### Contrats étendus des événements
+
+`IndicatorName` et `MarkerIndicator` reconnaissent maintenant :
+
+```text
+rsi, sma, ema, macd, bollinger, stochastic,
+atr, adx, supertrend, donchian, keltner
+```
+
+Le champ `indicator` d’un marqueur reste optionnel côté TypeScript pour accepter
+les anciens payloads, mais les nouveaux marqueurs backend le fournissent.
+`IndicatorEventKind` couvre `trend_change`, `cross`, `breakout`, `reentry`,
+`threshold_entry`, `threshold_exit` et `volatility_regime`.
 
 ## Tests
 
@@ -178,3 +240,15 @@ blocs versionnés optionnels, désactivés par défaut. Ils traversent scanner,
 marché, replay, API et frontend. Aucun n'est admissible dans les filtres v1 ou
 dans la confluence, et ils ne modifient ni accepted, outcomes, trades, equity
 ou résumé portefeuille. Aucun squeeze ou régime n'est détecté.
+
+## Mise à jour du 2 août 2026 — neutralité des marqueurs
+
+L’ajout des marqueurs multi-indicateurs est une évolution de visualisation et
+d’observabilité. Il ne modifie aucun poids de confluence, filtre structuré v1,
+critère `accepted`, outcome, ordre, trade ou résultat de portefeuille.
+
+La visibilité ATR a nécessité la correction conjointe de
+`visibility.signals`, de `visibility.volatility` et de la normalisation des
+anciens libellés « Volatilité en hausse/baisse ». L’affichage a été confirmé
+manuellement après correction. Aucune nouvelle exécution de la suite complète
+n’est revendiquée par cette mise à jour documentaire.

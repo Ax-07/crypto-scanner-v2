@@ -40,13 +40,13 @@ Forme conceptuelle, non implémentée :
   "strength": 0.62,
   "reason": {
     "code": "adx_dmi.bullish_cross",
-    "params": {"adx": 27.4}
+    "params": { "adx": 27.4 }
   },
   "raw_value": 27.4,
   "components": {
-    "adx": {"value": 27.4, "normalized_value": 0.548, "unit": "index"},
-    "plus_di": {"value": 31.2, "normalized_value": 0.312, "unit": "index"},
-    "minus_di": {"value": 18.7, "normalized_value": 0.187, "unit": "index"}
+    "adx": { "value": 27.4, "normalized_value": 0.548, "unit": "index" },
+    "plus_di": { "value": 31.2, "normalized_value": 0.312, "unit": "index" },
+    "minus_di": { "value": 18.7, "normalized_value": 0.187, "unit": "index" }
   },
   "warmup": {
     "minimum_bars": 29,
@@ -69,21 +69,21 @@ sémantique, elle, doit rester disponible.
 
 ## 4. Contrat de base
 
-| Champ | Type | Obligatoire | Sémantique |
-|---|---|---:|---|
-| `contract_version` | entier | oui en v2 | version de l'enveloppe publique |
-| `indicator_id` | ID canonique | oui | clé stable, ASCII snake_case |
-| `indicator_version` | entier | oui | version de formule/classification |
-| `status` | enum commun | oui | disponibilité du résultat |
-| `direction` | enum commun | oui | biais de prix, sinon neutral |
-| `signal` | code/null | oui | événement de la bougie |
-| `state` | code/null | oui | état persistant |
-| `strength` | nombre `[0,1]` | oui | intensité technique |
-| `reason` | objet/null | oui | code stable et paramètres |
-| `raw_value` | nombre/null | oui | scalaire principal compatible |
-| `components` | objet strict | oui | valeurs nommées multi-composants |
-| `warmup` | objet | selon placement | disponibilité mathématique |
-| `provenance` | objet | selon placement | causalité et fingerprint |
+| Champ               | Type           |     Obligatoire | Sémantique                        |
+| ------------------- | -------------- | --------------: | --------------------------------- |
+| `contract_version`  | entier         |       oui en v2 | version de l'enveloppe publique   |
+| `indicator_id`      | ID canonique   |             oui | clé stable, ASCII snake_case      |
+| `indicator_version` | entier         |             oui | version de formule/classification |
+| `status`            | enum commun    |             oui | disponibilité du résultat         |
+| `direction`         | enum commun    |             oui | biais de prix, sinon neutral      |
+| `signal`            | code/null      |             oui | événement de la bougie            |
+| `state`             | code/null      |             oui | état persistant                   |
+| `strength`          | nombre `[0,1]` |             oui | intensité technique               |
+| `reason`            | objet/null     |             oui | code stable et paramètres         |
+| `raw_value`         | nombre/null    |             oui | scalaire principal compatible     |
+| `components`        | objet strict   |             oui | valeurs nommées multi-composants  |
+| `warmup`            | objet          | selon placement | disponibilité mathématique        |
+| `provenance`        | objet          | selon placement | causalité et fingerprint          |
 
 ## 5. Statuts et propagation
 
@@ -188,7 +188,7 @@ documenter une règle explicite.
 Remplacer à terme la phrase API localisée par :
 
 ```json
-{"code": "supertrend.bullish_flip", "params": {"distance_atr": 0.42}}
+{ "code": "supertrend.bullish_flip", "params": { "distance_atr": 0.42 } }
 ```
 
 Règles :
@@ -219,18 +219,18 @@ l'indicateur :
 
 ```json
 {
-  "raw_atr": {"value": 125.4, "normalized_value": null, "unit": "quote"},
-  "normalized_atr": {"value": 0.0125, "normalized_value": 0.0125, "unit": "ratio"}
+  "raw_atr": { "value": 125.4, "normalized_value": null, "unit": "quote" },
+  "normalized_atr": { "value": 0.0125, "normalized_value": 0.0125, "unit": "ratio" }
 }
 ```
 
 Chaque composant précise :
 
-| Champ | Usage |
-|---|---|
-| `value` | valeur native finie |
-| `normalized_value` | feature comparable, nullable si non définie |
-| `unit` | `price`, `ratio`, `percent`, `index`, `volume` ou `unitless` |
+| Champ              | Usage                                                        |
+| ------------------ | ------------------------------------------------------------ |
+| `value`            | valeur native finie                                          |
+| `normalized_value` | feature comparable, nullable si non définie                  |
+| `unit`             | `price`, `ratio`, `percent`, `index`, `volume` ou `unitless` |
 
 Les clés et unités font partie du contrat. Un dict arbitraire non validé
 réintroduirait l'ambiguïté actuelle de `raw_value`.
@@ -282,12 +282,12 @@ Proposition :
     "atr": {
       "enabled": true,
       "version": 1,
-      "parameters": {"period": 14, "warmup_bars": 114}
+      "parameters": { "period": 14, "warmup_bars": 114 }
     },
     "adx_dmi": {
       "enabled": true,
       "version": 1,
-      "parameters": {"period": 14, "weak_max": 20, "strong_min": 25}
+      "parameters": { "period": 14, "weak_max": 20, "strong_min": 25 }
     }
   }
 }

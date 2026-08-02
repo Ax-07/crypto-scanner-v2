@@ -143,3 +143,16 @@ Les fingerprints historiques restent inchangés lorsque les blocs optionnels
 Donchian/Keltner sont absents. Toute présence ou modification de leur
 configuration est fingerprintée. Ces observations ne sont lues par aucun
 filtre, outcome, ordre, exécution, trade ou calcul d'equity.
+
+## Observations Phase 8.4
+
+Le replay peut persister le volume relatif, le CMF et les features OBV dans
+`indicator_signals`. Le volume relatif compare la bougie courante à la moyenne
+causale des volumes précédents; le CMF est borné et traite une somme de volume
+nulle comme une observation neutre; la pente OBV est normalisée par le volume
+local pour éviter de comparer les niveaux cumulatifs entre symboles.
+
+Les blocs volume sont absents ou désactivés par défaut. Leurs fingerprints sont
+exclus lorsqu'ils sont absents, puis inclus lorsqu'ils sont déclarés. Ces
+observations ne sont lues par aucun filtre, outcome, ordre, exécution, trade ou
+calcul d'equity. VWAP reste hors de la Phase 8.4 implémentée.

@@ -172,9 +172,14 @@ breakout n'est ajouté.
 
 ## Phase 8.4 — participation et flux OHLCV
 
+**Statut : partiellement implémentée.** Le volume relatif, le CMF et les
+features OBV sont disponibles comme observations optionnelles et désactivées
+par défaut. VWAP reste reporté. Aucun filtre, facteur de confluence ou résultat
+de portefeuille ne lit ces observations.
+
 ### Objectif
 
-Combler la famille volume avec quatre vues complémentaires.
+Combler la famille volume avec des vues complémentaires.
 
 ### Indicateurs
 

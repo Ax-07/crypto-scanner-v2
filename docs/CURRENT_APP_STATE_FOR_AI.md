@@ -1,5 +1,11 @@
 # État complet de `scanner_crypto` pour contexte IA
 
+> Mise à jour incrémentale du 2 août 2026 : événements historiques et marqueurs
+> graphiques pour RSI, Stochastique, Bollinger, Donchian, Keltner, ADX/DMI et
+> ATR/NATR, en complément d’EMA, MACD et Supertrend. Les résultats de tests et
+> métadonnées d’audit plus anciens sont conservés comme preuves historiques et
+> ne sont pas présentés comme ayant été relancés lors de cette mise à jour.
+
 Ce document est la source de reprise principale après l'audit des signaux structurés des
 Phases 1 à 4 puis des Phases 5.1 à 5.6. Il décrit le code réellement présent,
 pas une cible. Les contrats et composants frontend sont intégrés ; le scanner,
@@ -217,6 +223,18 @@ L'exchange est toujours fermé. Les marqueurs sont calculés uniquement sur boug
 closes ; les indicateurs graphiques et la vue provisional utilisent aussi la bougie
 ouverte.
 
+### Mise à jour des marqueurs confirmés — 2 août 2026
+
+Les messages `history` et `update` peuvent maintenant transporter des marqueurs
+de signal identifiés par le champ additif `indicator`. Les marqueurs close-only
+couvrent EMA, MACD, Supertrend, RSI, Stochastique, Bollinger, Donchian, Keltner,
+ADX/DMI et ATR/NATR. Les détecteurs restent dans leurs modules d’indicateurs ;
+`indicator_bundle.build_indicator_events` les agrège et `market_stream` ne fait
+que leur ajouter temps et présentation.
+
+La matrice exacte, les contrats et les règles frontend sont documentés dans
+[`docs/backend/indicator-events-and-market-markers.md`](backend/indicator-events-and-market-markers.md).
+
 ## 10. Modèles et contrats publics
 
 `IndicatorSignalModel` :
@@ -420,6 +438,30 @@ Exemple complet de message incrémental :
 }
 ```
 
+### Événements et marqueurs du graphique
+
+Les événements génériques utilisent le contrat `IndicatorEvent` :
+`indicator`, `position`, `direction`, `event`, `kind`, puis éventuellement
+`strength` et `metadata`. Les séries ne sont pas recalculées dans
+`build_indicator_events`.
+
+Événements exposés :
+
+- RSI : sorties de survente/surachat ;
+- Stochastique : croisements `%K/%D` dans les zones extrêmes ;
+- Bollinger : réintégrations des bandes basse/haute ;
+- Donchian : premières cassures du canal terminé à `t-1` ;
+- Keltner : cassures des bandes précédentes ;
+- ADX/DMI : croisements directionnels confirmés par `ADX >= weak_threshold` ;
+- ATR/NATR : bascules vers expansion ou contraction de volatilité, direction neutre ;
+- Supertrend : flips de tendance ;
+- EMA et MACD : marqueurs historiques déjà existants.
+
+Le frontend exige la visibilité globale `signals` et la visibilité de
+l’indicateur. Pour ATR, la clé UI est `volatility`. Les anciens marqueurs sans
+`indicator` sont normalisés depuis leur libellé, y compris les textes
+« Volatilité en hausse/baisse ».
+
 ## 14. Backtest
 
 Le replay charge les bougies depuis SQLite, jamais depuis le réseau. Pour chaque
@@ -541,6 +583,25 @@ Exemple complet de mapping :
 }
 ```
 
+### Événements ponctuels destinés au graphique
+
+| Indicateur | Événements confirmés |
+|---|---|
+| EMA | croisement haussier/baissier des deux premières périodes disponibles |
+| MACD | histogramme traversant zéro |
+| Supertrend | `bullish_flip`, `bearish_flip` |
+| RSI | `exit_oversold`, `exit_overbought` |
+| Stochastique | `bullish_cross`, `bearish_cross` uniquement dans les zones extrêmes |
+| Bollinger | `lower_band_reentry`, `upper_band_reentry` |
+| Donchian | `breakout_up`, `breakout_down` contre les bornes à `t-1` |
+| Keltner | `breakout_up`, `breakout_down` contre les bandes précédentes |
+| ADX/DMI | `bullish_cross`, `bearish_cross` avec ADX au-dessus du seuil faible |
+| ATR/NATR | `volatility_expansion`, `volatility_contraction`, direction neutre |
+
+Ces événements sont distincts de `IndicatorSignal` : le premier décrit un
+changement ponctuel dans l’historique, le second décrit principalement le dernier
+état structuré disponible.
+
 ## 17. Builder commun
 
 Signature exacte :
@@ -578,6 +639,28 @@ reste exposé séparément dans les tables `availability`. Un indicateur activé
 la série manque devient `insufficient_data`. Les builders peuvent produire
 `invalid_data` pour une série active non exploitable. SMA/EMA ne sont inclus que
 si le flag et la série rapide sont présents.
+
+### Agrégateur d’événements
+
+```python
+build_indicator_events(
+    *,
+    close_series: pd.Series | None = None,
+    rsi_series: pd.Series | None = None,
+    rsi_oversold_level: float = 30,
+    rsi_overbought_level: float = 70,
+    bollinger_bands: dict[str, pd.Series] | None = None,
+    stochastic_data: dict[str, pd.Series] | None = None,
+    stochastic_oversold_level: float = 20,
+    stochastic_overbought_level: float = 80,
+    adx_weak_threshold: float = 20,
+    extended_data: dict[str, dict[str, pd.Series]] | None = None,
+    only_last: bool = False,
+) -> list[IndicatorEvent]
+```
+
+`extended_data` transporte ATR, ADX, Supertrend, Donchian et Keltner. L’option
+`only_last` limite la détection au dernier index lors de la clôture d’une bougie.
 
 ## 18. Confluence structurée
 
@@ -796,6 +879,18 @@ Le module métier isolé `components/indicator-signals/` affiche statut, directi
 événement, état, `strength`, raison et `raw_value`. Le scanner le compose via des
 composants dédiés sous `features/scanner/components/`; le marché et le backtest
 le composent également. Le graphique ne l'importe pas.
+
+### Marqueurs et visibilité
+
+`MarketMarker.indicator` accepte `ema`, `macd`, `supertrend`, `rsi`,
+`stochastic`, `bollinger`, `adx`, `atr`, `donchian` et `keltner`.
+`TradingChart.isMarkerVisible` applique d’abord `visibility.signals`, puis la
+visibilité propre à l’indicateur. ATR/NATR utilise `visibility.volatility`.
+
+`market-history.normalizeMarker` conserve le champ backend lorsqu’il existe et
+infère l’indicateur depuis le texte pour les anciens payloads. La normalisation
+ATR reconnaît aussi les libellés français de volatilité. Cette compatibilité est
+nécessaire pour les historiques enregistrés avant l’ajout du champ `indicator`.
 
 ## 28. Contrats TypeScript ajoutés en Phase 5.1
 
@@ -1538,3 +1633,29 @@ La neutralité est verrouillée : aucune modification des filtres structurés v1
 de la confluence, d'accepted, des outcomes, ordres, exécutions, trades, equity
 ou métriques portefeuille. Aucun squeeze, indicateur de volume, structure
 composite, régime ou modèle IA n'est commencé.
+## 48. Mise à jour du 2 août 2026 — événements et marqueurs multi-indicateurs
+
+La couche de marqueurs du marché est désormais généralisée. Chaque indicateur
+détecte ses propres événements historiques, le builder commun les agrège, puis le
+service marché les transforme en `MarketMarker`. Les routes historiques et le
+WebSocket utilisent la même chaîne. La logique de présentation ne remonte plus
+dans les modules de calcul.
+
+Indicateurs couverts : EMA, MACD, Supertrend, RSI, Stochastique, Bollinger,
+Donchian, Keltner, ADX/DMI et ATR/NATR. Les marqueurs sont calculés sur bougies
+closes et restent neutres vis-à-vis de la stratégie de production.
+
+Le correctif frontend ATR impose deux conditions de visibilité :
+`visibility.signals` et `visibility.volatility`. La normalisation des anciens
+payloads reconnaît les textes de volatilité lorsqu’un marqueur ne contient pas
+encore `indicator="atr"`.
+
+Aucune suite complète n’a été relancée dans le cadre de cette mise à jour
+documentaire. La visibilité des marqueurs ATR a été confirmée manuellement par
+l’utilisateur après correction du filtrage frontend. Les anciens nombres de tests
+du présent document restent donc des résultats historiques, non une validation
+datée du 2 août 2026.
+
+Référence détaillée :
+[`docs/backend/indicator-events-and-market-markers.md`](backend/indicator-events-and-market-markers.md).
+
