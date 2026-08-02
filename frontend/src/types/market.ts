@@ -43,6 +43,47 @@ export type IndicatorKey =
   | "stochastic_k"
   | "stochastic_d"
 
+  // Volatilité
+  | "atr"
+  | "natr"
+
+  // ADX / DMI
+  | "adx"
+  | "adx_dx"
+  | "adx_plus_di"
+  | "adx_minus_di"
+  | "adx_true_range"
+
+  // Supertrend
+  | "supertrend"
+  | "supertrend_atr"
+  | "supertrend_input_valid"
+  | "supertrend_lower_band"
+  | "supertrend_trend"
+  | "supertrend_upper_band"
+
+  // Donchian
+  | "donchian_upper_channel"
+  | "donchian_middle_channel"
+  | "donchian_lower_channel"
+  | "donchian_previous_upper_channel"
+  | "donchian_previous_lower_channel"
+  | "donchian_channel_position"
+  | "donchian_channel_width"
+  | "donchian_channel_width_percent"
+
+  // Keltner
+  | "keltner_upper_channel"
+  | "keltner_middle_line"
+  | "keltner_lower_channel"
+  | "keltner_atr"
+  | "keltner_channel_position"
+  | "keltner_channel_width"
+  | "keltner_channel_width_percent"
+
+  // Données internes supplémentaires
+  | "atr_true_range"
+
 export type IndicatorHistory = Partial<Record<IndicatorKey, IndicatorPoint[]>>
 export type IndicatorUpdates = Partial<Record<IndicatorKey, IndicatorPoint>>
 
@@ -61,6 +102,7 @@ export interface MarketMarker {
   color: string
   text: string
   category?: MarkerCategory
+  indicator?: MarkerIndicator
   source?: DivergenceSource
   divergence_type?: DivergenceType
   first_time?: number
@@ -68,6 +110,8 @@ export interface MarketMarker {
   second_price?: number
   first_indicator?: number
   second_indicator?: number
+  first_indicator_name?: number
+  second_indicator_name?: number
 }
 
 export interface Confluence {
@@ -164,6 +208,13 @@ export interface IndicatorVisibility {
   rsi: boolean
   macd: boolean
   stochastic: boolean
+
+  volatility: boolean
+  adx: boolean
+  supertrend: boolean
+  donchian: boolean
+  keltner: boolean
+
   signals: boolean
   divergences: boolean
 }
@@ -216,6 +267,23 @@ export interface CandlePageResponse {
   anchor_before_available: boolean
   snapshot?: MarketSnapshot
   profile?: MarketIndicatorConfig
+}
+
+export type MarkerIndicator =
+  | "ema"
+  | "macd"
+  | "supertrend"
+  | "rsi"
+  | "stochastic"
+  | "bollinger"
+  | "adx"
+  | "atr"
+  | "donchian"
+  | "keltner"
+
+export type StackedMarker = MarketMarker & {
+  stackLevel: number
+  verticalOffset: number
 }
 
 export type MarketMode = "live" | "historical"

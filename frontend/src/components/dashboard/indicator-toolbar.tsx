@@ -13,6 +13,11 @@ const options: Array<{ key: keyof IndicatorVisibility; label: string }> = [
   { key: "rsi", label: "RSI" },
   { key: "macd", label: "MACD" },
   { key: "stochastic", label: "Stochastique" },
+  { key: "volatility", label: "Volatilité (ATR/NATR)" },
+  { key: "adx", label: "ADX" },
+  { key: "supertrend", label: "Supertrend" },
+  { key: "donchian", label: "Donchian" },
+  { key: "keltner", label: "Keltner" },
   { key: "signals", label: "Signaux" },
   { key: "divergences", label: "Divergences" },
 ]

@@ -29,7 +29,7 @@ const UNAVAILABLE_MESSAGES: Record<IndicatorSignal["status"], string> = {
 
 function DetailLine({ label, value }: { label: string; value: string }) {
   return (
-    <p className="min-w-0 break-words text-sm">
+    <p className="min-w-0 wrap-break-word text-sm">
       <span className="text-muted-foreground">{label} : </span>
       <span className="font-medium">{value}</span>
     </p>
@@ -75,7 +75,7 @@ export function IndicatorSignalCard({
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <IndicatorDirectionBadge direction={signal.direction} compact={compact} />
               {signal.signal ? (
-                <span className="min-w-0 break-words text-sm font-medium">
+                <span className="min-w-0 wrap-break-word text-sm font-medium">
                   {formatTechnicalLabel(signal.signal)}
                 </span>
               ) : null}
@@ -111,7 +111,7 @@ export function IndicatorSignalCard({
             <IndicatorStrength value={signal.strength} compact={compact} />
 
             {!compact && showReason && signal.reason ? (
-              <p className="break-words border-t pt-3 text-sm">
+              <p className="wrap-break-word border-t pt-3 text-sm">
                 <span className="text-muted-foreground">Raison : </span>
                 {signal.reason}
               </p>
@@ -121,7 +121,7 @@ export function IndicatorSignalCard({
           <div className="space-y-2">
             <p className="text-sm text-muted-foreground">{UNAVAILABLE_MESSAGES[signal.status]}</p>
             {showReason && signal.reason ? (
-              <p className="break-words text-sm">
+              <p className="wrap-break-word text-sm">
                 <span className="text-muted-foreground">Raison : </span>
                 {signal.reason}
               </p>

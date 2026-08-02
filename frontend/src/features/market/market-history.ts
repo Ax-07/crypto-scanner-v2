@@ -4,6 +4,7 @@ import type {
   IndicatorPoint,
   IndicatorUpdates,
   MarketMarker,
+  MarkerIndicator,
 } from "@/types/market"
 
 function mergeByTime<T extends { time: number }>(current: T[], incoming: T[]): T[] {
@@ -91,11 +92,81 @@ function markerKey(marker: MarketMarker) {
   ].join("|")
 }
 
-export function mergeMarkers(current: MarketMarker[], incoming: MarketMarker[]) {
-  if (!incoming.length) return current
-  const byKey = new Map(current.map((marker) => [markerKey(marker), marker]))
-  incoming.forEach((marker) => byKey.set(markerKey(marker), marker))
+function inferMarkerIndicator(
+  marker: MarketMarker,
+): MarkerIndicator | undefined {
+  if (marker.indicator) {
+    return marker.indicator
+  }
+
+  const text = marker.text.trim().toLowerCase()
+
+  if (text.includes("supertrend")) return "supertrend"
+  if (text.includes("macd")) return "macd"
+  if (text.includes("ema")) return "ema"
+  if (text.includes("rsi")) return "rsi"
+  if (text.includes("stoch")) return "stochastic"
+  if (text.includes("bollinger")) return "bollinger"
+  if (text.includes("donchian")) return "donchian"
+  if (text.includes("keltner")) return "keltner"
+
+  if (
+    text.includes("adx") ||
+    text.includes("+di") ||
+    text.includes("-di")
+  ) {
+    return "adx"
+  }
+
+if (
+  text.includes("natr")
+  || /\batr\b/.test(text)
+  || text.includes("volatilité")
+  || text.includes("volatilite")
+  || text.includes("volatility")
+) {
+  return "atr"
+}
+
+  return undefined
+}
+
+export function normalizeMarker(marker: MarketMarker): MarketMarker {
+  const indicator = inferMarkerIndicator(marker)
+
+  if (!indicator) {
+    return marker
+  }
+
+  return {
+    ...marker,
+    indicator,
+  }
+}
+
+export function mergeMarkers(
+  current: MarketMarker[],
+  incoming: MarketMarker[],
+): MarketMarker[] {
+  if (!incoming.length) {
+    return current.map(normalizeMarker)
+  }
+
+  const byKey = new Map<string, MarketMarker>()
+
+  for (const marker of current) {
+    const normalized = normalizeMarker(marker)
+    byKey.set(markerKey(normalized), normalized)
+  }
+
+  for (const marker of incoming) {
+    const normalized = normalizeMarker(marker)
+    byKey.set(markerKey(normalized), normalized)
+  }
+
   return [...byKey.values()].sort(
-    (left, right) => left.time - right.time || left.text.localeCompare(right.text),
+    (left, right) =>
+      left.time - right.time ||
+      left.text.localeCompare(right.text),
   )
 }

@@ -5,6 +5,7 @@ import {
   mergeCandles,
   mergeIndicatorHistory,
   mergeMarkers,
+  normalizeMarker,
   upsertRealtimeCandle,
 } from "@/features/market/market-history"
 import type {
@@ -87,14 +88,21 @@ interface MarketStore {
 }
 
 const defaultVisibility: IndicatorVisibility = {
-  ema: true,
+  ema: false,
   sma: false,
-  bollinger: true,
-  rsi: true,
-  macd: true,
-  stochastic: true,
+  bollinger: false,
+  rsi: false,
+  macd: false,
+  stochastic: false,
+
+  volatility: true,
+  adx: true,
+  supertrend: true,
+  donchian: true,
+  keltner: true,
+
   signals: true,
-  divergences: true,
+  divergences: false,
 }
 
 const MEMORY_LIMIT = (() => {
@@ -258,7 +266,7 @@ export const useMarketStore = create<MarketStore>()((set) => ({
                 response.indicators,
                 state.latestIndicators,
               ),
-              markers: response.markers,
+              markers: response.markers.map(normalizeMarker),
               ...pageState(state, response, candles),
               historyVersion: state.historyVersion + 1,
               historyPrependCount: 0,
@@ -311,7 +319,7 @@ export const useMarketStore = create<MarketStore>()((set) => ({
         mode: "historical",
         candles: response.candles,
         indicators: response.indicators,
-        markers: response.markers,
+        markers: response.markers.map(normalizeMarker),
         ...pageState(state, response, response.candles),
         ...activityState("jump", false),
         requestedAnchorTime,
