@@ -372,6 +372,100 @@ class BacktestRepository:
             items.append(SignalObservation.model_validate(payload))
         return items, int(count_row[0]) if count_row else 0
 
+    async def ml_source_rows(
+        self,
+        job_id: str,
+        *,
+        horizon: int = 6,
+        offset: int = 0,
+        limit: int = 1_000,
+    ) -> tuple[
+        list[tuple[SignalObservation, ForwardOutcome]],
+        int,
+    ]:
+        """Charge les couples observation/outcome destinés au dataset ML.
+
+        La jointure est effectuée directement par SQLite. Seules les
+        observations confirmées et l'horizon demandé sont chargés.
+        """
+        if horizon < 1:
+            raise ValueError("horizon doit être supérieur ou égal à 1")
+
+        if offset < 0:
+            raise ValueError("offset doit être supérieur ou égal à 0")
+
+        if limit < 1:
+            raise ValueError("limit doit être supérieur ou égal à 1")
+
+        query_parameters = (
+            job_id,
+            horizon,
+        )
+
+        async with self.database.connection() as connection:
+            count_cursor = await connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM backtest_observations AS observation
+                INNER JOIN backtest_outcomes AS outcome
+                    ON outcome.observation_id = observation.id
+                    AND outcome.job_id = observation.job_id
+                WHERE observation.job_id = ?
+                    AND observation.snapshot_status = 'confirmed'
+                    AND outcome.horizon = ?
+                """,
+                query_parameters,
+            )
+            count_row = await count_cursor.fetchone()
+
+            cursor = await connection.execute(
+                """
+                SELECT
+                    observation.id AS observation_id,
+                    observation.payload_json AS observation_payload_json,
+                    outcome.payload_json AS outcome_payload_json
+                FROM backtest_observations AS observation
+                INNER JOIN backtest_outcomes AS outcome
+                    ON outcome.observation_id = observation.id
+                    AND outcome.job_id = observation.job_id
+                WHERE observation.job_id = ?
+                    AND observation.snapshot_status = 'confirmed'
+                    AND outcome.horizon = ?
+                ORDER BY
+                    observation.decision_time ASC,
+                    observation.id ASC
+                LIMIT ? OFFSET ?
+                """,
+                (
+                    *query_parameters,
+                    limit,
+                    offset,
+                ),
+            )
+            rows = await cursor.fetchall()
+
+        items: list[tuple[SignalObservation, ForwardOutcome]] = []
+
+        for row in rows:
+            observation_payload = json.loads(row["observation_payload_json"])
+            observation_payload["id"] = row["observation_id"]
+
+            outcome_payload = json.loads(row["outcome_payload_json"])
+            outcome_payload["observation_id"] = row["observation_id"]
+
+            observation = SignalObservation.model_validate(observation_payload)
+            outcome = ForwardOutcome.model_validate(outcome_payload)
+
+            items.append(
+                (
+                    observation,
+                    outcome,
+                )
+            )
+
+        total = int(count_row[0]) if count_row else 0
+        return items, total
+
     async def all_observations(self, job_id: str) -> list[SignalObservation]:
         items, _ = await self.observations(job_id, limit=1_000_000)
         return items
