@@ -8,6 +8,7 @@ from typing import Literal
 import pandas as pd
 
 from app.domain.indicators.types import (
+    IndicatorEvent,
     IndicatorSignal,
     SignalDirection,
     TrendState,
@@ -15,7 +16,13 @@ from app.domain.indicators.types import (
     _unavailable_signal,
 )
 
-__all__ = ["calculate_sma", "calculate_ema", "detect_trend", "detect_moving_average_signal"]
+__all__ = [
+    "calculate_sma",
+    "calculate_ema",
+    "detect_trend",
+    "detect_moving_average_signal",
+    "detect_moving_average_events",
+]
 
 MovingAverageFamily = Literal["sma", "ema"]
 
@@ -96,6 +103,113 @@ def _moving_average_signal(
         reason=f"{family_label.upper()}: {reason}",
         raw_value=raw_value,
     )
+
+
+def detect_moving_average_events(
+    fast: pd.Series | None,
+    slow: pd.Series | None,
+    *,
+    family: MovingAverageFamily,
+    only_last: bool = False,
+) -> list[IndicatorEvent]:
+    """Détecte les croisements ponctuels entre moyennes rapide et lente.
+
+    La position retournée correspond à l'index dans les séries originales.
+    Une simple configuration haussière ou baissière persistante ne produit
+    aucun événement : seuls les changements de côté sont conservés.
+    """
+    if fast is None or slow is None:
+        return []
+
+    fast_values = pd.to_numeric(
+        fast.reset_index(drop=True),
+        errors="coerce",
+    )
+    slow_values = pd.to_numeric(
+        slow.reset_index(drop=True),
+        errors="coerce",
+    )
+
+    if len(fast_values) != len(slow_values) or len(fast_values) < 2:
+        return []
+
+    start_position = len(fast_values) - 1 if only_last else 1
+    events: list[IndicatorEvent] = []
+
+    for position in range(start_position, len(fast_values)):
+        previous_fast_raw = fast_values.iloc[position - 1]
+        previous_slow_raw = slow_values.iloc[position - 1]
+        current_fast_raw = fast_values.iloc[position]
+        current_slow_raw = slow_values.iloc[position]
+
+        if any(
+            pd.isna(value)
+            for value in (
+                previous_fast_raw,
+                previous_slow_raw,
+                current_fast_raw,
+                current_slow_raw,
+            )
+        ):
+            continue
+
+        previous_fast = float(previous_fast_raw)
+        previous_slow = float(previous_slow_raw)
+        current_fast = float(current_fast_raw)
+        current_slow = float(current_slow_raw)
+
+        if not all(
+            math.isfinite(value)
+            for value in (
+                previous_fast,
+                previous_slow,
+                current_fast,
+                current_slow,
+            )
+        ):
+            continue
+
+        if previous_fast <= previous_slow and current_fast > current_slow:
+            events.append(
+                IndicatorEvent(
+                    indicator=family,
+                    position=position,
+                    direction="bullish",
+                    event="bullish_cross",
+                    kind="cross",
+                    strength=_MOVING_AVERAGE_SIGNAL_STRENGTH[
+                        "bullish_cross"
+                    ],
+                    metadata={
+                        "previous_fast": previous_fast,
+                        "previous_slow": previous_slow,
+                        "current_fast": current_fast,
+                        "current_slow": current_slow,
+                    },
+                )
+            )
+
+        elif previous_fast >= previous_slow and current_fast < current_slow:
+            events.append(
+                IndicatorEvent(
+                    indicator=family,
+                    position=position,
+                    direction="bearish",
+                    event="bearish_cross",
+                    kind="cross",
+                    strength=_MOVING_AVERAGE_SIGNAL_STRENGTH[
+                        "bearish_cross"
+                    ],
+                    metadata={
+                        "previous_fast": previous_fast,
+                        "previous_slow": previous_slow,
+                        "current_fast": current_fast,
+                        "current_slow": current_slow,
+                    },
+                )
+            )
+
+    return events
 
 
 def detect_moving_average_signal(

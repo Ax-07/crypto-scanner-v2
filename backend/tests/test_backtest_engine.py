@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -67,7 +68,216 @@ async def test_full_synthetic_replay_persists_and_survives_restart() -> None:
         assert len(observations) == 20
         assert len(outcomes) == 60
         assert all(item.snapshot_status == "confirmed" for item in observations)
+
+        assert restored.algorithm_version == "signal-evaluation-v3"
+        assert restored.checkpoint is not None
+        assert restored.checkpoint["algorithm_version"] == "signal-evaluation-v3"
+        assert all(
+            item.algorithm_version == "signal-evaluation-v3"
+            for item in observations
+        )
+
         assert not restored.summary.trade_simulation_included
+        await database.close()
+
+
+@pytest.mark.asyncio
+async def test_replay_persists_indicator_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Les événements de la bougie courante survivent à la persistance SQLite."""
+    rows = candles()
+    calls = 0
+
+    def fake_build_indicator_events(
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        nonlocal calls
+        calls += 1
+
+        assert kwargs["only_last"] is True
+
+        return [
+            {
+                "indicator": "rsi",
+                "position": len(kwargs["rsi_series"]) - 1,
+                "direction": "bullish",
+                "event": "exit_oversold",
+                "kind": "threshold_exit",
+                "strength": 0.8,
+                "metadata": {
+                    "previous_rsi": 29.0,
+                    "current_rsi": 31.0,
+                },
+            }
+        ]
+
+    monkeypatch.setattr(
+        "app.domain.backtesting.build_indicator_events",
+        fake_build_indicator_events,
+    )
+
+    with tempfile.TemporaryDirectory() as temporary:
+        database = Database(Path(temporary) / "indicator-events.sqlite3")
+        await database.initialize()
+        repository = BacktestRepository(database)
+
+        config = BacktestConfig(
+            symbols=["SYN/USDC"],
+            start=datetime.fromtimestamp(
+                rows[80].open_time / 1_000,
+                tz=timezone.utc,
+            ),
+            end=datetime.fromtimestamp(
+                rows[83].open_time / 1_000,
+                tz=timezone.utc,
+            ),
+            signal_config=signal_config(),
+            horizons=[1],
+            replay_mode="every_bar",
+        )
+
+        job = BacktestJob(
+            id="indicator-events",
+            config=config,
+        )
+        await repository.save_job(job)
+
+        await BacktestEngine(
+            MemoryHistory(rows),
+            repository,
+        ).run(job)
+
+        observations = await BacktestRepository(database).all_observations(job.id)
+
+        assert calls == 3
+        assert len(observations) == 3
+
+        for observation in observations:
+            assert len(observation.indicator_events) == 1
+
+            event = observation.indicator_events[0]
+
+            assert event.indicator == "rsi"
+            assert event.position >= 0
+            assert event.direction == "bullish"
+            assert event.event == "exit_oversold"
+            assert event.kind == "threshold_exit"
+            assert event.strength == pytest.approx(0.8)
+            assert event.metadata == {
+                "previous_rsi": 29.0,
+                "current_rsi": 31.0,
+            }
+
+        await database.close()
+
+
+@pytest.mark.asyncio
+async def test_replay_passes_primary_ema_and_macd_to_event_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Le replay transmet au bundle les séries EMA et MACD du timeframe principal."""
+    from app.domain.indicator_bundle import (
+        build_indicator_events as real_build_indicator_events,
+    )
+    from app.domain.indicators import calculate_ema, calculate_macd
+
+    rows = candles()
+    calls = 0
+
+    def spy_build_indicator_events(**kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+
+        assert kwargs["only_last"] is True
+
+        close_series = kwargs["close_series"]
+        ema_fast = kwargs["ema_fast"]
+        ema_slow = kwargs["ema_slow"]
+        macd_data = kwargs["macd_data"]
+
+        assert close_series is not None
+        assert ema_fast is not None
+        assert ema_slow is not None
+        assert macd_data is not None
+
+        expected_ema_fast = calculate_ema(
+            close_series,
+            5,
+        )
+        expected_ema_slow = calculate_ema(
+            close_series,
+            10,
+        )
+        expected_macd = calculate_macd(
+            close_series,
+            fast_period=3,
+            slow_period=6,
+            signal_period=2,
+        )
+
+        assert ema_fast.equals(expected_ema_fast)
+        assert ema_slow.equals(expected_ema_slow)
+
+        assert macd_data["macd"].equals(expected_macd["macd"])
+        assert macd_data["signal"].equals(expected_macd["signal"])
+        assert macd_data["histogram"].equals(expected_macd["histogram"])
+
+        return real_build_indicator_events(**kwargs)
+
+    monkeypatch.setattr(
+        "app.domain.backtesting.build_indicator_events",
+        spy_build_indicator_events,
+    )
+
+    base_signal_config = signal_config()
+    configured_signal = base_signal_config.model_copy(
+        update={
+            "use_ma": True,
+            "use_sma": False,
+            "use_ema": True,
+            "ema_periods": [5, 10],
+            "ma_timeframes": [base_signal_config.timeframe],
+            "use_macd": True,
+            "macd_fast_period": 3,
+            "macd_slow_period": 6,
+            "macd_signal_period": 2,
+        }
+    )
+
+    with tempfile.TemporaryDirectory() as temporary:
+        database = Database(Path(temporary) / "ema-macd-events.sqlite3")
+        await database.initialize()
+        repository = BacktestRepository(database)
+
+        config = BacktestConfig(
+            symbols=["SYN/USDC"],
+            start=datetime.fromtimestamp(
+                rows[80].open_time / 1_000,
+                tz=timezone.utc,
+            ),
+            end=datetime.fromtimestamp(
+                rows[83].open_time / 1_000,
+                tz=timezone.utc,
+            ),
+            signal_config=configured_signal,
+            horizons=[1],
+            replay_mode="every_bar",
+        )
+
+        job = BacktestJob(
+            id="ema-macd-events",
+            config=config,
+        )
+        await repository.save_job(job)
+
+        await BacktestEngine(
+            MemoryHistory(rows),
+            repository,
+        ).run(job)
+
+        assert calls == 3
+
         await database.close()
 
 

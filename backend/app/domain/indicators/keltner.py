@@ -210,9 +210,7 @@ def detect_keltner_events(
 
     invalid_ohlc = data.get("_invalid_ohlc")
     if invalid_ohlc is not None:
-        frame_columns.append(
-            invalid_ohlc.astype(float).rename("_invalid_ohlc")
-        )
+        frame_columns.append(invalid_ohlc.astype(float).rename("_invalid_ohlc"))
 
     frame = pd.concat(
         frame_columns,
@@ -274,19 +272,11 @@ def detect_keltner_events(
             if previous_invalid or current_invalid:
                 continue
 
-        breakout_up = (
-            current_close > previous_upper
-            and previous_close <= previous_upper
-        )
-        breakout_down = (
-            current_close < previous_lower
-            and previous_close >= previous_lower
-        )
+        breakout_up = current_close > previous_upper and previous_close <= previous_upper
+        breakout_down = current_close < previous_lower and previous_close >= previous_lower
 
         if breakout_up:
-            distance_atr = (
-                current_close - previous_upper
-            ) / max(current_atr, 1e-12)
+            distance_atr = (current_close - previous_upper) / max(current_atr, 1e-12)
 
             events.append(
                 IndicatorEvent(
@@ -307,9 +297,7 @@ def detect_keltner_events(
             )
 
         elif breakout_down:
-            distance_atr = (
-                previous_lower - current_close
-            ) / max(current_atr, 1e-12)
+            distance_atr = (previous_lower - current_close) / max(current_atr, 1e-12)
 
             events.append(
                 IndicatorEvent(

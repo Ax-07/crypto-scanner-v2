@@ -197,19 +197,13 @@ def detect_donchian_events(
 
     frame_columns = [
         close.astype(float).rename("close"),
-        data["previous_upper_channel"].astype(float).rename(
-            "previous_upper_channel"
-        ),
-        data["previous_lower_channel"].astype(float).rename(
-            "previous_lower_channel"
-        ),
+        data["previous_upper_channel"].astype(float).rename("previous_upper_channel"),
+        data["previous_lower_channel"].astype(float).rename("previous_lower_channel"),
     ]
 
     invalid_ohlc = data.get("_invalid_ohlc")
     if invalid_ohlc is not None:
-        frame_columns.append(
-            invalid_ohlc.astype(float).rename("_invalid_ohlc")
-        )
+        frame_columns.append(invalid_ohlc.astype(float).rename("_invalid_ohlc"))
 
     frame = pd.concat(frame_columns, axis=1).reset_index(drop=True)
 

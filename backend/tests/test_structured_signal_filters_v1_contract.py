@@ -11,7 +11,7 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from app.core.settings import ScanConfig
+from app.core.settings import OPTIONAL_INDICATOR_EXTENSION_FIELDS, ScanConfig
 from app.domain.indicators import check_signal_filters
 from app.domain.indicators.types import IndicatorSignal
 from app.domain.signal_filters import (
@@ -47,28 +47,31 @@ def explicit_json(source: str) -> dict[str, object]:
 
 
 def profile_fingerprint(config: ScanConfig) -> str:
-    """Reproduit localement le fingerprint sans ajouter de helper production."""
+    """Reproduit le fingerprint canonique du profil d'évaluation."""
     excluded = {
         name
-        for name in (
-            "atr",
-            "adx",
-            "supertrend",
-            "donchian",
-            "keltner",
-            "relative_volume",
-            "cmf",
-            "obv",
-            "structured_signal_filters",
-        )
-        if getattr(config, name) is None
+        for name in OPTIONAL_INDICATOR_EXTENSION_FIELDS
+        if getattr(config, name, None) is None
     }
+
+    if config.structured_signal_filters is None:
+        excluded.add("structured_signal_filters")
+
     payload = config.model_dump(
         mode="json",
-        exclude=excluded or None,
+        exclude=excluded,
     )
-    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return "sha256:" + hashlib.sha256(serialized.encode()).hexdigest()
+
+    return (
+        "sha256:"
+        + hashlib.sha256(
+            json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+    )
 
 
 def indicator_signal(

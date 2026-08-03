@@ -8,13 +8,20 @@ import pandas as pd
 
 from app.domain.indicators.moving_averages import calculate_ema
 from app.domain.indicators.types import (
+    IndicatorEvent,
     IndicatorSignal,
     MacdSignal,
+    SignalDirection,
     _clamp_strength,
     _unavailable_signal,
 )
 
-__all__ = ["calculate_macd", "detect_macd_signal", "build_macd_signal"]
+__all__ = [
+    "calculate_macd",
+    "detect_macd_signal",
+    "build_macd_signal",
+    "detect_macd_events",
+]
 
 
 def calculate_macd(
@@ -35,23 +42,201 @@ def calculate_macd(
 def detect_macd_signal(data: dict[str, pd.Series]) -> MacdSignal:
     """Classe le MACD en ``bullish``, ``bearish`` ou ``neutral``.
 
-    Un croisement sur les deux derniers points est prioritaire; sinon la
-    position relative courante des lignes détermine le signal.
+    Un croisement entre la ligne MACD et sa ligne de signal sur les deux
+    derniers points valides est prioritaire. En l'absence de croisement,
+    leur position relative actuelle détermine le signal.
     """
-    frame = pd.concat([data["macd"], data["signal"]], axis=1).dropna()
+    macd_series = data.get("macd")
+    signal_series = data.get("signal")
+
+    if macd_series is None or signal_series is None:
+        return "neutral"
+
+    frame = pd.concat(
+        [
+            macd_series.rename("macd"),
+            signal_series.rename("signal"),
+        ],
+        axis=1,
+    ).dropna()
+
     if len(frame) < 2:
         return "neutral"
-    previous_macd, previous_signal = frame.iloc[-2]
-    current_macd, current_signal = frame.iloc[-1]
+
+    previous_macd = float(frame["macd"].iloc[-2])
+    previous_signal = float(frame["signal"].iloc[-2])
+    current_macd = float(frame["macd"].iloc[-1])
+    current_signal = float(frame["signal"].iloc[-1])
+
+    if not all(
+        math.isfinite(value)
+        for value in (
+            previous_macd,
+            previous_signal,
+            current_macd,
+            current_signal,
+        )
+    ):
+        return "neutral"
+
     if previous_macd <= previous_signal and current_macd > current_signal:
         return "bullish"
+
     if previous_macd >= previous_signal and current_macd < current_signal:
         return "bearish"
+
     if current_macd > current_signal:
         return "bullish"
+
     if current_macd < current_signal:
         return "bearish"
+
     return "neutral"
+
+
+def detect_macd_events(
+    data: dict[str, pd.Series] | None,
+    *,
+    only_last: bool = False,
+) -> list[IndicatorEvent]:
+    """Détecte les croisements ponctuels MACD/ligne de signal.
+
+    Le passage de l'histogramme par zéro est équivalent au croisement entre
+    la ligne MACD et sa ligne de signal. La position reste celle des séries
+    originales afin de pouvoir lui associer le timestamp OHLCV correspondant.
+    """
+    if data is None:
+        return []
+
+    macd = data.get("macd")
+    signal = data.get("signal")
+
+    if macd is None or signal is None:
+        return []
+
+    macd_values = pd.to_numeric(
+        macd.reset_index(drop=True),
+        errors="coerce",
+    )
+    signal_values = pd.to_numeric(
+        signal.reset_index(drop=True),
+        errors="coerce",
+    )
+
+    if len(macd_values) != len(signal_values) or len(macd_values) < 2:
+        return []
+
+    histogram = data.get("histogram")
+    histogram_values = (
+        pd.to_numeric(
+            histogram.reset_index(drop=True),
+            errors="coerce",
+        )
+        if histogram is not None
+        else None
+    )
+
+    start_position = len(macd_values) - 1 if only_last else 1
+    events: list[IndicatorEvent] = []
+
+    for position in range(start_position, len(macd_values)):
+        previous_macd_raw = macd_values.iloc[position - 1]
+        previous_signal_raw = signal_values.iloc[position - 1]
+        current_macd_raw = macd_values.iloc[position]
+        current_signal_raw = signal_values.iloc[position]
+
+        if any(
+            pd.isna(value)
+            for value in (
+                previous_macd_raw,
+                previous_signal_raw,
+                current_macd_raw,
+                current_signal_raw,
+            )
+        ):
+            continue
+
+        previous_macd = float(previous_macd_raw)
+        previous_signal = float(previous_signal_raw)
+        current_macd = float(current_macd_raw)
+        current_signal = float(current_signal_raw)
+
+        if not all(
+            math.isfinite(value)
+            for value in (
+                previous_macd,
+                previous_signal,
+                current_macd,
+                current_signal,
+            )
+        ):
+            continue
+
+        direction: SignalDirection
+        event_name: str
+
+        if previous_macd <= previous_signal and current_macd > current_signal:
+            direction = "bullish"
+            event_name = "bullish_cross"
+
+        elif previous_macd >= previous_signal and current_macd < current_signal:
+            direction = "bearish"
+            event_name = "bearish_cross"
+
+        else:
+            continue
+
+        denominator = abs(current_macd) + abs(current_signal)
+        relative_distance = (
+            abs(current_macd - current_signal) / denominator
+            if denominator > 1e-12
+            else 0.0
+        )
+
+        zero_confirmation = (
+            direction == "bullish" and current_macd > 0
+        ) or (
+            direction == "bearish" and current_macd < 0
+        )
+
+        strength = _clamp_strength(
+            0.75
+            + (0.15 if zero_confirmation else 0.0)
+            + min(relative_distance, 0.1)
+        )
+
+        metadata: dict[str, object] = {
+            "previous_macd": previous_macd,
+            "previous_signal": previous_signal,
+            "current_macd": current_macd,
+            "current_signal": current_signal,
+            "relative_distance": relative_distance,
+            "zero_confirmation": zero_confirmation,
+        }
+
+        if (
+            histogram_values is not None
+            and position < len(histogram_values)
+            and not pd.isna(histogram_values.iloc[position])
+        ):
+            current_histogram = float(histogram_values.iloc[position])
+
+            if math.isfinite(current_histogram):
+                metadata["current_histogram"] = current_histogram
+
+        events.append(
+            IndicatorEvent(
+                indicator="macd",
+                position=position,
+                direction=direction,
+                event=event_name,
+                kind="cross",
+                strength=strength,
+                metadata=metadata,
+            )
+        )
+
+    return events
 
 
 def build_macd_signal(data: dict[str, pd.Series]) -> IndicatorSignal:

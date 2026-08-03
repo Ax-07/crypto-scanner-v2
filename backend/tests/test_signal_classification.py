@@ -12,7 +12,7 @@ from app.domain.indicators import (
     detect_stochastic_signal,
     detect_trend,
 )
-from app.services.market_stream import build_crossover_markers
+from app.services.market_stream import build_indicator_event_markers
 
 
 def paired(previous: tuple[float, float], current: tuple[float, float]):
@@ -103,28 +103,55 @@ def test_trend_current_permissive_vote_and_equalities(
     assert detect_trend(pd.Series([price]), sma_fast, sma_slow, ema_fast, ema_slow) == expected
 
 
-def marker_bundle(ema20, ema50, histogram):
+def event_marker_bundle(
+    ema_fast: list[float],
+    ema_slow: list[float],
+    macd: list[float],
+    signal: list[float],
+) -> dict[str, object]:
+    """Construit un bundle minimal compatible avec les événements EMA/MACD."""
+    macd_series = pd.Series(macd, dtype=float)
+    signal_series = pd.Series(signal, dtype=float)
+
     return {
-        "ema_20": pd.Series(ema20, dtype=float),
-        "ema_50": pd.Series(ema50, dtype=float),
-        "macd": {"histogram": pd.Series(histogram, dtype=float)},
+        "_ema_fast": pd.Series(ema_fast, dtype=float),
+        "_ema_slow": pd.Series(ema_slow, dtype=float),
+        "macd": {
+            "macd": macd_series,
+            "signal": signal_series,
+            "histogram": macd_series - signal_series,
+        },
     }
 
 
-def test_crossover_markers_fields_equalities_and_zero_rules() -> None:
-    frame = pd.DataFrame({"timestamp": [1_000, 2_000, 3_000]})
-    markers = build_crossover_markers(
-        frame,
-        marker_bundle([0, 1, 0], [0, 0, 1], [0, 1, 0]),
+def test_indicator_event_markers_ema_macd_crosses_and_presentation() -> None:
+    """Les événements métier EMA/MACD deviennent les marqueurs attendus."""
+    frame = pd.DataFrame(
+        {
+            "timestamp": [1_000, 2_000, 3_000],
+            "close": [100.0, 101.0, 102.0],
+        }
     )
+
+    markers = build_indicator_event_markers(
+        frame,
+        event_marker_bundle(
+            ema_fast=[0.0, 1.0, 0.0],
+            ema_slow=[0.0, 0.0, 1.0],
+            macd=[0.0, 1.0, 1.0],
+            signal=[0.0, 0.0, 0.5],
+        ),
+    )
+
     assert markers == [
         {
             "time": 2,
             "position": "belowBar",
             "shape": "arrowUp",
             "color": "#22c55e",
-            "text": "BUY EMA 20/50",
+            "text": "EMA BUY",
             "category": "signal",
+            "indicator": "ema",
         },
         {
             "time": 2,
@@ -133,23 +160,40 @@ def test_crossover_markers_fields_equalities_and_zero_rules() -> None:
             "color": "#38bdf8",
             "text": "MACD haussier",
             "category": "signal",
+            "indicator": "macd",
         },
         {
             "time": 3,
             "position": "aboveBar",
             "shape": "arrowDown",
             "color": "#ef4444",
-            "text": "SELL EMA 20/50",
+            "text": "EMA SELL",
             "category": "signal",
+            "indicator": "ema",
         },
     ]
-    assert build_crossover_markers(frame.iloc[:1], {}) == []
-    assert (
-        build_crossover_markers(frame, marker_bundle([math.nan] * 3, [math.nan] * 3, [1, 0, -1]))[
-            -1
-        ]["text"]
-        == "MACD baissier"
+
+    assert build_indicator_event_markers(frame.iloc[:1], {}) == []
+
+    bearish_macd_markers = build_indicator_event_markers(
+        frame,
+        event_marker_bundle(
+            ema_fast=[math.nan, math.nan, math.nan],
+            ema_slow=[math.nan, math.nan, math.nan],
+            macd=[1.0, 0.0, -1.0],
+            signal=[0.0, 0.0, 0.0],
+        ),
     )
+
+    assert bearish_macd_markers[-1] == {
+        "time": 3,
+        "position": "aboveBar",
+        "shape": "circle",
+        "color": "#f59e0b",
+        "text": "MACD baissier",
+        "category": "signal",
+        "indicator": "macd",
+    }
 
 
 def confluence(**changes):

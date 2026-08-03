@@ -18,7 +18,6 @@ from app.repositories.candle_repository import CandleRepository
 from app.services.candle_sync import CandleSyncService
 from app.services.market_history import MarketHistoryResult, MarketHistoryService
 from app.services.market_stream import (
-    build_crossover_markers,
     build_divergence_markers,
     build_indicator_event_markers,
     bundle_to_chart_data,
@@ -490,12 +489,7 @@ async def _historical_analysis(
         [item.to_ohlcv() for item in closed], profile
         )
     marker_data = sort_markers(
-        build_crossover_markers(
-            closed_dataframe,
-            closed_bundle,
-            minimum_time=minimum_seconds,
-        )
-        + build_indicator_event_markers(
+        build_indicator_event_markers(
             closed_dataframe,
             closed_bundle,
             minimum_time=minimum_seconds,

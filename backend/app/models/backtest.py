@@ -6,16 +6,30 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    field_validator,
+    model_validator,
+)
 
 from app.core.settings import ScanConfig
 from app.domain.indicators import Availability, ConfluenceGrade, TrendState
+from app.domain.indicators.types import (
+    IndicatorEventKind,
+    IndicatorName,
+    SignalDirection,
+)
 from app.domain.portfolio import PortfolioSimulationResult
 from app.models.scanner import IndicatorSignalModel
 from app.models.portfolio import (
     PortfolioSimulationConfigV1,
     PortfolioSimulationPublicResult,
 )
+
+SIGNAL_EVALUATION_VERSION = "signal-evaluation-v3"
 
 
 class BacktestStatus(StrEnum):
@@ -104,6 +118,20 @@ class BacktestProgress(BaseModel):
         return round(self.processed / self.total * 100, 2) if self.total else 0.0
 
 
+class IndicatorEventModel(BaseModel):
+    """Événement ponctuel d'indicateur conservé dans une observation historique."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    indicator: IndicatorName
+    position: int = Field(ge=0)
+    direction: SignalDirection
+    event: str = Field(min_length=1)
+    kind: IndicatorEventKind
+    strength: float | None = Field(default=None, ge=0.0, le=1.0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class SignalObservation(BaseModel):
     id: int | None = None
     job_id: str
@@ -126,8 +154,9 @@ class SignalObservation(BaseModel):
     confluence_factors: dict[str, float | None] = Field(default_factory=dict)
     availability: dict[str, Availability] = Field(default_factory=dict)
     indicator_signals: dict[str, IndicatorSignalModel] = Field(default_factory=dict)
+    indicator_events: list[IndicatorEventModel] = Field(default_factory=list)
     filter_trace: list[dict[str, Any]] = Field(default_factory=list)
-    algorithm_version: str = "signal-evaluation-v2"
+    algorithm_version: str = SIGNAL_EVALUATION_VERSION
     profile_id: str = "inline"
     profile_fingerprint: str | None = None
     dataset_version: str = "unknown"
@@ -206,7 +235,7 @@ class BacktestJob(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     dataset_version: str = "unknown"
-    algorithm_version: str = "signal-evaluation-v2"
+    algorithm_version: str = SIGNAL_EVALUATION_VERSION
     checkpoint: dict[str, Any] | None = None
     config_fingerprint: str | None = None
     _portfolio_result: PortfolioSimulationResult | None = PrivateAttr(default=None)

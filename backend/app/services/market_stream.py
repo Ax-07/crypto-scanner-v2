@@ -92,14 +92,17 @@ DEFAULT_EXTENDED_MARKET_INDICATORS: dict[str, dict[str, Any]] = {
 def ensure_market_chart_profile(
     profile: MarketIndicatorConfig | None,
 ) -> MarketIndicatorConfig:
-    """Active les indicateurs graphiques étendus absents du profil reçu.
+    """Construit le profil graphique par défaut lorsqu'aucun profil n'est fourni.
 
-    Une configuration explicitement fournie, y compris ``enabled=False``, est
-    conservée. Seules les sections encore à ``None`` reçoivent les valeurs par
-    défaut du graphique temps réel.
+    Un profil explicite, notamment un profil provenant du scanner, est conservé
+    exactement afin de garantir la parité entre marché live et rejeu historique.
+    Les indicateurs graphiques étendus par défaut ne sont activés que lorsqu'il
+    n'existe aucun profil explicite.
     """
-    current = profile or MarketIndicatorConfig()
-    payload = current.model_dump(mode="python")
+    if profile is not None:
+        return profile
+
+    payload = MarketIndicatorConfig().model_dump(mode="python")
 
     for indicator_name, default_config in DEFAULT_EXTENDED_MARKET_INDICATORS.items():
         if payload.get(indicator_name) is None:
@@ -264,12 +267,22 @@ def calculate_indicator_bundle(
         for period in profile.sma_periods:
             bundle[f"sma_{period}"] = calculate_sma(close, period=period)
     if profile.use_ma and profile.use_ema:
-        for period in profile.ema_periods:
-            bundle[f"ema_{period}"] = calculate_ema(close, period=period)
-        bundle["_ema_fast"] = bundle[f"ema_{profile.ema_periods[0]}"]
-        bundle["_ema_slow"] = (
-            bundle[f"ema_{profile.ema_periods[1]}"] if len(profile.ema_periods) > 1 else None
-        )
+        ema_periods = sorted(set(profile.ema_periods))
+
+        for period in ema_periods:
+            bundle[f"ema_{period}"] = calculate_ema(
+                close,
+                period=period,
+            )
+
+        if ema_periods:
+            bundle["_ema_fast"] = bundle[f"ema_{ema_periods[0]}"]
+            bundle["_ema_slow"] = (
+                bundle[f"ema_{ema_periods[1]}"]
+                if len(ema_periods) >= 2
+                else None
+            )
+            bundle["_ema_periods"] = ema_periods[:2]
     if profile.use_macd:
         bundle["macd"] = calculate_macd(
             close,
@@ -734,105 +747,6 @@ def calculate_market_snapshots(
     }
 
 
-def build_crossover_markers(
-    dataframe: pd.DataFrame,
-    bundle: dict[str, Any],
-    minimum_time: int | None = None,
-    only_last_candle: bool = False,
-) -> list[dict[str, Any]]:
-    """Crée les marqueurs EMA et MACD sur des bougies clôturées.
-
-    ``only_last_candle`` limite l'évaluation au dernier index, utile lorsqu'une
-    nouvelle bougie vient de confirmer la clôture précédente.
-    """
-    if dataframe.empty or len(dataframe) < 2:
-        return []
-
-    timestamps = dataframe["timestamp"].reset_index(drop=True)
-    ema20 = bundle.get("_ema_fast", bundle.get("ema_20"))
-    ema50 = bundle.get("_ema_slow", bundle.get("ema_50"))
-
-    macd_data = bundle.get("macd")
-    histogram = macd_data.get("histogram") if macd_data else None
-
-    start_index = len(dataframe) - 1 if only_last_candle else 1
-    markers: list[dict[str, Any]] = []
-
-    for index in range(start_index, len(dataframe)):
-        candle_time = int(float(timestamps.iloc[index]) / 1000)
-
-        if minimum_time is not None and candle_time < minimum_time:
-            continue
-
-        if ema20 is not None and ema50 is not None:
-            values = (
-                ema20.iloc[index - 1],
-                ema50.iloc[index - 1],
-                ema20.iloc[index],
-                ema50.iloc[index],
-            )
-
-            if all(pd.notna(value) for value in values):
-                short_previous, long_previous, short_current, long_current = values
-
-                if short_previous <= long_previous and short_current > long_current:
-                    markers.append(
-                        {
-                            "time": candle_time,
-                            "position": "belowBar",
-                            "shape": "arrowUp",
-                            "color": "#22c55e",
-                            "text": "BUY EMA 20/50",
-                            "category": "signal",
-                            "indicator": "ema",
-                        }
-                    )
-                elif short_previous >= long_previous and short_current < long_current:
-                    markers.append(
-                        {
-                            "time": candle_time,
-                            "position": "aboveBar",
-                            "shape": "arrowDown",
-                            "color": "#ef4444",
-                            "text": "SELL EMA 20/50",
-                            "category": "signal",
-                            "indicator": "ema",
-                        }
-                    )
-
-        if histogram is not None:
-            previous_histogram = histogram.iloc[index - 1]
-            current_histogram = histogram.iloc[index]
-
-            if pd.notna(previous_histogram) and pd.notna(current_histogram):
-                if previous_histogram <= 0 < current_histogram:
-                    markers.append(
-                        {
-                            "time": candle_time,
-                            "position": "belowBar",
-                            "shape": "circle",
-                            "color": "#38bdf8",
-                            "text": "MACD haussier",
-                            "category": "signal",
-                            "indicator": "macd",
-                        }
-                    )
-                elif previous_histogram >= 0 > current_histogram:
-                    markers.append(
-                        {
-                            "time": candle_time,
-                            "position": "aboveBar",
-                            "shape": "circle",
-                            "color": "#f59e0b",
-                            "text": "MACD baissier",
-                            "category": "signal",
-                            "indicator": "macd",
-                        }
-                    )
-
-    return markers
-
-
 def build_indicator_event_markers(
     dataframe: pd.DataFrame,
     bundle: dict[str, Any],
@@ -873,6 +787,18 @@ def build_indicator_event_markers(
         dict[str, pd.Series] | None,
         bundle.get("stochastic"),
     )
+    ema_fast = cast(
+        pd.Series | None,
+        bundle.get("_ema_fast"),
+    )
+    ema_slow = cast(
+        pd.Series | None,
+        bundle.get("_ema_slow"),
+    )
+    macd_data = cast(
+        dict[str, pd.Series] | None,
+        bundle.get("macd"),
+    )
     close_series = dataframe["close"].reset_index(drop=True)
 
     bollinger_bands = cast(
@@ -880,10 +806,14 @@ def build_indicator_event_markers(
         bundle.get("bollinger"),
     )
 
+    has_ema_pair = ema_fast is not None and ema_slow is not None
+
     if (
         rsi_series is None
         and stochastic_data is None
         and bollinger_bands is None
+        and not has_ema_pair
+        and macd_data is None
         and not extended_data
     ):
         return []
@@ -891,6 +821,9 @@ def build_indicator_event_markers(
     events = build_indicator_events(
         close_series=close_series,
         rsi_series=rsi_series,
+        ema_fast=ema_fast,
+        ema_slow=ema_slow,
+        macd_data=macd_data,
         bollinger_bands=bollinger_bands,
         stochastic_data=stochastic_data,
         stochastic_oversold_level=float(
@@ -910,6 +843,10 @@ def build_indicator_event_markers(
     markers: list[dict[str, Any]] = []
 
     labels: dict[tuple[str, str], str] = {
+        ("ema", "bullish_cross"): "EMA BUY",
+        ("ema", "bearish_cross"): "EMA SELL",
+        ("macd", "bullish_cross"): "MACD haussier",
+        ("macd", "bearish_cross"): "MACD baissier",
         ("supertrend", "bullish_flip"): "Supertrend BUY",
         ("supertrend", "bearish_flip"): "Supertrend SELL",
         ("rsi", "exit_oversold"): "RSI sortie survente",
@@ -959,6 +896,17 @@ def build_indicator_event_markers(
             marker_color = "#94a3b8"
         if indicator == "bollinger":
             marker_shape = "square"
+
+        if indicator == "macd":
+            marker_shape = "circle"
+            marker_color = (
+                "#38bdf8"
+                if direction == "bullish"
+                else "#f59e0b"
+                if direction == "bearish"
+                else "#94a3b8"
+            )
+
         if indicator == "atr":
             marker_shape = "circle"
 
@@ -1405,12 +1353,7 @@ async def websocket_market_data(
         closed_dataframe, closed_bundle = calculate_indicator_bundle(closed_history, profile)
 
         historical_markers = sort_markers(
-            build_crossover_markers(
-                closed_dataframe,
-                closed_bundle,
-                minimum_time=visible_start_time,
-            )
-            + build_indicator_event_markers(
+            build_indicator_event_markers(
                 closed_dataframe,
                 closed_bundle,
                 minimum_time=visible_start_time,
@@ -1508,12 +1451,7 @@ async def websocket_market_data(
                 )
 
                 new_markers = sort_markers(
-                    build_crossover_markers(
-                        closed_dataframe,
-                        closed_bundle,
-                        only_last_candle=True,
-                    )
-                    + build_indicator_event_markers(
+                    build_indicator_event_markers(
                         closed_dataframe,
                         closed_bundle,
                         only_last_candle=True,

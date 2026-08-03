@@ -15,6 +15,7 @@ import pandas as pd
 from app.core.settings import OPTIONAL_INDICATOR_EXTENSION_FIELDS, ScanConfig
 from app.domain.candles import Candle, candles_to_frame
 from app.domain.indicator_bundle import (
+    build_indicator_events,
     build_indicator_signals,
     calculate_extended_indicator_bundle,
 )
@@ -41,7 +42,12 @@ from app.domain.indicators import (
     detect_trend,
     is_bollinger_degenerate,
 )
-from app.models.backtest import BacktestConfig, ForwardOutcome, SignalObservation
+from app.models.backtest import (
+    SIGNAL_EVALUATION_VERSION,
+    BacktestConfig,
+    ForwardOutcome,
+    SignalObservation,
+)
 
 
 def _latest(series: pd.Series, digits: int = 10) -> float | None:
@@ -73,6 +79,25 @@ def evaluate_information_set(
     valid_rsi = rsi_series.dropna() if rsi_series is not None else None
     rsi = float(valid_rsi.iloc[-1]) if valid_rsi is not None and not valid_rsi.empty else None
     rsi = round(rsi, 2) if rsi is not None else None
+
+    primary_ema_fast: pd.Series | None = None
+    primary_ema_slow: pd.Series | None = None
+
+    if config.use_ma and config.use_ema:
+        primary_ema_periods = sorted(set(config.ema_periods))
+
+        if primary_ema_periods:
+            primary_ema_fast = calculate_ema(
+                frame["close"],
+                primary_ema_periods[0],
+            )
+
+        if len(primary_ema_periods) >= 2:
+            primary_ema_slow = calculate_ema(
+                frame["close"],
+                primary_ema_periods[1],
+            )
+
     trend_states: dict[str, TrendState] = {}
     trend_score = 0
     if config.use_ma:
@@ -150,7 +175,7 @@ def evaluate_information_set(
     supertrend_config = config.supertrend
     donchian_config = config.donchian
     keltner_config = config.keltner
-    _, extended_signals = calculate_extended_indicator_bundle(
+    extended_data, extended_signals = calculate_extended_indicator_bundle(
         high=frame["high"],
         low=frame["low"],
         close=frame["close"],
@@ -210,11 +235,14 @@ def evaluate_information_set(
         "bollinger": config.use_bollinger,
         "stochastic": config.use_stochastic,
     }
-    # Signaux structurés (IndicatorSignal) pour rsi/macd/bollinger/stochastic.
-    # La tendance multi-timeframes (sma/ema) reste gérée exclusivement via
-    # trend_states/trend_score ci-dessus: ce moteur canonique, partagé par le
-    # scanner et le backtest, ne construit délibérément pas de signaux
-    # structurés sma/ema (contrairement à market_stream, qui est mono-timeframe).
+    # Signaux structurés (IndicatorSignal) pour RSI, MACD, Bollinger,
+    # Stochastique et les indicateurs étendus.
+    #
+    # La tendance SMA/EMA multi-timeframes reste représentée par
+    # trend_states/trend_score. Le moteur ne construit donc pas ici de signaux
+    # structurés SMA/EMA. Les EMA du timeframe principal sont néanmoins
+    # conservées séparément pour détecter leurs croisements ponctuels dans
+    # indicator_events.
     indicator_signals = build_indicator_signals(
         close=frame["close"],
         rsi_series=rsi_series,
@@ -228,6 +256,20 @@ def evaluate_information_set(
         stochastic_oversold=config.stochastic_oversold,
         stochastic_overbought=config.stochastic_overbought,
         extended_signals=extended_signals,
+    )
+    indicator_events = build_indicator_events(
+        close_series=frame["close"],
+        rsi_series=rsi_series,
+        ema_fast=primary_ema_fast,
+        ema_slow=primary_ema_slow,
+        macd_data=macd,
+        bollinger_bands=bands,
+        stochastic_data=stochastic_data,
+        stochastic_oversold_level=config.stochastic_oversold,
+        stochastic_overbought_level=config.stochastic_overbought,
+        adx_weak_threshold=adx_config.weak_threshold if adx_config else 20,
+        extended_data=extended_data,
+        only_last=True,
     )
     confluence = (
         calculate_confluence_score(
@@ -268,7 +310,9 @@ def evaluate_information_set(
         for name, details in (confluence["details"] if confluence else {}).items()
     }
     excluded_profile_fields = {
-        name for name in OPTIONAL_INDICATOR_EXTENSION_FIELDS if getattr(config, name) is None
+        name
+        for name in OPTIONAL_INDICATOR_EXTENSION_FIELDS
+        if getattr(config, name, None) is None
     }
     if config.structured_signal_filters is None:
         excluded_profile_fields.add("structured_signal_filters")
@@ -379,8 +423,9 @@ def evaluate_information_set(
         confluence_factors=factors,
         availability=availability,
         indicator_signals=cast(Any, indicator_signals),
+        indicator_events=cast(Any, indicator_events),
         filter_trace=filters,
-        algorithm_version="signal-evaluation-v2",
+        algorithm_version=SIGNAL_EVALUATION_VERSION,
         profile_id=profile_id,
         profile_fingerprint=profile_fingerprint,
         dataset_version=dataset_version,

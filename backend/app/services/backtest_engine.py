@@ -16,7 +16,12 @@ from app.domain.signal_evaluation import evaluate_signal_snapshot
 from app.domain.candles import Candle, timeframe_milliseconds
 from app.domain.limits import ma_ohlcv_limit, primary_ohlcv_limit
 from app.domain.portfolio import simulate_portfolio
-from app.models.backtest import BacktestJob, BacktestProgress, BacktestSummary
+from app.models.backtest import (
+    SIGNAL_EVALUATION_VERSION,
+    BacktestJob,
+    BacktestProgress,
+    BacktestSummary,
+)
 from app.repositories.backtest_repository import BacktestRepository
 from app.repositories.candle_repository import CandleRepository
 from app.repositories.portfolio_repository import PortfolioRepository
@@ -174,6 +179,24 @@ class BacktestEngine:
         )
         job.config_fingerprint = config_fingerprint
         checkpoint = await self.results.get_checkpoint(job.id)
+
+        if checkpoint is not None:
+            checkpoint_algorithm_version = str(
+                checkpoint.get(
+                    "algorithm_version",
+                    "signal-evaluation-v2",
+                )
+            )
+
+            if checkpoint_algorithm_version != SIGNAL_EVALUATION_VERSION:
+                raise ValueError(
+                    "Checkpoint incompatible avec la version actuelle du moteur : "
+                    f"{checkpoint_algorithm_version} != {SIGNAL_EVALUATION_VERSION}. "
+                    "Créez un nouveau backtest au lieu de reprendre cet ancien job."
+                )
+
+        job.algorithm_version = SIGNAL_EVALUATION_VERSION
+
         resume_symbol_index = int(checkpoint.get("symbol_index", 0)) if checkpoint else 0
         resume_decision_index = int(checkpoint.get("decision_index", -1)) if checkpoint else -1
         if checkpoint:

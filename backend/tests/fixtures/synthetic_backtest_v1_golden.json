@@ -21,7 +21,7 @@
       "bollinger": "disabled",
       "stochastic": "disabled"
     },
-    "algorithm_version": "signal-evaluation-v2",
+    "algorithm_version": "signal-evaluation-v3",
     "profile_fingerprint": "sha256:911475d75c5eef8ac776128bc96e56de7657d936bc17b1336e897369b8291d87",
     "dataset_version": "synthetic-backtest-v1"
   },

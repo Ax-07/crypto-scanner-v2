@@ -40,16 +40,36 @@ from __future__ import annotations
 import pandas as pd
 
 from app.domain.indicators.adx import build_adx_signal, calculate_adx_dmi, detect_adx_events
-from app.domain.indicators.atr import build_atr_signal, calculate_atr, calculate_natr, detect_atr_events
+from app.domain.indicators.atr import (
+    build_atr_signal,
+    calculate_atr,
+    calculate_natr,
+    detect_atr_events,
+)
 from app.domain.indicators.bollinger import build_bollinger_signal, detect_bollinger_events
-from app.domain.indicators.donchian import build_donchian_signal, calculate_donchian_channels, detect_donchian_events
-from app.domain.indicators.keltner import build_keltner_signal, calculate_keltner_channels, detect_keltner_events
-from app.domain.indicators.moving_averages import calculate_ema
-from app.domain.indicators.macd import build_macd_signal
-from app.domain.indicators.moving_averages import detect_moving_average_signal
+from app.domain.indicators.donchian import (
+    build_donchian_signal,
+    calculate_donchian_channels,
+    detect_donchian_events,
+)
+from app.domain.indicators.keltner import (
+    build_keltner_signal,
+    calculate_keltner_channels,
+    detect_keltner_events,
+)
+from app.domain.indicators.macd import build_macd_signal, detect_macd_events
+from app.domain.indicators.moving_averages import (
+    calculate_ema,
+    detect_moving_average_events,
+    detect_moving_average_signal,
+)
 from app.domain.indicators.rsi import detect_rsi_signal, detect_rsi_events
 from app.domain.indicators.stochastic import build_stochastic_signal, detect_stochastic_events
-from app.domain.indicators.supertrend import build_supertrend_signal, calculate_supertrend, detect_supertrend_events
+from app.domain.indicators.supertrend import (
+    build_supertrend_signal,
+    calculate_supertrend,
+    detect_supertrend_events,
+)
 from app.domain.indicators.types import IndicatorSignal, _unavailable_signal, IndicatorEvent
 from app.domain.indicators.wilder import calculate_true_range
 
@@ -165,6 +185,9 @@ def build_indicator_events(
     rsi_series: pd.Series | None = None,
     rsi_oversold_level: float = 30,
     rsi_overbought_level: float = 70,
+    ema_fast: pd.Series | None = None,
+    ema_slow: pd.Series | None = None,
+    macd_data: dict[str, pd.Series] | None = None,
     bollinger_bands: dict[str, pd.Series] | None = None,
     stochastic_data: dict[str, pd.Series] | None = None,
     stochastic_oversold_level: float = 20,
@@ -182,6 +205,9 @@ def build_indicator_events(
         rsi_series: Série RSI déjà calculée.
         rsi_oversold_level: Seuil RSI de survente.
         rsi_overbought_level: Seuil RSI de surachat.
+        ema_fast: Série EMA rapide déjà calculée.
+        ema_slow: Série EMA lente déjà calculée.
+        macd_data: Séries MACD, signal et histogramme déjà calculées.
         extended_data: Données des indicateurs étendus déjà calculées.
         only_last: Lorsque vrai, ne recherche que les événements présents
             sur la dernière position des séries.
@@ -197,6 +223,24 @@ def build_indicator_events(
                 rsi_series,
                 oversold_level=rsi_oversold_level,
                 overbought_level=rsi_overbought_level,
+                only_last=only_last,
+            )
+        )
+
+    if ema_fast is not None and ema_slow is not None:
+        events.extend(
+            detect_moving_average_events(
+                ema_fast,
+                ema_slow,
+                family="ema",
+                only_last=only_last,
+            )
+        )
+
+    if macd_data is not None:
+        events.extend(
+            detect_macd_events(
+                macd_data,
                 only_last=only_last,
             )
         )
@@ -228,7 +272,7 @@ def build_indicator_events(
                 only_last=only_last,
             )
         )
-        
+
     adx_data = (extended_data or {}).get("adx")
     if adx_data is not None:
         events.extend(

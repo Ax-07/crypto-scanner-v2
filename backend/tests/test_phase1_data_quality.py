@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pandas as pd
@@ -8,7 +9,10 @@ import pytest
 
 from app.core.settings import ScanConfig
 from app.domain.analysis import AnalysisStatus
-from app.services.market_stream import build_crossover_markers, select_closed_ohlcv
+from app.services.market_stream import (
+    build_indicator_event_markers,
+    select_closed_ohlcv,
+)
 from app.services.scanner import ScannerService
 
 
@@ -40,7 +44,7 @@ def config(**changes: object) -> ScanConfig:
         "use_confluence_score": False,
     }
     values.update(changes)
-    return ScanConfig(**values)
+    return ScanConfig.model_validate(values)
 
 
 @pytest.mark.asyncio
@@ -101,22 +105,60 @@ def test_closed_bootstrap_selection_is_explicit_and_boundary_safe(
 
 
 def test_closed_selection_ignores_invalid_timestamp_without_dropping_last_closed() -> None:
-    history = [["invalid", 1, 2, 0, 1, 10], *rows(0, 3_600_000)]
+    history: list[list[Any]] = [
+        ["invalid", 1, 2, 0, 1, 10],
+        *rows(0, 3_600_000),
+    ]
     selected = select_closed_ohlcv(history, "1h", now_ms=7_200_000)
     assert [row[0] for row in selected] == [0, 3_600_000]
 
 
 def test_markers_include_last_closed_candle_but_never_open_candle() -> None:
+    """Un événement ne doit être produit que pour une bougie clôturée."""
     history = rows(0, 3_600_000)
-    bundle = {
-        "ema_20": pd.Series([0.0, 1.0]),
-        "ema_50": pd.Series([0.0, 0.0]),
-        "macd": {"histogram": pd.Series([0.0, 1.0])},
-    }
-    closed = select_closed_ohlcv(history, "1h", now_ms=7_200_000)
-    closed_frame = pd.DataFrame({"timestamp": [row[0] for row in closed]})
-    assert {marker["time"] for marker in build_crossover_markers(closed_frame, bundle)} == {3_600}
 
-    only_first = select_closed_ohlcv(history, "1h", now_ms=7_199_999)
-    open_excluded_frame = pd.DataFrame({"timestamp": [row[0] for row in only_first]})
-    assert build_crossover_markers(open_excluded_frame, bundle) == []
+    bundle = {
+        "_ema_fast": pd.Series([0.0, 1.0], dtype=float),
+        "_ema_slow": pd.Series([0.0, 0.0], dtype=float),
+    }
+
+    closed = select_closed_ohlcv(
+        history,
+        "1h",
+        now_ms=7_200_000,
+    )
+    closed_frame = pd.DataFrame(
+        {
+            "timestamp": [row[0] for row in closed],
+            "close": [row[4] for row in closed],
+        }
+    )
+
+    markers = build_indicator_event_markers(
+        closed_frame,
+        bundle,
+    )
+
+    assert {marker["time"] for marker in markers} == {3_600}
+    assert markers[0]["indicator"] == "ema"
+    assert markers[0]["text"] == "EMA BUY"
+
+    only_first = select_closed_ohlcv(
+        history,
+        "1h",
+        now_ms=7_199_999,
+    )
+    open_excluded_frame = pd.DataFrame(
+        {
+            "timestamp": [row[0] for row in only_first],
+            "close": [row[4] for row in only_first],
+        }
+    )
+
+    assert (
+        build_indicator_event_markers(
+            open_excluded_frame,
+            bundle,
+        )
+        == []
+    )

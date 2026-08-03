@@ -126,8 +126,8 @@ class IndicatorEvent(TypedDict):
     kind: IndicatorEventKind
     strength: NotRequired[float]
     metadata: NotRequired[Mapping[str, object]]
-    
-    
+
+
 #: Ensemble des signaux structurés d'un même snapshot d'indicateurs, indexés
 #: par nom (utilisé par ``calculate_confluence_score`` en mode structuré).
 IndicatorSignals: TypeAlias = Mapping[IndicatorName, IndicatorSignal]
