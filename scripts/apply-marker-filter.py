@@ -1,0 +1,264 @@
+from pathlib import Path
+
+chart_path = Path("frontend/src/components/dashboard/trading-chart.tsx")
+chart = chart_path.read_text(encoding="utf-8")
+
+marker_anchor = "/** Retourne la clé RSI active dans un dictionnaire d'indicateurs. */"
+helper = '''/**
+ * Applique les réglages de visibilité puis conserve les signaux d'une bougie
+ * uniquement lorsque suffisamment d'indicateurs distincts et visibles signalent.
+ * Les divergences restent indépendantes du seuil.
+ */
+export function filterMarkersBySimultaneousIndicators(
+  markers: MarketMarker[],
+  visibility: ReturnType<typeof useMarketStore.getState>["visibility"],
+  minimumSimultaneousMarkers: number,
+): MarketMarker[] {
+  const visibleMarkers = markers.filter((marker) =>
+    isMarkerVisible(marker, visibility),
+  );
+  const distinctIndicatorsByTime = new Map<number, Set<string>>();
+
+  for (const marker of visibleMarkers) {
+    if (marker.category === "divergence" || !marker.indicator) {
+      continue;
+    }
+
+    const indicators = distinctIndicatorsByTime.get(marker.time);
+    if (indicators) {
+      indicators.add(marker.indicator);
+    } else {
+      distinctIndicatorsByTime.set(marker.time, new Set([marker.indicator]));
+    }
+  }
+
+  return visibleMarkers.filter(
+    (marker) =>
+      marker.category === "divergence" ||
+      (distinctIndicatorsByTime.get(marker.time)?.size ?? 0) >=
+        minimumSimultaneousMarkers,
+  );
+}
+
+'''
+if "export function filterMarkersBySimultaneousIndicators" not in chart:
+    chart = chart.replace(marker_anchor, helper + marker_anchor)
+
+visibility_selector = "  const visibility = useMarketStore((state) => state.visibility);"
+threshold_selector = '''  const minimumSimultaneousMarkers = useMarketStore(
+    (state) => state.minimumSimultaneousMarkers,
+  );'''
+if threshold_selector not in chart:
+    chart = chart.replace(
+        visibility_selector,
+        visibility_selector + "\n" + threshold_selector,
+    )
+
+old_filter = '''    const filteredMarkers = markers.filter(
+      (marker) => isMarkerVisible(marker, visibility),
+    );'''
+new_filter = '''    const filteredMarkers = filterMarkersBySimultaneousIndicators(
+      markers,
+      visibility,
+      minimumSimultaneousMarkers,
+    );'''
+if old_filter not in chart:
+    raise SystemExit("marker filter anchor not found")
+chart = chart.replace(old_filter, new_filter)
+chart = chart.replace(
+    "  }, [markers, visibility, candles]);",
+    "  }, [markers, visibility, minimumSimultaneousMarkers, candles]);",
+)
+chart_path.write_text(chart, encoding="utf-8")
+
+Path("frontend/src/components/dashboard/trading-chart.test.ts").write_text('''import { describe, expect, it } from "vitest"
+import type { Logical } from "lightweight-charts"
+
+import {
+  filterMarkersBySimultaneousIndicators,
+  shiftedLogicalRange,
+  shouldPrefetchHistory,
+} from "@/components/dashboard/trading-chart"
+import type { IndicatorVisibility, MarketMarker, MarkerIndicator } from "@/types/market"
+
+const visibility: IndicatorVisibility = {
+  ema: true,
+  sma: true,
+  bollinger: true,
+  rsi: true,
+  macd: true,
+  stochastic: true,
+  volatility: true,
+  adx: true,
+  supertrend: true,
+  donchian: true,
+  keltner: true,
+  signals: true,
+  divergences: true,
+}
+
+function signal(time: number, indicator: MarkerIndicator, text = indicator): MarketMarker {
+  return {
+    time,
+    position: "aboveBar",
+    shape: "circle",
+    color: "#fff",
+    text,
+    category: "signal",
+    indicator,
+  }
+}
+
+function divergence(time: number): MarketMarker {
+  return {
+    time,
+    position: "belowBar",
+    shape: "circle",
+    color: "#fff",
+    text: "Divergence RSI",
+    category: "divergence",
+    source: "RSI",
+  }
+}
+
+describe("trading chart viewport", () => {
+  it("compense la plage logique avec le nombre réellement préfixé", () => {
+    expect(shiftedLogicalRange({ from: 20 as Logical, to: 120 as Logical }, 2_000))
+      .toEqual({ from: 2_020, to: 2_120 })
+    expect(shiftedLogicalRange({ from: 20 as Logical, to: 120 as Logical }, 0))
+      .toEqual({ from: 20, to: 120 })
+  })
+
+  it("précharge au seuil uniquement quand une page peut partir", () => {
+    const range = { from: 100 as Logical, to: 200 as Logical }
+    expect(shouldPrefetchHistory(range, 100, true, true, false)).toBe(true)
+    expect(shouldPrefetchHistory(range, 99, true, true, false)).toBe(false)
+    expect(shouldPrefetchHistory(range, 100, true, true, true)).toBe(false)
+    expect(shouldPrefetchHistory(range, 100, true, false, false)).toBe(false)
+  })
+})
+
+describe("simultaneous marker filter", () => {
+  it("conserve tous les signaux d'une bougie qui atteint le seuil", () => {
+    const markers = [
+      signal(10, "rsi"),
+      signal(10, "macd"),
+      signal(10, "supertrend"),
+      signal(20, "rsi"),
+      signal(20, "macd"),
+    ]
+    expect(filterMarkersBySimultaneousIndicators(markers, visibility, 3))
+      .toEqual(markers.slice(0, 3))
+  })
+
+  it("recalcule le compteur avec les indicateurs visibles", () => {
+    const markers = [signal(10, "rsi"), signal(10, "macd"), signal(10, "supertrend")]
+    expect(filterMarkersBySimultaneousIndicators(
+      markers,
+      { ...visibility, rsi: false },
+      3,
+    )).toEqual([])
+  })
+
+  it("compte un indicateur une seule fois par bougie", () => {
+    const markers = [
+      signal(10, "rsi", "RSI A"),
+      signal(10, "rsi", "RSI B"),
+      signal(10, "macd"),
+    ]
+    expect(filterMarkersBySimultaneousIndicators(markers, visibility, 3))
+      .toEqual([])
+  })
+
+  it("laisse les divergences indépendantes du seuil et des signaux", () => {
+    const rsiDivergence = divergence(10)
+    expect(filterMarkersBySimultaneousIndicators(
+      [signal(10, "rsi"), rsiDivergence],
+      { ...visibility, signals: false },
+      5,
+    )).toEqual([rsiDivergence])
+  })
+})
+''', encoding="utf-8")
+
+Path("frontend/src/components/dashboard/indicator-toolbar.test.tsx").write_text('''import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it } from "vitest";
+
+import { IndicatorToolbar } from "@/components/dashboard/indicator-toolbar";
+import { useMarketStore } from "@/stores/market-store";
+
+describe("IndicatorToolbar", () => {
+  beforeEach(() =>
+    useMarketStore.setState({
+      minimumSimultaneousMarkers: 1,
+      visibility: {
+        ema: true,
+        sma: false,
+        bollinger: true,
+        rsi: true,
+        macd: true,
+        stochastic: true,
+        volatility: true,
+        adx: false,
+        supertrend: true,
+        donchian: false,
+        keltner: false,
+        signals: true,
+        divergences: true,
+      },
+    }),
+  );
+
+  it("conserve le pilotage des séries du graphique", () => {
+    render(<IndicatorToolbar />);
+    const ema = screen.getByRole("switch", { name: "EMA 20/50" });
+    const sma = screen.getByRole("switch", { name: "SMA 20/50" });
+    expect(ema).toBeChecked();
+    expect(sma).not.toBeChecked();
+    fireEvent.click(sma);
+    expect(useMarketStore.getState().visibility.sma).toBe(true);
+    expect(screen.getByRole("switch", { name: "SMA 20/50" })).toBeChecked();
+  });
+
+  it("permet de choisir le nombre minimum de signaux simultanés", () => {
+    render(<IndicatorToolbar />);
+    expect(screen.getByRole("button", { name: "Tous" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "3+" }));
+    expect(useMarketStore.getState().minimumSimultaneousMarkers).toBe(3);
+    expect(screen.getByRole("button", { name: "3+" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+});
+''', encoding="utf-8")
+
+store_test = Path("frontend/src/stores/market-store.test.ts")
+store = store_test.read_text(encoding="utf-8")
+old_before = '  beforeEach(() => useMarketStore.getState().resetMarket("BTC/USDC", "1h"))'
+new_before = '''  beforeEach(() => {
+    useMarketStore.setState({ minimumSimultaneousMarkers: 1 })
+    useMarketStore.getState().resetMarket("BTC/USDC", "1h")
+  })'''
+if old_before not in store:
+    raise SystemExit("store beforeEach anchor not found")
+store = store.replace(old_before, new_before)
+test_anchor = '  it("ignore une réponse tardive de l\'ancienne sélection", () => {'
+threshold_test = '''  it("initialise et borne le seuil de marqueurs simultanés", () => {
+    expect(useMarketStore.getState().minimumSimultaneousMarkers).toBe(1)
+    useMarketStore.getState().setMinimumSimultaneousMarkers(3)
+    expect(useMarketStore.getState().minimumSimultaneousMarkers).toBe(3)
+    useMarketStore.getState().setMinimumSimultaneousMarkers(0)
+    expect(useMarketStore.getState().minimumSimultaneousMarkers).toBe(1)
+    useMarketStore.getState().setMinimumSimultaneousMarkers(12)
+    expect(useMarketStore.getState().minimumSimultaneousMarkers).toBe(5)
+  })
+
+'''
+if test_anchor not in store:
+    raise SystemExit("store test anchor not found")
+store = store.replace(test_anchor, threshold_test + test_anchor)
+store_test.write_text(store, encoding="utf-8")

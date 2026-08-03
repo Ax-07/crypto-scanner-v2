@@ -61,6 +61,7 @@ interface MarketStore {
   chartCommand: ChartCommand | null
   chartCommandVersion: number
   visibility: IndicatorVisibility
+  minimumSimultaneousMarkers: number
   resetMarket: (symbol: string, timeframe: string) => number
   setConnection: (status: ConnectionStatus, error?: string | null) => void
   setHistoryLoading: (generation: number, loading: boolean) => void
@@ -84,6 +85,7 @@ interface MarketStore {
   setFollowRealtime: (follow: boolean) => void
   issueChartCommand: (command: ChartCommand) => void
   toggleVisibility: (key: keyof IndicatorVisibility) => void
+  setMinimumSimultaneousMarkers: (minimum: number) => void
   resetStream: () => void
 }
 
@@ -198,6 +200,7 @@ export const useMarketStore = create<MarketStore>()((set) => ({
   chartCommand: null,
   chartCommandVersion: 0,
   visibility: defaultVisibility,
+  minimumSimultaneousMarkers: 1,
 
   resetMarket: (symbol, timeframe) => {
     let generation = 0
@@ -434,6 +437,8 @@ export const useMarketStore = create<MarketStore>()((set) => ({
     set((state) => ({
       visibility: { ...state.visibility, [key]: !state.visibility[key] },
     })),
+  setMinimumSimultaneousMarkers: (minimum) =>
+    set({ minimumSimultaneousMarkers: Math.min(5, Math.max(1, Math.trunc(minimum))) }),
   resetStream: () => {
     const state = useMarketStore.getState()
     const [symbol = "", timeframe = ""] = state.selectionKey.split("|")
