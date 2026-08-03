@@ -110,3 +110,4 @@ describe("simultaneous marker filter", () => {
     )).toEqual([rsiDivergence])
   })
 })
+
