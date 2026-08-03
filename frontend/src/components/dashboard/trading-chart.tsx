@@ -30,13 +30,7 @@ import {
 } from "lightweight-charts";
 
 import { useMarketStore } from "@/stores/market-store";
-import type {
-  Candle,
-  IndicatorHistory,
-  IndicatorPoint,
-  IndicatorUpdates,
-  MarketMarker,
-} from "@/types/market";
+import type { Candle, IndicatorHistory, IndicatorPoint, IndicatorUpdates, MarketMarker } from "@/types/market";
 
 type CandleApi = ISeriesApi<"Candlestick">;
 type LineApi = ISeriesApi<"Line">;
@@ -81,8 +75,16 @@ const PREFETCH_THRESHOLD = (() => {
   return Number.isInteger(value) && value >= 0 ? value : 100;
 })();
 
-/** Marge logique exprimée en nombre de bougies à droite du temps réel. */
-const RIGHT_OFFSET_BARS = 45;
+/** Nombre de bougies affichées lors du premier chargement. */
+const INITIAL_VISIBLE_BARS = 100;
+
+/**
+ * Marge visuelle à droite du temps réel.
+ *
+ * Elle est exprimée en pixels : le nombre de bougies vides correspondant
+ * s'adapte donc automatiquement au niveau de zoom.
+ */
+const RIGHT_OFFSET_PIXELS = 32;
 
 type MarkerSide = "above" | "below";
 
@@ -106,8 +108,7 @@ const MARKER_STACK_PRICE_RATIO = 0.0025;
  * @param right La deuxième période (ex: "ema_50").
  * @returns Un nombre négatif si left < right, zéro si égal, positif si left > right.
  */
-const periodOrder = (left: string, right: string) =>
-  Number(left.split("_")[1]) - Number(right.split("_")[1]);
+const periodOrder = (left: string, right: string) => Number(left.split("_")[1]) - Number(right.split("_")[1]);
 
 /** Convertit un timestamp en UTCTimestamp pour Lightweight Charts. */
 function chartTime(time: number): UTCTimestamp {
@@ -150,14 +151,11 @@ function markerStackPriority(marker: MarketMarker): number {
 }
 
 /** Produit un ordre déterministe dans chaque pile de marqueurs. */
-function compareMarkersForStack(
-  left: MarketMarker,
-  right: MarketMarker,
-): number {
+function compareMarkersForStack(left: MarketMarker, right: MarketMarker): number {
   return (
-    markerStackPriority(left) - markerStackPriority(right)
-    || (left.indicator ?? "").localeCompare(right.indicator ?? "")
-    || left.text.localeCompare(right.text)
+    markerStackPriority(left) - markerStackPriority(right) ||
+    (left.indicator ?? "").localeCompare(right.indicator ?? "") ||
+    left.text.localeCompare(right.text)
   );
 }
 
@@ -182,22 +180,14 @@ function stackMarkers(markers: MarketMarker[]): StackedMarker[] {
   }
 
   const result: StackedMarker[] = [];
-  const groups = [...markersByTime.entries()].sort(
-    ([leftTime], [rightTime]) => leftTime - rightTime,
-  );
+  const groups = [...markersByTime.entries()].sort(([leftTime], [rightTime]) => leftTime - rightTime);
 
   for (const [, group] of groups) {
-    const above = group
-      .filter((marker) => marker.position === "aboveBar")
-      .sort(compareMarkersForStack);
+    const above = group.filter((marker) => marker.position === "aboveBar").sort(compareMarkersForStack);
 
-    const below = group
-      .filter((marker) => marker.position === "belowBar")
-      .sort(compareMarkersForStack);
+    const below = group.filter((marker) => marker.position === "belowBar").sort(compareMarkersForStack);
 
-    const inside = group
-      .filter((marker) => marker.position === "inBar")
-      .sort(compareMarkersForStack);
+    const inside = group.filter((marker) => marker.position === "inBar").sort(compareMarkersForStack);
 
     for (const marker of inside) {
       if (above.length <= below.length) {
@@ -223,10 +213,7 @@ function stackMarkers(markers: MarketMarker[]): StackedMarker[] {
 }
 
 /** Convertit un marqueur empilé vers le format Lightweight Charts. */
-function chartMarker(
-  stackedMarker: StackedMarker,
-  candleByTime: ReadonlyMap<number, Candle>,
-): SeriesMarker<Time> {
+function chartMarker(stackedMarker: StackedMarker, candleByTime: ReadonlyMap<number, Candle>): SeriesMarker<Time> {
   const { marker, side, stackIndex } = stackedMarker;
   const candle = candleByTime.get(marker.time);
 
@@ -242,20 +229,11 @@ function chartMarker(
   }
 
   const absoluteClose = Math.max(Math.abs(candle.close), Number.EPSILON);
-  const candleRange = Math.max(
-    candle.high - candle.low,
-    absoluteClose * 0.001,
-  );
+  const candleRange = Math.max(candle.high - candle.low, absoluteClose * 0.001);
 
-  const baseOffset = Math.max(
-    candleRange * MARKER_BASE_RANGE_RATIO,
-    absoluteClose * MARKER_BASE_PRICE_RATIO,
-  );
+  const baseOffset = Math.max(candleRange * MARKER_BASE_RANGE_RATIO, absoluteClose * MARKER_BASE_PRICE_RATIO);
 
-  const stackStep = Math.max(
-    candleRange * MARKER_STACK_RANGE_RATIO,
-    absoluteClose * MARKER_STACK_PRICE_RATIO,
-  );
+  const stackStep = Math.max(candleRange * MARKER_STACK_RANGE_RATIO, absoluteClose * MARKER_STACK_PRICE_RATIO);
 
   const priceOffset = baseOffset + stackIndex * stackStep;
 
@@ -350,21 +328,13 @@ function findRsiKey(indicators: IndicatorHistory | IndicatorUpdates) {
 }
 
 /** Charge un historique de ligne puis applique éventuellement le point temps réel. */
-function setLineData(
-  series: LineApi,
-  history: IndicatorPoint[] | undefined,
-  latest?: IndicatorPoint,
-) {
+function setLineData(series: LineApi, history: IndicatorPoint[] | undefined, latest?: IndicatorPoint) {
   series.setData((history ?? []).map(lineData));
   if (latest) series.update(lineData(latest));
 }
 
 /** Charge un historique d'histogramme puis applique éventuellement le point temps réel. */
-function setHistogramData(
-  series: HistogramApi,
-  history: IndicatorPoint[] | undefined,
-  latest?: IndicatorPoint,
-) {
+function setHistogramData(series: HistogramApi, history: IndicatorPoint[] | undefined, latest?: IndicatorPoint) {
   series.setData((history ?? []).map(histogramData));
   if (latest) series.update(histogramData(latest));
 }
@@ -372,10 +342,7 @@ function setHistogramData(
 /**
  * Décale une plage logique après l'ajout ou le retrait de bougies au début.
  */
-export function shiftedLogicalRange(
-  range: LogicalRange,
-  prependedCount: number,
-): LogicalRange {
+export function shiftedLogicalRange(range: LogicalRange, prependedCount: number): LogicalRange {
   return {
     from: (Number(range.from) + prependedCount) as Logical,
     to: (Number(range.to) + prependedCount) as Logical,
@@ -390,13 +357,7 @@ export function shouldPrefetchHistory(
   hasMoreBefore: boolean,
   loading: boolean,
 ) {
-  return Boolean(
-    range &&
-      Number(range.from) <= threshold &&
-      initialized &&
-      hasMoreBefore &&
-      !loading,
-  );
+  return Boolean(range && Number(range.from) <= threshold && initialized && hasMoreBefore && !loading);
 }
 
 /**
@@ -465,7 +426,7 @@ export function TradingChart({ onLoadMore }: Props) {
         borderColor: "#374151",
         timeVisible: true,
         secondsVisible: false,
-        rightOffset: RIGHT_OFFSET_BARS,
+        rightOffsetPixels: RIGHT_OFFSET_PIXELS,
         barSpacing: 7,
       },
       crosshair: { mode: CrosshairMode.Normal },
@@ -684,11 +645,7 @@ export function TradingChart({ onLoadMore }: Props) {
       followingRealtimeRef.current = range.to >= candleCountRef.current - 3;
       const state = useMarketStore.getState();
 
-      if (
-        state.mode === "live" &&
-        state.followRealtime &&
-        !followingRealtimeRef.current
-      ) {
+      if (state.mode === "live" && state.followRealtime && !followingRealtimeRef.current) {
         state.setFollowRealtime(false);
       }
 
@@ -773,8 +730,7 @@ export function TradingChart({ onLoadMore }: Props) {
 
     const state = useMarketStore.getState();
     const currentIndicators = state.indicators;
-    const currentLatest: IndicatorUpdates =
-      state.mode === "historical" ? {} : state.latestIndicators;
+    const currentLatest: IndicatorUpdates = state.mode === "historical" ? {} : state.latestIndicators;
 
     const createPane = (stretchFactor: number) => {
       const pane = chart.addPane(true);
@@ -820,12 +776,8 @@ export function TradingChart({ onLoadMore }: Props) {
       const latestRsiKey = findRsiKey(currentLatest);
       setLineData(
         rsi,
-        rsiKey
-          ? currentIndicators[rsiKey as keyof typeof currentIndicators]
-          : undefined,
-        latestRsiKey
-          ? currentLatest[latestRsiKey as keyof typeof currentLatest]
-          : undefined,
+        rsiKey ? currentIndicators[rsiKey as keyof typeof currentIndicators] : undefined,
+        latestRsiKey ? currentLatest[latestRsiKey as keyof typeof currentLatest] : undefined,
       );
       refs.rsi = rsi;
     }
@@ -862,17 +814,9 @@ export function TradingChart({ onLoadMore }: Props) {
         paneIndex,
       );
 
-      setHistogramData(
-        macdHistogram,
-        currentIndicators.macd_histogram,
-        currentLatest.macd_histogram,
-      );
+      setHistogramData(macdHistogram, currentIndicators.macd_histogram, currentLatest.macd_histogram);
       setLineData(macd, currentIndicators.macd, currentLatest.macd);
-      setLineData(
-        macdSignal,
-        currentIndicators.macd_signal,
-        currentLatest.macd_signal,
-      );
+      setLineData(macdSignal, currentIndicators.macd_signal, currentLatest.macd_signal);
 
       refs.macdHistogram = macdHistogram;
       refs.macd = macd;
@@ -922,16 +866,8 @@ export function TradingChart({ onLoadMore }: Props) {
         title: "20",
       });
 
-      setLineData(
-        stochasticK,
-        currentIndicators.stochastic_k,
-        currentLatest.stochastic_k,
-      );
-      setLineData(
-        stochasticD,
-        currentIndicators.stochastic_d,
-        currentLatest.stochastic_d,
-      );
+      setLineData(stochasticK, currentIndicators.stochastic_k, currentLatest.stochastic_k);
+      setLineData(stochasticD, currentIndicators.stochastic_d, currentLatest.stochastic_d);
 
       refs.stochasticK = stochasticK;
       refs.stochasticD = stochasticD;
@@ -991,16 +927,8 @@ export function TradingChart({ onLoadMore }: Props) {
       });
 
       setLineData(adx, currentIndicators.adx, currentLatest.adx);
-      setLineData(
-        adxPlusDi,
-        currentIndicators.adx_plus_di,
-        currentLatest.adx_plus_di,
-      );
-      setLineData(
-        adxMinusDi,
-        currentIndicators.adx_minus_di,
-        currentLatest.adx_minus_di,
-      );
+      setLineData(adxPlusDi, currentIndicators.adx_plus_di, currentLatest.adx_plus_di);
+      setLineData(adxMinusDi, currentIndicators.adx_minus_di, currentLatest.adx_minus_di);
 
       refs.adx = adx;
       refs.adxPlusDi = adxPlusDi;
@@ -1062,14 +990,7 @@ export function TradingChart({ onLoadMore }: Props) {
     }
 
     chart.panes()[0]?.setStretchFactor(5);
-
-  }, [
-    visibility.rsi,
-    visibility.macd,
-    visibility.stochastic,
-    visibility.adx,
-    visibility.volatility,
-  ]);
+  }, [visibility.rsi, visibility.macd, visibility.stochastic, visibility.adx, visibility.volatility]);
 
   /** Remplace toutes les séries lors d'un changement d'historique. */
   useEffect(() => {
@@ -1085,18 +1006,10 @@ export function TradingChart({ onLoadMore }: Props) {
     const smaKeys = keys.filter((key) => /^sma_\d+$/.test(key)).sort(periodOrder);
     const rsiKey = keys.find((key) => /^rsi_\d+$/.test(key));
 
-    refs.ema20.setData(
-      (indicators[emaKeys[0] as keyof typeof indicators] ?? []).map(lineData),
-    );
-    refs.ema50.setData(
-      (indicators[emaKeys[1] as keyof typeof indicators] ?? []).map(lineData),
-    );
-    refs.sma20.setData(
-      (indicators[smaKeys[0] as keyof typeof indicators] ?? []).map(lineData),
-    );
-    refs.sma50.setData(
-      (indicators[smaKeys[1] as keyof typeof indicators] ?? []).map(lineData),
-    );
+    refs.ema20.setData((indicators[emaKeys[0] as keyof typeof indicators] ?? []).map(lineData));
+    refs.ema50.setData((indicators[emaKeys[1] as keyof typeof indicators] ?? []).map(lineData));
+    refs.sma20.setData((indicators[smaKeys[0] as keyof typeof indicators] ?? []).map(lineData));
+    refs.sma50.setData((indicators[smaKeys[1] as keyof typeof indicators] ?? []).map(lineData));
 
     refs.ema20.applyOptions({
       title: emaKeys[0]?.replace("_", " ").toUpperCase() ?? "EMA",
@@ -1111,42 +1024,19 @@ export function TradingChart({ onLoadMore }: Props) {
       title: smaKeys[1]?.replace("_", " ").toUpperCase() ?? "SMA",
     });
 
-    refs.bollingerUpper.setData(
-      (indicators.bollinger_upper ?? []).map(lineData),
-    );
-    refs.bollingerMiddle.setData(
-      (indicators.bollinger_middle ?? []).map(lineData),
-    );
-    refs.bollingerLower.setData(
-      (indicators.bollinger_lower ?? []).map(lineData),
-    );
+    refs.bollingerUpper.setData((indicators.bollinger_upper ?? []).map(lineData));
+    refs.bollingerMiddle.setData((indicators.bollinger_middle ?? []).map(lineData));
+    refs.bollingerLower.setData((indicators.bollinger_lower ?? []).map(lineData));
     refs.supertrend.setData((indicators.supertrend ?? []).map(lineData));
-    refs.donchianUpper.setData(
-      (indicators.donchian_upper_channel ?? []).map(lineData),
-    );
-    refs.donchianMiddle.setData(
-      (indicators.donchian_middle_channel ?? []).map(lineData),
-    );
-    refs.donchianLower.setData(
-      (indicators.donchian_lower_channel ?? []).map(lineData),
-    );
-    refs.keltnerUpper.setData(
-      (indicators.keltner_upper_channel ?? []).map(lineData),
-    );
-    refs.keltnerMiddle.setData(
-      (indicators.keltner_middle_line ?? []).map(lineData),
-    );
-    refs.keltnerLower.setData(
-      (indicators.keltner_lower_channel ?? []).map(lineData),
-    );
+    refs.donchianUpper.setData((indicators.donchian_upper_channel ?? []).map(lineData));
+    refs.donchianMiddle.setData((indicators.donchian_middle_channel ?? []).map(lineData));
+    refs.donchianLower.setData((indicators.donchian_lower_channel ?? []).map(lineData));
+    refs.keltnerUpper.setData((indicators.keltner_upper_channel ?? []).map(lineData));
+    refs.keltnerMiddle.setData((indicators.keltner_middle_line ?? []).map(lineData));
+    refs.keltnerLower.setData((indicators.keltner_lower_channel ?? []).map(lineData));
 
     if (refs.rsi) {
-      refs.rsi.setData(
-        (rsiKey
-          ? indicators[rsiKey as keyof typeof indicators] ?? []
-          : []
-        ).map(lineData),
-      );
+      refs.rsi.setData((rsiKey ? (indicators[rsiKey as keyof typeof indicators] ?? []) : []).map(lineData));
     }
     if (refs.macd) {
       refs.macd.setData((indicators.macd ?? []).map(lineData));
@@ -1155,9 +1045,7 @@ export function TradingChart({ onLoadMore }: Props) {
       refs.macdSignal.setData((indicators.macd_signal ?? []).map(lineData));
     }
     if (refs.macdHistogram) {
-      refs.macdHistogram.setData(
-        (indicators.macd_histogram ?? []).map(histogramData),
-      );
+      refs.macdHistogram.setData((indicators.macd_histogram ?? []).map(histogramData));
     }
     if (refs.stochasticK) {
       refs.stochasticK.setData((indicators.stochastic_k ?? []).map(lineData));
@@ -1188,15 +1076,21 @@ export function TradingChart({ onLoadMore }: Props) {
 
     if (!initializedRef.current) {
       chart.timeScale().setVisibleLogicalRange({
-        from: Math.max(0, candles.length - 200),
-        to: candles.length - 1 + RIGHT_OFFSET_BARS,
+        from: Math.max(0, candles.length - INITIAL_VISIBLE_BARS),
+        to: candles.length - 1,
       });
+
+      /*
+       * Replace la dernière bougie sur la position temps réel.
+       * rightOffsetPixels applique ensuite la marge visuelle configurée,
+       * sans modifier le niveau de zoom choisi ci-dessus.
+       */
+      chart.timeScale().scrollToRealTime();
+
       initializedRef.current = true;
       followingRealtimeRef.current = true;
     } else if (previousRange) {
-      chart.timeScale().setVisibleLogicalRange(
-        shiftedLogicalRange(previousRange, historyPrependCount),
-      );
+      chart.timeScale().setVisibleLogicalRange(shiftedLogicalRange(previousRange, historyPrependCount));
     }
   }, [historyVersion, historyPrependCount, candles, indicators]);
 
@@ -1213,30 +1107,14 @@ export function TradingChart({ onLoadMore }: Props) {
     };
 
     const updateKeys = Object.keys(latestIndicators);
-    const emaKeys = updateKeys
-      .filter((key) => /^ema_\d+$/.test(key))
-      .sort(periodOrder);
-    const smaKeys = updateKeys
-      .filter((key) => /^sma_\d+$/.test(key))
-      .sort(periodOrder);
+    const emaKeys = updateKeys.filter((key) => /^ema_\d+$/.test(key)).sort(periodOrder);
+    const smaKeys = updateKeys.filter((key) => /^sma_\d+$/.test(key)).sort(periodOrder);
     const rsiKey = updateKeys.find((key) => /^rsi_\d+$/.test(key));
 
-    updateLine(
-      refs.ema20,
-      latestIndicators[emaKeys[0] as keyof typeof latestIndicators],
-    );
-    updateLine(
-      refs.ema50,
-      latestIndicators[emaKeys[1] as keyof typeof latestIndicators],
-    );
-    updateLine(
-      refs.sma20,
-      latestIndicators[smaKeys[0] as keyof typeof latestIndicators],
-    );
-    updateLine(
-      refs.sma50,
-      latestIndicators[smaKeys[1] as keyof typeof latestIndicators],
-    );
+    updateLine(refs.ema20, latestIndicators[emaKeys[0] as keyof typeof latestIndicators]);
+    updateLine(refs.ema50, latestIndicators[emaKeys[1] as keyof typeof latestIndicators]);
+    updateLine(refs.sma20, latestIndicators[smaKeys[0] as keyof typeof latestIndicators]);
+    updateLine(refs.sma50, latestIndicators[smaKeys[1] as keyof typeof latestIndicators]);
     updateLine(refs.bollingerUpper, latestIndicators.bollinger_upper);
     updateLine(refs.bollingerMiddle, latestIndicators.bollinger_middle);
     updateLine(refs.bollingerLower, latestIndicators.bollinger_lower);
@@ -1248,12 +1126,7 @@ export function TradingChart({ onLoadMore }: Props) {
     updateLine(refs.keltnerMiddle, latestIndicators.keltner_middle_line);
     updateLine(refs.keltnerLower, latestIndicators.keltner_lower_channel);
 
-    updateLine(
-      refs.rsi,
-      rsiKey
-        ? latestIndicators[rsiKey as keyof typeof latestIndicators]
-        : undefined,
-    );
+    updateLine(refs.rsi, rsiKey ? latestIndicators[rsiKey as keyof typeof latestIndicators] : undefined);
     updateLine(refs.macd, latestIndicators.macd);
     updateLine(refs.macdSignal, latestIndicators.macd_signal);
     updateLine(refs.stochasticK, latestIndicators.stochastic_k);
@@ -1265,9 +1138,7 @@ export function TradingChart({ onLoadMore }: Props) {
     updateLine(refs.natr, latestIndicators.natr);
 
     if (refs.macdHistogram && latestIndicators.macd_histogram) {
-      refs.macdHistogram.update(
-        histogramData(latestIndicators.macd_histogram),
-      );
+      refs.macdHistogram.update(histogramData(latestIndicators.macd_histogram));
     }
 
     if (followingRealtimeRef.current && followRealtime) {
@@ -1300,17 +1171,11 @@ export function TradingChart({ onLoadMore }: Props) {
     const refs = seriesRef.current;
     if (!refs) return;
 
-    const candleByTime = new Map(
-      candles.map((candle) => [candle.time, candle]),
-    );
+    const candleByTime = new Map(candles.map((candle) => [candle.time, candle]));
 
-    const filteredMarkers = markers.filter(
-      (marker) => isMarkerVisible(marker, visibility),
-    );
+    const filteredMarkers = markers.filter((marker) => isMarkerVisible(marker, visibility));
 
-    const visibleMarkers = stackMarkers(filteredMarkers).map(
-      (marker) => chartMarker(marker, candleByTime),
-    );
+    const visibleMarkers = stackMarkers(filteredMarkers).map((marker) => chartMarker(marker, candleByTime));
 
     refs.markerPlugin.setMarkers(visibleMarkers);
   }, [markers, visibility, candles]);
