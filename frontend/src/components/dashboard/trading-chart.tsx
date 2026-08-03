@@ -344,6 +344,42 @@ function isMarkerVisible(
   }
 }
 
+/**
+ * Applique les réglages de visibilité puis conserve les signaux d'une bougie
+ * uniquement lorsque suffisamment d'indicateurs distincts et visibles signalent.
+ * Les divergences restent indépendantes du seuil.
+ */
+export function filterMarkersBySimultaneousIndicators(
+  markers: MarketMarker[],
+  visibility: ReturnType<typeof useMarketStore.getState>["visibility"],
+  minimumSimultaneousMarkers: number,
+): MarketMarker[] {
+  const visibleMarkers = markers.filter((marker) =>
+    isMarkerVisible(marker, visibility),
+  );
+  const distinctIndicatorsByTime = new Map<number, Set<string>>();
+
+  for (const marker of visibleMarkers) {
+    if (marker.category === "divergence" || !marker.indicator) {
+      continue;
+    }
+
+    const indicators = distinctIndicatorsByTime.get(marker.time);
+    if (indicators) {
+      indicators.add(marker.indicator);
+    } else {
+      distinctIndicatorsByTime.set(marker.time, new Set([marker.indicator]));
+    }
+  }
+
+  return visibleMarkers.filter(
+    (marker) =>
+      marker.category === "divergence" ||
+      (distinctIndicatorsByTime.get(marker.time)?.size ?? 0) >=
+        minimumSimultaneousMarkers,
+  );
+}
+
 /** Retourne la clé RSI active dans un dictionnaire d'indicateurs. */
 function findRsiKey(indicators: IndicatorHistory | IndicatorUpdates) {
   return Object.keys(indicators).find((key) => /^rsi_\d+$/.test(key));
@@ -421,6 +457,9 @@ export function TradingChart({ onLoadMore }: Props) {
   const historyPrependCount = useMarketStore((state) => state.historyPrependCount);
   const updateVersion = useMarketStore((state) => state.updateVersion);
   const visibility = useMarketStore((state) => state.visibility);
+  const minimumSimultaneousMarkers = useMarketStore(
+    (state) => state.minimumSimultaneousMarkers,
+  );
   const chartCommand = useMarketStore((state) => state.chartCommand);
   const chartCommandVersion = useMarketStore((state) => state.chartCommandVersion);
   const mode = useMarketStore((state) => state.mode);
@@ -1304,8 +1343,10 @@ export function TradingChart({ onLoadMore }: Props) {
       candles.map((candle) => [candle.time, candle]),
     );
 
-    const filteredMarkers = markers.filter(
-      (marker) => isMarkerVisible(marker, visibility),
+    const filteredMarkers = filterMarkersBySimultaneousIndicators(
+      markers,
+      visibility,
+      minimumSimultaneousMarkers,
     );
 
     const visibleMarkers = stackMarkers(filteredMarkers).map(
@@ -1313,7 +1354,7 @@ export function TradingChart({ onLoadMore }: Props) {
     );
 
     refs.markerPlugin.setMarkers(visibleMarkers);
-  }, [markers, visibility, candles]);
+  }, [markers, visibility, minimumSimultaneousMarkers, candles]);
 
   /** Masque ou affiche les indicateurs superposés au panneau prix. */
   useEffect(() => {

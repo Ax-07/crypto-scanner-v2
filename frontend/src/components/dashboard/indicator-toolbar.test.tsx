@@ -7,6 +7,7 @@ import { useMarketStore } from "@/stores/market-store";
 describe("IndicatorToolbar", () => {
   beforeEach(() =>
     useMarketStore.setState({
+      minimumSimultaneousMarkers: 1,
       visibility: {
         ema: true,
         sma: false,
@@ -14,13 +15,11 @@ describe("IndicatorToolbar", () => {
         rsi: true,
         macd: true,
         stochastic: true,
-
         volatility: true,
         adx: false,
         supertrend: true,
         donchian: false,
         keltner: false,
-
         signals: true,
         divergences: true,
       },
@@ -36,5 +35,19 @@ describe("IndicatorToolbar", () => {
     fireEvent.click(sma);
     expect(useMarketStore.getState().visibility.sma).toBe(true);
     expect(screen.getByRole("switch", { name: "SMA 20/50" })).toBeChecked();
+  });
+
+  it("permet de choisir le nombre minimum de signaux simultanés", () => {
+    render(<IndicatorToolbar />);
+    expect(screen.getByRole("button", { name: "Tous" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "3+" }));
+    expect(useMarketStore.getState().minimumSimultaneousMarkers).toBe(3);
+    expect(screen.getByRole("button", { name: "3+" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 });

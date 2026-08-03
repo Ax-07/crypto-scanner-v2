@@ -55,7 +55,20 @@ function response(symbol: string, times: number[]): CandlePageResponse {
 }
 
 describe("market store history generations", () => {
-  beforeEach(() => useMarketStore.getState().resetMarket("BTC/USDC", "1h"))
+  beforeEach(() => {
+    useMarketStore.setState({ minimumSimultaneousMarkers: 1 })
+    useMarketStore.getState().resetMarket("BTC/USDC", "1h")
+  })
+
+  it("initialise et borne le seuil de marqueurs simultanés", () => {
+    expect(useMarketStore.getState().minimumSimultaneousMarkers).toBe(1)
+    useMarketStore.getState().setMinimumSimultaneousMarkers(3)
+    expect(useMarketStore.getState().minimumSimultaneousMarkers).toBe(3)
+    useMarketStore.getState().setMinimumSimultaneousMarkers(0)
+    expect(useMarketStore.getState().minimumSimultaneousMarkers).toBe(1)
+    useMarketStore.getState().setMinimumSimultaneousMarkers(12)
+    expect(useMarketStore.getState().minimumSimultaneousMarkers).toBe(5)
+  })
 
   it("ignore une réponse tardive de l'ancienne sélection", () => {
     const oldGeneration = useMarketStore.getState().historyRequestGeneration
