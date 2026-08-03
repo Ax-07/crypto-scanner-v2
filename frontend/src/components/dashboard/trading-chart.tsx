@@ -29,7 +29,10 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 
-import { useMarketStore } from "@/stores/market-store";
+import {
+  useMarketStore,
+  type MinimumSimultaneousMarkers,
+} from "@/stores/market-store";
 import type { Candle, IndicatorHistory, IndicatorPoint, IndicatorUpdates, MarketMarker } from "@/types/market";
 
 type CandleApi = ISeriesApi<"Candlestick">;
@@ -322,6 +325,54 @@ function isMarkerVisible(
   }
 }
 
+/**
+ * Applique le seuil de simultanéité aux signaux déjà visibles.
+ *
+ * Les divergences restent indépendantes :
+ * - elles ne participent pas au compteur ;
+ * - elles ne sont jamais supprimées par ce seuil.
+ *
+ * Un indicateur n'est compté qu'une seule fois par bougie, même s'il produit
+ * plusieurs marqueurs. Un marqueur sans `indicator` n'augmente pas le compteur.
+ */
+export function filterMarkersByMinimumSimultaneity(
+  markers: MarketMarker[],
+  minimum: MinimumSimultaneousMarkers,
+): MarketMarker[] {
+  const indicatorsByTime = new Map<
+    number,
+    Set<NonNullable<MarketMarker["indicator"]>>
+  >();
+
+  for (const marker of markers) {
+    if (marker.category === "divergence" || !marker.indicator) {
+      continue;
+    }
+
+    const indicators = indicatorsByTime.get(marker.time);
+
+    if (indicators) {
+      indicators.add(marker.indicator);
+    } else {
+      indicatorsByTime.set(
+        marker.time,
+        new Set([marker.indicator]),
+      );
+    }
+  }
+
+  return markers.filter((marker) => {
+    if (marker.category === "divergence") {
+      return true;
+    }
+
+    const distinctIndicatorCount =
+      indicatorsByTime.get(marker.time)?.size ?? 0;
+
+    return distinctIndicatorCount >= minimum;
+  });
+}
+
 /** Retourne la clé RSI active dans un dictionnaire d'indicateurs. */
 function findRsiKey(indicators: IndicatorHistory | IndicatorUpdates) {
   return Object.keys(indicators).find((key) => /^rsi_\d+$/.test(key));
@@ -382,6 +433,9 @@ export function TradingChart({ onLoadMore }: Props) {
   const historyPrependCount = useMarketStore((state) => state.historyPrependCount);
   const updateVersion = useMarketStore((state) => state.updateVersion);
   const visibility = useMarketStore((state) => state.visibility);
+  const minimumSimultaneousMarkers = useMarketStore(
+    (state) => state.minimumSimultaneousMarkers,
+  );
   const chartCommand = useMarketStore((state) => state.chartCommand);
   const chartCommandVersion = useMarketStore((state) => state.chartCommandVersion);
   const mode = useMarketStore((state) => state.mode);
@@ -1166,19 +1220,46 @@ export function TradingChart({ onLoadMore }: Props) {
     }
   }, [chartCommand, chartCommandVersion]);
 
-  /** Filtre et empile les marqueurs selon les réglages d'affichage. */
+  /** Filtre puis empile les marqueurs selon les réglages d'affichage. */
   useEffect(() => {
     const refs = seriesRef.current;
     if (!refs) return;
 
-    const candleByTime = new Map(candles.map((candle) => [candle.time, candle]));
+    const candleByTime = new Map(
+      candles.map((candle) => [candle.time, candle]),
+    );
 
-    const filteredMarkers = markers.filter((marker) => isMarkerVisible(marker, visibility));
+    /*
+     * Ordre du traitement :
+     * 1. visibilité globale des signaux et divergences ;
+     * 2. visibilité de l'indicateur concerné ;
+     * 3. conservation des marqueurs actuellement visibles ;
+     * 4. regroupement des signaux visibles par bougie ;
+     * 5. comptage des indicateurs distincts ;
+     * 6. application du seuil de simultanéité aux signaux uniquement ;
+     * 7. empilement des marqueurs restants ;
+     * 8. conversion vers Lightweight Charts.
+     */
+    const individuallyVisibleMarkers = markers.filter((marker) =>
+      isMarkerVisible(marker, visibility),
+    );
 
-    const visibleMarkers = stackMarkers(filteredMarkers).map((marker) => chartMarker(marker, candleByTime));
+    const filteredMarkers = filterMarkersByMinimumSimultaneity(
+      individuallyVisibleMarkers,
+      minimumSimultaneousMarkers,
+    );
+
+    const visibleMarkers = stackMarkers(filteredMarkers).map((marker) =>
+      chartMarker(marker, candleByTime),
+    );
 
     refs.markerPlugin.setMarkers(visibleMarkers);
-  }, [markers, visibility, candles]);
+  }, [
+    markers,
+    visibility,
+    minimumSimultaneousMarkers,
+    candles,
+  ]);
 
   /** Masque ou affiche les indicateurs superposés au panneau prix. */
   useEffect(() => {

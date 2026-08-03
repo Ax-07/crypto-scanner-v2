@@ -26,6 +26,8 @@ import type {
 
 type HistoryActivity = "initial" | "before" | "after" | "jump"
 
+export type MinimumSimultaneousMarkers = 1 | 2 | 3 | 4 | 5
+
 interface MarketStore {
   memoryLimit: number
   selectionKey: string
@@ -61,6 +63,7 @@ interface MarketStore {
   chartCommand: ChartCommand | null
   chartCommandVersion: number
   visibility: IndicatorVisibility
+  minimumSimultaneousMarkers: MinimumSimultaneousMarkers
   resetMarket: (symbol: string, timeframe: string) => number
   setConnection: (status: ConnectionStatus, error?: string | null) => void
   setHistoryLoading: (generation: number, loading: boolean) => void
@@ -84,6 +87,9 @@ interface MarketStore {
   setFollowRealtime: (follow: boolean) => void
   issueChartCommand: (command: ChartCommand) => void
   toggleVisibility: (key: keyof IndicatorVisibility) => void
+  setMinimumSimultaneousMarkers: (
+    minimum: MinimumSimultaneousMarkers,
+  ) => void
   resetStream: () => void
 }
 
@@ -198,7 +204,7 @@ export const useMarketStore = create<MarketStore>()((set) => ({
   chartCommand: null,
   chartCommandVersion: 0,
   visibility: defaultVisibility,
-
+  minimumSimultaneousMarkers: 1,
   resetMarket: (symbol, timeframe) => {
     let generation = 0
     set((state) => {
@@ -434,6 +440,8 @@ export const useMarketStore = create<MarketStore>()((set) => ({
     set((state) => ({
       visibility: { ...state.visibility, [key]: !state.visibility[key] },
     })),
+  setMinimumSimultaneousMarkers: (minimumSimultaneousMarkers) =>
+    set({ minimumSimultaneousMarkers }),
   resetStream: () => {
     const state = useMarketStore.getState()
     const [symbol = "", timeframe = ""] = state.selectionKey.split("|")
