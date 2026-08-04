@@ -1,4 +1,4 @@
-"""Export déterministe et atomique des datasets ML au format JSONL."""
+﻿"""Export déterministe et atomique des datasets ML au format JSONL."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
-from app.models.ml_dataset import MLDatasetRow
-from app.models.ml_dataset_export import (
+from app.ml.models.ml_dataset import MLDatasetRow
+from app.ml.models.ml_dataset_export import (
     MLDatasetExportManifest,
     MLDatasetExportStats,
 )
-from app.services.ml_dataset_builder import MLDatasetBuildResult
+from app.ml.services.ml_dataset_builder import MLDatasetBuildResult
 
 
 @dataclass(frozen=True, slots=True)

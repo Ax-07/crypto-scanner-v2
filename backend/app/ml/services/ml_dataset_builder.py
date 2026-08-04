@@ -1,4 +1,4 @@
-"""Orchestration de la construction d'un dataset ML causal."""
+﻿"""Orchestration de la construction d'un dataset ML causal."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from typing import Final, Literal
 
 from pydantic import ValidationError
 
-from app.domain.ml_dataset import (
+from app.ml.domain.ml_dataset import (
     MLDatasetBuildError,
     build_ml_dataset_row,
     extract_natr_percent,
 )
 from app.models.backtest import BacktestStatus
-from app.models.ml_dataset import MLDatasetRow
+from app.ml.models.ml_dataset import MLDatasetRow
 from app.repositories.backtest_repository import BacktestRepository
 
 ML_DATASET_HORIZON: Final[Literal[6]] = 6

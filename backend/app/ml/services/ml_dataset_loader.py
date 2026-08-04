@@ -1,4 +1,4 @@
-"""Chargement vérifié des exports de datasets ML."""
+﻿"""Chargement vérifié des exports de datasets ML."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.models.ml_dataset import MLDatasetRow
-from app.models.ml_dataset_export import MLDatasetExportManifest
+from app.ml.models.ml_dataset import MLDatasetRow
+from app.ml.models.ml_dataset_export import MLDatasetExportManifest
 
 
 class MLDatasetLoadError(ValueError):

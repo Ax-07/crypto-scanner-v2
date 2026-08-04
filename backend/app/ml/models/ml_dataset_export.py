@@ -1,4 +1,4 @@
-"""Contrats versionnés de l'export reproductible d'un dataset ML."""
+﻿"""Contrats versionnés de l'export reproductible d'un dataset ML."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.models.ml_dataset import (
+from app.ml.models.ml_dataset import (
     ML_DATASET_SCHEMA_VERSION,
     ML_FEATURE_SCHEMA_VERSION,
     ML_LABEL_SCHEMA_VERSION,

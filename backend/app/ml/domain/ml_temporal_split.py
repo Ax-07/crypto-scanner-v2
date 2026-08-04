@@ -1,4 +1,4 @@
-"""Découpage chronologique purgé des datasets ML."""
+﻿"""Découpage chronologique purgé des datasets ML."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 from datetime import datetime
 
-from app.models.ml_dataset import MLDatasetRow
+from app.ml.models.ml_dataset import MLDatasetRow
 
 
 class MLTemporalSplitError(ValueError):

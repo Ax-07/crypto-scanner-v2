@@ -1,4 +1,4 @@
-"""Construction causale des lignes du dataset de machine learning."""
+﻿"""Construction causale des lignes du dataset de machine learning."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from collections import Counter
 from typing import Final, Literal
 
 from app.models.backtest import ForwardOutcome, SignalObservation
-from app.models.ml_dataset import (
+from app.ml.models.ml_dataset import (
     MLDatasetRow,
     MLFeatureValue,
     MarketDirectionLabel,

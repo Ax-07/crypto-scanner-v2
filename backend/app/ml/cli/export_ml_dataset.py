@@ -1,4 +1,4 @@
-"""CLI d'export reproductible d'un dataset ML causal."""
+﻿"""CLI d'export reproductible d'un dataset ML causal."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from app.core.config import BACKEND_ROOT, get_app_settings
 from app.core.logging import configure_logging
 from app.database.connection import Database
 from app.repositories.backtest_repository import BacktestRepository
-from app.services.ml_dataset_builder import MLDatasetBuilder
-from app.services.ml_dataset_exporter import MLDatasetExporter
+from app.ml.services.ml_dataset_builder import MLDatasetBuilder
+from app.ml.services.ml_dataset_exporter import MLDatasetExporter
 
 
 @dataclass(frozen=True, slots=True)
