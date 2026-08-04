@@ -17,10 +17,7 @@ import { backtestFormSchema, parseHorizons, type BacktestFormValues } from "@/fe
 import { BacktestObservationsTable } from "@/features/backtests/components/backtest-observations-table";
 import { PortfolioResults } from "@/features/backtests/components/portfolio-results";
 import { PortfolioSimulationFields } from "@/features/backtests/components/portfolio-simulation-fields";
-import {
-  buildPortfolioSimulationPayload,
-  DEFAULT_PORTFOLIO_FORM_VALUES,
-} from "@/features/backtests/portfolio-utils";
+import { buildPortfolioSimulationPayload, DEFAULT_PORTFOLIO_FORM_VALUES } from "@/features/backtests/portfolio-utils";
 import { useBacktestStore } from "@/stores/backtest-store";
 import type { BacktestConfig, BacktestJob, BacktestSummary } from "@/types/backtest";
 import type { ScanConfig } from "@/types/scanner";
@@ -59,13 +56,13 @@ export function BacktestsPage() {
   const cancel = useBacktestStore((state) => state.cancel);
   const load = useBacktestStore((state) => state.load);
   const resume = useBacktestStore((state) => state.resume);
-  
+
   const form = useForm<BacktestFormValues>({
     resolver: zodResolver(backtestFormSchema) as Resolver<BacktestFormValues>,
     defaultValues: defaults,
     mode: "onChange",
   });
-  
+
   useEffect(() => {
     const controller = new AbortController();
     scannerApi
@@ -78,10 +75,10 @@ export function BacktestsPage() {
       .catch(() => undefined);
     return () => controller.abort();
   }, []);
-  
+
   const submit = form.handleSubmit(async (values) => {
     if (!profile) return;
-  
+
     const signalConfig: ScanConfig = {
       ...profile,
       timeframe: values.timeframe,
@@ -91,8 +88,13 @@ export function BacktestsPage() {
       min_trend_score: values.min_trend_score,
       use_confluence_score: values.use_confluence_score,
       min_confluence_score: values.min_confluence_score,
+      atr: {
+        version: 1,
+        enabled: true,
+        period: 14,
+      },
     };
-  
+
     const portfolioSimulation = buildPortfolioSimulationPayload(values);
     const config: BacktestConfig = {
       symbols: values.symbols
@@ -118,7 +120,8 @@ export function BacktestsPage() {
       <div>
         <h1 className="text-2xl font-bold">Backtests</h1>
         <p className="text-muted-foreground">
-          Exécutez un backtest sur des symboles et horizons choisis, avec les paramètres du scanner. Les résultats sont persistants et reproductibles.
+          Exécutez un backtest sur des symboles et horizons choisis, avec les paramètres du scanner. Les résultats sont
+          persistants et reproductibles.
         </p>
       </div>
       <form onSubmit={submit} noValidate>
@@ -374,9 +377,7 @@ function Results({ job }: { job: BacktestJob }) {
           <Card>
             <CardHeader>
               <CardTitle>Exports reproductibles</CardTitle>
-              <CardDescription>
-                L’export des observations inclut les signaux structurés au format JSON.
-              </CardDescription>
+              <CardDescription>L’export des observations inclut les signaux structurés au format JSON.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
               <Button asChild variant="outline">
