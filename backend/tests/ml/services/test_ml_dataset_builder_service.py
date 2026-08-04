@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import cast
@@ -12,9 +12,9 @@ from app.models.backtest import (
     ForwardOutcome,
     SignalObservation,
 )
-from app.models.ml_dataset import MarketDirectionLabel
+from app.ml.models.ml_dataset import MarketDirectionLabel
 from app.repositories.backtest_repository import BacktestRepository
-from app.services.ml_dataset_builder import MLDatasetBuilder
+from app.ml.services.ml_dataset_builder import MLDatasetBuilder
 
 JOB_ID = "ml-service-test"
 DECISION_TIME = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)

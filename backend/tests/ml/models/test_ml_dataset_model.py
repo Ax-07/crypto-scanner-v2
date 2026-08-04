@@ -1,11 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
 
-from app.models.ml_dataset import (
+from app.ml.models.ml_dataset import (
     MLDatasetRow,
     MarketDirectionLabel,
 )

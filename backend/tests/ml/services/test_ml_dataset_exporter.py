@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import hashlib
 import json
@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from app.models.ml_dataset import (
+from app.ml.models.ml_dataset import (
     MLDatasetRow,
     MarketDirectionLabel,
 )
-from app.services.ml_dataset_builder import (
+from app.ml.services.ml_dataset_builder import (
     MLDatasetBuildReport,
     MLDatasetBuildResult,
 )
-from app.services.ml_dataset_exporter import MLDatasetExporter
+from app.ml.services.ml_dataset_exporter import MLDatasetExporter
 
 BASE_TIME = datetime(
     2026,

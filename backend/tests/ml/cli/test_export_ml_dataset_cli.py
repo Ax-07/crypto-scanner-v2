@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import io
 import json
@@ -7,22 +7,22 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.cli.export_ml_dataset import (
+from app.ml.cli.export_ml_dataset import (
     build_parser,
     main,
     options_from_args,
     run_cli,
 )
 from app.core.config import BACKEND_ROOT
-from app.models.ml_dataset_export import (
+from app.ml.models.ml_dataset_export import (
     MLDatasetExportManifest,
     MLDatasetExportStats,
 )
-from app.services.ml_dataset_builder import (
+from app.ml.services.ml_dataset_builder import (
     MLDatasetBuildReport,
     MLDatasetBuildResult,
 )
-from app.services.ml_dataset_exporter import (
+from app.ml.services.ml_dataset_exporter import (
     MLDatasetExportResult,
 )
 
@@ -197,7 +197,7 @@ class ExportMLDatasetCliOptionTests(unittest.TestCase):
 
         with (
             patch(
-                "app.cli.export_ml_dataset.run_cli",
+                "app.ml.cli.export_ml_dataset.run_cli",
                 new=failing_run,
             ),
             patch(
@@ -218,7 +218,7 @@ class ExportMLDatasetCliOptionTests(unittest.TestCase):
 
         with (
             patch(
-                "app.cli.export_ml_dataset.run_cli",
+                "app.ml.cli.export_ml_dataset.run_cli",
                 new=interrupted_run,
             ),
             patch(
@@ -277,21 +277,21 @@ class ExportMLDatasetCliAsyncTests(unittest.IsolatedAsyncioTestCase):
             exporter.export.return_value = export_result
 
             with (
-                patch("app.cli.export_ml_dataset.configure_logging"),
+                patch("app.ml.cli.export_ml_dataset.configure_logging"),
                 patch(
-                    "app.cli.export_ml_dataset.Database",
+                    "app.ml.cli.export_ml_dataset.Database",
                     return_value=database,
                 ) as database_class,
                 patch(
-                    "app.cli.export_ml_dataset.BacktestRepository",
+                    "app.ml.cli.export_ml_dataset.BacktestRepository",
                     return_value=repository,
                 ) as repository_class,
                 patch(
-                    "app.cli.export_ml_dataset.MLDatasetBuilder",
+                    "app.ml.cli.export_ml_dataset.MLDatasetBuilder",
                     return_value=builder,
                 ) as builder_class,
                 patch(
-                    "app.cli.export_ml_dataset.MLDatasetExporter",
+                    "app.ml.cli.export_ml_dataset.MLDatasetExporter",
                     return_value=exporter,
                 ) as exporter_class,
                 patch(
@@ -381,17 +381,17 @@ class ExportMLDatasetCliAsyncTests(unittest.IsolatedAsyncioTestCase):
             builder.build = AsyncMock(side_effect=RuntimeError("builder failure"))
 
             with (
-                patch("app.cli.export_ml_dataset.configure_logging"),
+                patch("app.ml.cli.export_ml_dataset.configure_logging"),
                 patch(
-                    "app.cli.export_ml_dataset.Database",
+                    "app.ml.cli.export_ml_dataset.Database",
                     return_value=database,
                 ),
                 patch(
-                    "app.cli.export_ml_dataset.BacktestRepository",
+                    "app.ml.cli.export_ml_dataset.BacktestRepository",
                     return_value=MagicMock(),
                 ),
                 patch(
-                    "app.cli.export_ml_dataset.MLDatasetBuilder",
+                    "app.ml.cli.export_ml_dataset.MLDatasetBuilder",
                     return_value=builder,
                 ),
             ):

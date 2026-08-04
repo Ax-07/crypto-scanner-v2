@@ -1,10 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.domain.ml_dataset import (
+from app.ml.domain.ml_dataset import (
     MLDatasetBuildError,
     build_ml_dataset_row,
     classify_market_direction,
@@ -12,7 +12,7 @@ from app.domain.ml_dataset import (
     extract_natr_percent,
 )
 from app.models.backtest import ForwardOutcome, SignalObservation
-from app.models.ml_dataset import MarketDirectionLabel
+from app.ml.models.ml_dataset import MarketDirectionLabel
 
 DECISION_TIME = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
 
