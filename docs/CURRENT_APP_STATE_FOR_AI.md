@@ -7,12 +7,14 @@ locale. Le rapport détaillé et les preuves sont dans
 ## Métadonnées de reprise
 
 - Branche : `main`.
-- Commit : `5d137a57462a53ee984052e9ae003352498279fa`.
+- Commit audité initialement : `5d137a57462a53ee984052e9ae003352498279fa`.
+- HEAD observé après publication externe de l'audit pendant la Phase 0 :
+  `763ffa8b1c4cfc66433472a23ff65896aec7c5af`.
 - Amont : `origin/main`, avance 0, retard 0 au début de l'audit.
 - État initial : aucun fichier suivi modifié et aucun fichier non suivi.
-- Attention : `frontend/src/lib/utils.ts` est un fichier source requis mais **ignoré et non
-  suivi** à cause du motif `.gitignore` `lib/`. Au moins 27 composants l'importent ; un clone
-  frais ne peut pas compiler tant que ce défaut n'est pas corrigé.
+- `frontend/src/lib/utils.ts` est requis par 27 composants. La Phase 0 a ajouté des négations
+  ciblées au motif `.gitignore` `lib/` : le fichier est désormais versionnable et une copie
+  frontend propre a été installée, compilée et testée avec succès.
 - Git nécessite ici `-c safe.directory=...` à cause du propriétaire Windows ; ne pas modifier la
   configuration globale sans demande.
 - Modifications de l'audit : uniquement ce fichier et
@@ -319,30 +321,31 @@ python -m app.ml.cli.export_ml_benchmark <manifest> ...
 Pour v2, la même CLI d'export accepte `causal-features-v2`, mais seulement après création manuelle
 d'un job source canonique `ml-dataset-v2`.
 
-## Résultats de validation du 5 août 2026
+## Résultats de validation du 5 août 2026 après Phase 0
 
-- Backend : 1073 passés, 1 échec, 1 ignoré, 27 subtests passés, 2 warnings.
-- Frontend : 310 passés, 1 échec.
-- Total : 1383 passés, 2 échecs, 1 ignoré.
+- Backend : 1074 passés, 0 échec, 1 ignoré, 27 subtests passés, 2 warnings.
+- Frontend : 311 passés, 0 échec dans 48 fichiers.
+- Total : 1385 passés, 0 échec, 1 ignoré, plus 27 subtests.
 - compileall : succès.
 - mypy : succès, 114 fichiers.
-- Flake8 : échec, un `W292`.
-- Black : non conforme et expiration ; au moins trois fichiers applicatifs à reformater.
+- Flake8 : succès.
+- Black : succès sur 195 fichiers avec `--no-cache --workers 1`; le cache local faisait expirer
+  les invocations précédentes.
 - TypeScript : succès.
-- ESLint : succès.
+- ESLint : succès, zéro warning.
 - Build Vite : succès, 2066 modules.
-- Installation pnpm propre : non vérifiée, car pnpm demandait de recréer `node_modules`.
+- Installation pnpm propre : succès avec lockfile figé, 335 paquets, sans réutiliser le
+  `node_modules` principal ; typecheck, build et 311 tests réussis dans la copie temporaire.
 
 ## Problèmes connus
 
-1. Fixture loader v2 backend encore `inline`, incompatible avec le garde-fou `ml-dataset-v2`.
-2. Test frontend attend relative volume/CMF/OBV, absents de l'ordre d'affichage réel et du domaine.
-3. Style Python rouge (Black/Flake8).
-4. Pas d'orchestration source ML v2 ni d'artefact v2 réel.
-5. Fingerprint OHLCV insuffisamment fort pour une reproduction indépendante.
-6. Deux warnings pandas de perte de nanosecondes dans `market_data.py`.
-7. Contrats Python/TS/Zod partiellement dupliqués ; marché sans modèle Pydantic public.
-8. `frontend/src/lib/utils.ts` requis est ignoré/non suivi ; le build vert dépend de l'état local.
+1. Pas d'orchestration source ML v2 ni d'artefact v2 réel.
+2. Fingerprint OHLCV insuffisamment fort pour une reproduction indépendante.
+3. Deux warnings pandas de perte de nanosecondes dans `market_data.py`.
+4. Contrats Python/TS/Zod partiellement dupliqués ; marché sans modèle Pydantic public.
+
+Corrections Phase 0 : fixture v2 canonique, test frontend aligné sur les 11 indicateurs
+implémentés, style Python vert et helper Shadcn versionnable. Aucun contrat métier n'a été relâché.
 
 ## Dette et risques
 
@@ -376,8 +379,7 @@ builder, service, contrat frontend et flux réel.
 
 ## Comment poursuivre le pipeline ML v2
 
-1. Corriger `.gitignore`, suivre `frontend/src/lib/utils.ts`, valider un clone propre, puis
-   rétablir les deux suites vertes et le style sans ajouter les indicateurs volume par accident.
+1. Phase 0 terminée : conserver la baseline verte et le helper `utils.ts` versionné.
 2. Créer une CLI/service source v2 utilisant obligatoirement
    `build_ml_dataset_profile_v2`, `signal_profile_id=ml-dataset-v2`, horizon 6,
    `snapshot_status=confirmed`, `replay_mode=every_bar` et gap strict.

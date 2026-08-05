@@ -14,9 +14,11 @@ le profil canonique `ml-dataset-v2`, le schéma `causal-features-v2`, les compos
 les contrôles de provenance existent. Il n'existe toutefois ni commande dédiée pour créer le
 backtest source v2, ni job source v2 dans la base locale, ni artefact dataset/benchmark v2.
 
-L'état n'est pas entièrement vert : une régression backend et une régression frontend font
-échouer les suites complètes. Flake8 et Black signalent aussi des défauts de style. Aucun code
-métier n'a été modifié pendant cet audit.
+Lors de l'audit initial, une régression backend et une régression frontend faisaient échouer les
+suites complètes et Flake8/Black signalaient des défauts de style. La Phase 0 datée du 5 août
+2026, documentée ci-dessous, a corrigé ces défauts sans modifier de contrat ou comportement
+métier. La baseline courante est verte et sa reproductibilité frontend a été validée dans une
+copie temporaire propre.
 
 Conventions du rapport : **Fait** signifie vérifié dans le code, la base, un artefact ou par une
 commande ; **Déduction** signifie conséquence raisonnable de plusieurs faits ; **Hypothèse**
@@ -109,6 +111,58 @@ installée ou mise à jour ; les validations ont utilisé `node_modules` déjà 
 
 Total des suites exécutées : **1 383 tests passés, 2 échoués, 1 ignoré**, plus 27 subtests backend
 passés.
+
+### 4.4 Phase 0 — restauration de la baseline, 5 août 2026
+
+Les résultats des sections 4.2 et 4.3 décrivent l'audit initial. Après correction :
+
+| Contrôle | Résultat final |
+|---|---|
+| Pytest complet | **1074 passed, 1 skipped**, 27 subtests, 2 warnings pandas |
+| Test ML v2 ciblé | 1 passed |
+| Tests loader/exporter/builder/profil ML | 63 passed |
+| compileall `app tests` | succès |
+| Black complet | succès, 195 fichiers inchangés, 10,2 s avec `--no-cache --workers 1` |
+| Flake8 | succès |
+| mypy | succès, 114 fichiers |
+| Vitest ciblé | 15 passed |
+| Vitest complet | **311 passed** dans 48 fichiers |
+| TypeScript | succès |
+| ESLint | succès, zéro warning |
+| Build Vite | succès, 2066 modules |
+
+Causes et corrections :
+
+- `.gitignore` utilisait le motif générique `lib/`, qui ignorait par accident
+  `frontend/src/lib/utils.ts`. Deux négations ciblées rendent ce helper Shadcn versionnable sans
+  réintroduire dépendances, builds, caches ou données locales. Les 27 imports `@/lib/utils`
+  utilisent le fichier réel existant.
+- La fixture loader v2 gardait les valeurs historiques `profile_id="inline"` et
+  `sha256:profile`. Le seul cas d'acceptation v2 fournit désormais `ml-dataset-v2` et un SHA-256
+  valide, puis vérifie profil et fingerprint dans le manifeste et les lignes chargées. Les tests
+  existants continuent de refuser `inline`, fingerprints invalides ou mixtes ; v1 est inchangé.
+- Le test frontend anticipait Relative Volume, CMF et OBV alors que l'implémentation canonique
+  s'arrête à Keltner. Les six attentes prématurées ont été retirées ; le test continue de figer
+  exactement l'ordre et les labels des 11 indicateurs réellement supportés.
+- Black a appliqué uniquement des changements de présentation aux cinq fichiers signalés et a
+  ajouté le saut de ligne final manquant. Le blocage provenait du cache Black local : le contrôle
+  sans cache et avec un worker couvre les 195 fichiers en 10,2 secondes.
+
+Preuve propre : une archive `git archive HEAD` a été extraite dans `%TEMP%`, puis les changements
+Phase 0 versionnables ont été superposés explicitement. `frontend/src/lib/utils.ts` y était présent
+(SHA-256 `7C8C3DFC0CDD370D44932828EB067EF771C8FE7996693221D5D4B90AF6D54F2D`). Une installation
+`pnpm install --frozen-lockfile` distincte a installé 335 paquets sans modifier le lockfile, puis
+typecheck, build et 311 tests ont réussi. La copie temporaire a été supprimée. La première tentative
+`--offline` avait échoué uniquement parce que le tarball `@hookform/resolvers@5.4.0` manquait du
+store ; la relance autorisée a finalement réutilisé les 335 paquets et n'en a téléchargé aucun.
+
+Fichiers Phase 0 : `.gitignore`, `frontend/src/lib/utils.ts`, le test formatter frontend, la
+fixture loader ML, les cinq fichiers formatés, et les deux documents d'état. Aucun lockfile,
+algorithme, modèle de production, migration ou contrat public n'a changé.
+
+Pendant la mission, un commit externe a fait passer `HEAD` de `5d137a5` à `763ffa8` (`Add current
+project audit for scanner_binance_v2`) et a publié les documents d'audit précédemment indexés.
+L'agent n'a exécuté ni commit ni push ; les changements Phase 0 restent non commités.
 
 ## 5. Architecture actuelle
 
@@ -339,27 +393,24 @@ garde-fous de provenance v2 et distinction exacte `profile_fingerprint/config_fi
 Fonctionnalité documentée comme prochaine : politique/profil dataset v2 ; le profil et le schéma
 sont désormais présents, mais pas le dataset ou l'expérience.
 
-## 15. Problèmes confirmés
+## 15. Problèmes confirmés et statut après Phase 0
 
-1. Suite backend rouge à cause d'une fixture loader v2 incompatible avec les nouveaux garde-fous.
-2. Suite frontend rouge : ordre attendu inclut trois indicateurs volume non implémentés.
-3. Flake8 rouge (`W292`) et Black non conforme sur au moins trois fichiers applicatifs.
+1. Fixture loader v2 incompatible avec les nouveaux garde-fous : **corrigée**.
+2. Test frontend anticipant trois indicateurs volume non implémentés : **corrigé**.
+3. Flake8 `W292` et Black non conforme : **corrigés ; contrôles verts**.
 4. Aucun chemin de création canonique du backtest source ML v2.
 5. Aucun job/dataset/benchmark v2 réel dans la copie auditée.
 6. `dataset_version` n'est pas un fingerprint du contenu OHLCV.
 7. Le frontend ne transporte pas `signal_profile_id` et ne peut créer le source v2.
 8. Le fichier d'état IA antérieur mélangeait historique et état courant et était nettement
    obsolète.
-9. **Reproductibilité frontend cassée dans un clone frais** : `frontend/src/lib/utils.ts` est
-   ignoré par le motif générique `lib/` de `.gitignore`, alors qu'au moins 27 composants suivis
-   importent `@/lib/utils`. Le build local réussit uniquement parce que ce fichier ignoré existe
-   sur la machine auditée.
+9. Reproductibilité frontend cassée par `lib/` : **corrigée et vérifiée dans une copie propre**.
 
 ## 16. Dette technique et risques de régression
 
 - Contrats publics partiellement dupliqués Python/TypeScript/Zod sans génération automatique.
-- Un fichier source frontend requis (`src/lib/utils.ts`) n'est pas suivi à cause d'une règle
-  `.gitignore` trop large.
+- Le helper frontend requis est désormais versionnable ; veiller à conserver les négations
+  ciblées de `.gitignore`.
 - Payload marché dictionnaire sans modèle Pydantic dédié.
 - Defaults des dépendances Python bornés par minima, sauf deux paquets ML figés.
 - Backtests/profils d'expériences sont deux mécanismes voisins non résolus automatiquement.
@@ -382,9 +433,8 @@ reste non implémentée malgré une attente prématurée dans un test frontend.
 
 ## 18. Priorités recommandées
 
-Priorité 0 : restaurer la reproductibilité du clone et une baseline verte sans changer les
-contrats métier. Priorité 1 : rendre la
-création du source ML v2 explicite, déterministe et testée. Priorité 2 : renforcer les métadonnées
+Priorité 0 : **terminée**. Priorité 1 : rendre la création du source ML v2 explicite,
+déterministe et testée. Priorité 2 : renforcer les métadonnées
 et l'identité OHLCV. Priorité 3 : produire/valider un vrai dataset v2 avant tout entraînement.
 Priorité 4 : définir à l'avance le protocole expérimental v2 et une nouvelle période terminale.
 
@@ -400,14 +450,15 @@ fraîche ; leurs hashes ont été vérifiés, pas leur reconstruction intégrale
 
 ## 20. Plan de reprise recommandé
 
-### Phase 0 — Restaurer la baseline
+### Phase 0 — Restaurer la baseline — terminée le 5 août 2026
 
 Objectif : corriger la règle `lib/`/suivre `frontend/src/lib/utils.ts`, aligner les deux
 fixtures/tests en échec et appliquer le formatage minimal. Fichiers probables : `.gitignore`,
 `frontend/src/lib/utils.ts`, `tests/ml/services/test_ml_dataset_loader.py`, test/config frontend
 des indicateurs, les fichiers signalés par Black/Flake8. Dépendance : aucune. Tests : installation
 dans un clone propre, suites complètes et cinq
-outils qualité. Acceptation : 0 échec, 0 warning lint/Flake8, Black terminé avec code 0. Risque :
+outils qualité. Acceptation obtenue : 0 échec, 0 warning lint/Flake8, Black terminé avec code 0 et
+copie frontend propre validée. Risque résiduel :
 choisir à tort d'implémenter les indicateurs volume alors que la roadmap les laisse futurs. Pas de
 migration ; une clarification de contrat frontend peut être nécessaire.
 
