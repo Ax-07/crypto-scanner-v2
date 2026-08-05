@@ -8,7 +8,7 @@ from pathlib import Path
 import aiosqlite
 
 from app.database.connection import Database
-from app.database.schema import MIGRATION_1, MIGRATION_2, MIGRATION_3, SCHEMA_VERSION
+from app.database.schema import MIGRATION_1, MIGRATION_2, MIGRATION_3, MIGRATIONS, SCHEMA_VERSION
 from app.domain.candles import Candle, find_missing_ranges
 from app.repositories.candle_repository import CandleRepository
 
@@ -66,6 +66,7 @@ class DatabaseAndRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("candle_gaps", tables)
         self.assertIn("candle_history_bounds", tables)
         self.assertIn("schema_migrations", tables)
+        self.assertIn("ml_v2_source_claims", tables)
         self.assertIn("idx_candles_market_time", indexes)
         self.assertEqual(str(journal[0]).lower(), "wal")
         self.assertEqual(foreign_keys[0], 1)
@@ -75,6 +76,49 @@ class DatabaseAndRepositoryTests(unittest.IsolatedAsyncioTestCase):
                 await connection.execute("SELECT COUNT(*) FROM schema_migrations")
             ).fetchone()
         self.assertEqual(versions[0], SCHEMA_VERSION)
+
+    async def test_migration_9_preserves_an_existing_version_8_database(self) -> None:
+        legacy_path = Path(self.temporary.name) / "legacy-v8.sqlite3"
+        async with aiosqlite.connect(legacy_path) as connection:
+            await connection.execute("""
+                CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at INTEGER NOT NULL
+                )
+                """)
+            for version in range(1, 9):
+                await connection.executescript(MIGRATIONS[version])
+                await connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, 0)",
+                    (version,),
+                )
+            await connection.execute("""
+                INSERT INTO backtest_jobs (
+                    id, status, config_json, progress_json, warnings_json,
+                    created_at, updated_at
+                ) VALUES ('legacy-job', 'pending', '{}', '{}', '[]', 0, 0)
+                """)
+            await connection.commit()
+
+        legacy = Database(legacy_path)
+        await legacy.initialize()
+        async with legacy.connection() as connection:
+            version = await (
+                await connection.execute("SELECT MAX(version) FROM schema_migrations")
+            ).fetchone()
+            legacy_job = await (
+                await connection.execute(
+                    "SELECT id, status FROM backtest_jobs WHERE id='legacy-job'"
+                )
+            ).fetchone()
+            claims_table = await (await connection.execute("""
+                    SELECT name FROM sqlite_master
+                    WHERE type='table' AND name='ml_v2_source_claims'
+                    """)).fetchone()
+        self.assertEqual(version[0], 9)
+        self.assertEqual(tuple(legacy_job), ("legacy-job", "pending"))
+        self.assertEqual(claims_table[0], "ml_v2_source_claims")
+        await legacy.close()
 
     async def test_upsert_latest_range_filters_bounds_and_no_duplicate(self) -> None:
         self.assertEqual(await self.repository.upsert_many([]), 0)

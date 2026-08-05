@@ -18,6 +18,10 @@
 
 Ce document décrit l’infrastructure de machine learning v1, le contrat du dataset causal, la procédure d’évaluation temporelle et les résultats du premier benchmark.
 
+Le chemin de préparation du source `causal-features-v2` est documenté séparément dans
+[`ml-pipeline-v2.md`](ml-pipeline-v2.md). Il ne modifie ni les artefacts ni les règles v1 décrits
+ici.
+
 L’infrastructure est considérée comme fonctionnelle et reproductible. Le premier modèle évalué ne généralise toutefois pas suffisamment pour être utilisé dans l’application.
 
 Les résultats, métriques, nombres de caractéristiques, hashes et périodes présentés comme appartenant au benchmark v1 décrivent des artefacts historiques immuables.

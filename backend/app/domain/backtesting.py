@@ -50,6 +50,23 @@ from app.models.backtest import (
 )
 
 
+def canonical_signal_profile_payload(config: ScanConfig) -> dict[str, Any]:
+    """Sérialise le profil comme dans le contrat historique des observations."""
+    excluded_profile_fields = {
+        name for name in OPTIONAL_INDICATOR_EXTENSION_FIELDS if getattr(config, name, None) is None
+    }
+    if config.structured_signal_filters is None:
+        excluded_profile_fields.add("structured_signal_filters")
+    return config.model_dump(mode="json", exclude=excluded_profile_fields)
+
+
+def signal_profile_fingerprint(config: ScanConfig) -> str:
+    """Calcule l'identité technique canonique persistée sur les observations."""
+    profile_payload = canonical_signal_profile_payload(config)
+    serialized = json.dumps(profile_payload, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(serialized.encode()).hexdigest()
+
+
 def _latest(series: pd.Series, digits: int = 10) -> float | None:
     valid = series.dropna()
     return round(float(valid.iloc[-1]), digits) if not valid.empty else None
@@ -332,18 +349,8 @@ def evaluate_information_set(
         name: cast(float | None, details.get("factor"))
         for name, details in (confluence["details"] if confluence else {}).items()
     }
-    excluded_profile_fields = {
-        name for name in OPTIONAL_INDICATOR_EXTENSION_FIELDS if getattr(config, name, None) is None
-    }
-    if config.structured_signal_filters is None:
-        excluded_profile_fields.add("structured_signal_filters")
-    profile_payload = config.model_dump(mode="json", exclude=excluded_profile_fields)
-    profile_fingerprint = (
-        "sha256:"
-        + hashlib.sha256(
-            json.dumps(profile_payload, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
-    )
+    profile_payload = canonical_signal_profile_payload(config)
+    profile_fingerprint = signal_profile_fingerprint(config)
     divergence_bundle: dict[str, Any] = {
         "rsi_14": rsi_series,
         "macd": macd,

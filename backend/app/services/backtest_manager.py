@@ -45,6 +45,57 @@ class BacktestManager:
         self._tasks[job.id] = asyncio.create_task(self._run(job))
         return job
 
+    async def create_ml_v2_source_job(
+        self,
+        config: BacktestConfig,
+        source_identity: str,
+        *,
+        replace_job_id: str | None = None,
+    ) -> tuple[BacktestJob, bool]:
+        """Crée et démarre un source revendiqué, sans course inter-processus."""
+        job = BacktestJob(id=uuid4().hex, config=config)
+        selected_id, created = await self.repository.claim_ml_v2_source(
+            source_identity,
+            job,
+            algorithm_version=job.algorithm_version,
+            replace_job_id=replace_job_id,
+        )
+        if not created:
+            selected = await self.get_job(selected_id)
+            if selected is None:
+                raise RuntimeError("la revendication ML v2 référence un job introuvable")
+            return selected, False
+
+        self._jobs[job.id] = job
+        self._conditions[job.id] = asyncio.Condition()
+        self._versions[job.id] = 0
+        self._tasks[job.id] = asyncio.create_task(self._run(job))
+        return job, True
+
+    async def wait_until_terminal(
+        self,
+        job_id: str,
+        *,
+        poll_interval: float = 0.1,
+    ) -> BacktestJob:
+        """Attend un état terminal, y compris pour un job exécuté ailleurs."""
+        terminal = {
+            BacktestStatus.COMPLETED,
+            BacktestStatus.FAILED,
+            BacktestStatus.CANCELLED,
+            BacktestStatus.INTERRUPTED,
+        }
+        while True:
+            local_task = self._tasks.get(job_id)
+            if local_task is not None and not local_task.done():
+                await asyncio.shield(local_task)
+            job = await self.get_job(job_id)
+            if job is None:
+                raise ValueError(f"backtest introuvable : {job_id}")
+            if job.status in terminal:
+                return job
+            await asyncio.sleep(poll_interval)
+
     async def resume(self, job_id: str) -> BacktestJob | None:
         """Reprend explicitement un job depuis son dernier checkpoint durable."""
         job = await self.get_job(job_id)

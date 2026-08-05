@@ -1,6 +1,6 @@
 """Schéma SQLite versionné des données OHLCV."""
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 MIGRATION_1 = """
 CREATE TABLE IF NOT EXISTS candles (
@@ -423,6 +423,19 @@ CREATE INDEX IF NOT EXISTS idx_portfolio_equity_time
 ON backtest_portfolio_equity (job_id, timestamp, sequence);
 """
 
+MIGRATION_9 = """
+CREATE TABLE IF NOT EXISTS ml_v2_source_claims (
+    source_identity TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL UNIQUE
+        REFERENCES backtest_jobs(id) ON DELETE CASCADE,
+    algorithm_version TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ml_v2_source_claims_job
+ON ml_v2_source_claims (job_id);
+"""
+
 MIGRATIONS = {
     1: MIGRATION_1,
     2: MIGRATION_2,
@@ -432,4 +445,5 @@ MIGRATIONS = {
     6: MIGRATION_6,
     7: MIGRATION_7,
     8: MIGRATION_8,
+    9: MIGRATION_9,
 }

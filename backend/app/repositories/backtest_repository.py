@@ -72,6 +72,142 @@ class BacktestRepository:
             )
             await connection.commit()
 
+    async def claim_ml_v2_source(
+        self,
+        source_identity: str,
+        job: BacktestJob,
+        *,
+        algorithm_version: str,
+        replace_job_id: str | None = None,
+    ) -> tuple[str, bool]:
+        """Réserve atomiquement une identité ML v2 et persiste son nouveau job.
+
+        Le verrou ``BEGIN IMMEDIATE`` et la clé primaire sur l'identité rendent
+        l'opération sûre entre plusieurs processus. Un remplacement n'aboutit
+        que si la revendication pointe encore vers le job observé par le service.
+        """
+        now = int(datetime.now(timezone.utc).timestamp() * 1_000)
+        config_exclude = (
+            {"portfolio_simulation"} if job.config.portfolio_simulation is None else None
+        )
+        async with self.database.connection() as connection:
+            try:
+                await connection.execute("BEGIN IMMEDIATE")
+                cursor = await connection.execute(
+                    "SELECT job_id FROM ml_v2_source_claims WHERE source_identity=?",
+                    (source_identity,),
+                )
+                row = await cursor.fetchone()
+                current_job_id = str(row[0]) if row else None
+
+                if current_job_id is not None and current_job_id != replace_job_id:
+                    await connection.rollback()
+                    return current_job_id, False
+
+                await connection.execute(
+                    """
+                    INSERT INTO backtest_jobs (
+                        id, status, config_json, progress_json, summary_json,
+                        correlations_json, ablations_json, warnings_json, error,
+                        created_at, started_at, completed_at, updated_at
+                    ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, ?, NULL, ?, NULL, NULL, ?)
+                    """,
+                    (
+                        job.id,
+                        job.status.value,
+                        job.config.model_dump_json(exclude=config_exclude),
+                        job.progress.model_dump_json(),
+                        json.dumps(job.warnings),
+                        _ms(job.created_at),
+                        now,
+                    ),
+                )
+                if current_job_id is None:
+                    await connection.execute(
+                        """
+                        INSERT INTO ml_v2_source_claims (
+                            source_identity, job_id, algorithm_version,
+                            created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (source_identity, job.id, algorithm_version, now, now),
+                    )
+                else:
+                    cursor = await connection.execute(
+                        """
+                        UPDATE ml_v2_source_claims
+                        SET job_id=?, algorithm_version=?, updated_at=?
+                        WHERE source_identity=? AND job_id=?
+                        """,
+                        (
+                            job.id,
+                            algorithm_version,
+                            now,
+                            source_identity,
+                            current_job_id,
+                        ),
+                    )
+                    if cursor.rowcount != 1:
+                        await connection.rollback()
+                        return current_job_id, False
+                await connection.commit()
+                return job.id, True
+            except BaseException:
+                await connection.rollback()
+                raise
+
+    async def adopt_ml_v2_source(
+        self,
+        source_identity: str,
+        job_id: str,
+        *,
+        algorithm_version: str,
+    ) -> tuple[str, bool]:
+        """Associe atomiquement un job historique compatible à une identité."""
+        now = int(datetime.now(timezone.utc).timestamp() * 1_000)
+        async with self.database.connection() as connection:
+            try:
+                await connection.execute("BEGIN IMMEDIATE")
+                cursor = await connection.execute(
+                    """
+                    INSERT INTO ml_v2_source_claims (
+                        source_identity, job_id, algorithm_version,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(source_identity) DO NOTHING
+                    """,
+                    (source_identity, job_id, algorithm_version, now, now),
+                )
+                created = cursor.rowcount == 1
+                selected = await connection.execute(
+                    "SELECT job_id FROM ml_v2_source_claims WHERE source_identity=?",
+                    (source_identity,),
+                )
+                row = await selected.fetchone()
+                await connection.commit()
+                return (str(row[0]), created) if row else (job_id, created)
+            except BaseException:
+                await connection.rollback()
+                raise
+
+    async def get_ml_v2_source_claim(self, source_identity: str) -> BacktestJob | None:
+        """Retourne le job actuellement revendiqué pour une identité ML v2."""
+        async with self.database.connection() as connection:
+            cursor = await connection.execute(
+                """
+                SELECT job_id, algorithm_version
+                FROM ml_v2_source_claims WHERE source_identity=?
+                """,
+                (source_identity,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        job = await self.get_job(str(row[0]))
+        if job is not None and job.checkpoint is None:
+            job.algorithm_version = str(row[1])
+        return job
+
     async def get_job(self, job_id: str) -> BacktestJob | None:
         async with self.database.connection() as connection:
             cursor = await connection.execute("SELECT * FROM backtest_jobs WHERE id=?", (job_id,))

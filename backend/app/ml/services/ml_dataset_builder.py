@@ -119,6 +119,8 @@ class MLDatasetBuilder:
             expected_profile = build_ml_dataset_profile_v2(
                 timeframe=source_job.config.signal_config.timeframe,
                 quote=source_job.config.signal_config.quote,
+                exchange_id=source_job.config.signal_config.exchange_id,
+                market_type=source_job.config.signal_config.market_type,
             )
 
             if source_job.config.signal_config.model_dump(

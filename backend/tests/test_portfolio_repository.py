@@ -88,8 +88,8 @@ async def test_migration_8_is_idempotent_and_enables_real_foreign_keys() -> None
             version = await version_cursor.fetchone()
             foreign_keys_cursor = await connection.execute("PRAGMA foreign_keys")
             foreign_keys = await foreign_keys_cursor.fetchone()
-        assert SCHEMA_VERSION == 8
-        assert version is not None and version[0] == 8
+        assert SCHEMA_VERSION == 9
+        assert version is not None and version[0] == 9
         assert foreign_keys is not None and foreign_keys[0] == 1
         assert {
             ("backtest_portfolio_runs", "table"),

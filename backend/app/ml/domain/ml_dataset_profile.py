@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, Literal
 
 from app.core.settings import (
     AdxIndicatorConfig,
@@ -21,6 +21,8 @@ def build_ml_dataset_profile_v2(
     *,
     timeframe: Timeframe,
     quote: str = "USDC",
+    exchange_id: str = "binance",
+    market_type: Literal["spot", "swap", "future"] = "spot",
 ) -> ScanConfig:
     """Construit le profil canonique d'observation du dataset ML v2.
 
@@ -31,6 +33,8 @@ def build_ml_dataset_profile_v2(
     return ScanConfig(
         timeframe=timeframe,
         quote=quote,
+        exchange_id=exchange_id,
+        market_type=market_type,
         atr=AtrIndicatorConfig(
             enabled=True,
         ),
