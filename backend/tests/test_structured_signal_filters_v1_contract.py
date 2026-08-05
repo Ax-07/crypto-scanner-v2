@@ -49,9 +49,7 @@ def explicit_json(source: str) -> dict[str, object]:
 def profile_fingerprint(config: ScanConfig) -> str:
     """Reproduit le fingerprint canonique du profil d'évaluation."""
     excluded = {
-        name
-        for name in OPTIONAL_INDICATOR_EXTENSION_FIELDS
-        if getattr(config, name, None) is None
+        name for name in OPTIONAL_INDICATOR_EXTENSION_FIELDS if getattr(config, name, None) is None
     }
 
     if config.structured_signal_filters is None:

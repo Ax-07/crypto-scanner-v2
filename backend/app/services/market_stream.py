@@ -277,11 +277,7 @@ def calculate_indicator_bundle(
 
         if ema_periods:
             bundle["_ema_fast"] = bundle[f"ema_{ema_periods[0]}"]
-            bundle["_ema_slow"] = (
-                bundle[f"ema_{ema_periods[1]}"]
-                if len(ema_periods) >= 2
-                else None
-            )
+            bundle["_ema_slow"] = bundle[f"ema_{ema_periods[1]}"] if len(ema_periods) >= 2 else None
             bundle["_ema_periods"] = ema_periods[:2]
     if profile.use_macd:
         bundle["macd"] = calculate_macd(
@@ -336,12 +332,8 @@ def calculate_indicator_bundle(
         bundle["_extended_signals"] = extended_signals
 
     if adx_config is not None and adx_config.enabled:
-        bundle["_adx_weak_threshold"] = float(
-            adx_config.weak_threshold
-        )
-        bundle["_adx_strong_threshold"] = float(
-            adx_config.strong_threshold
-        )
+        bundle["_adx_weak_threshold"] = float(adx_config.weak_threshold)
+        bundle["_adx_strong_threshold"] = float(adx_config.strong_threshold)
 
     return dataframe, bundle
 
@@ -826,15 +818,9 @@ def build_indicator_event_markers(
         macd_data=macd_data,
         bollinger_bands=bollinger_bands,
         stochastic_data=stochastic_data,
-        stochastic_oversold_level=float(
-            bundle.get("_stochastic_oversold_level", 20)
-        ),
-        stochastic_overbought_level=float(
-            bundle.get("_stochastic_overbought_level", 80)
-        ),
-        adx_weak_threshold=float(
-            bundle.get("_adx_weak_threshold", 20)
-        ),
+        stochastic_oversold_level=float(bundle.get("_stochastic_oversold_level", 20)),
+        stochastic_overbought_level=float(bundle.get("_stochastic_overbought_level", 80)),
+        adx_weak_threshold=float(bundle.get("_adx_weak_threshold", 20)),
         extended_data=extended_data,
         only_last=only_last_candle,
     )
@@ -902,9 +888,7 @@ def build_indicator_event_markers(
             marker_color = (
                 "#38bdf8"
                 if direction == "bullish"
-                else "#f59e0b"
-                if direction == "bearish"
-                else "#94a3b8"
+                else "#f59e0b" if direction == "bearish" else "#94a3b8"
             )
 
         if indicator == "atr":

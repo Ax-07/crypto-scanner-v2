@@ -487,7 +487,7 @@ async def _historical_analysis(
     closed = [item for item in combined if item.is_closed]
     closed_dataframe, closed_bundle = calculate_indicator_bundle(
         [item.to_ohlcv() for item in closed], profile
-        )
+    )
     marker_data = sort_markers(
         build_indicator_event_markers(
             closed_dataframe,

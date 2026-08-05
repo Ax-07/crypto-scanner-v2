@@ -9,6 +9,7 @@ from typing import Any, cast
 
 import pytest
 
+from app.ml.domain.ml_dataset_profile import ML_DATASET_PROFILE_V2_ID
 from app.ml.models.ml_dataset import (
     MLDatasetRow,
     MarketDirectionLabel,
@@ -36,6 +37,7 @@ BASE_TIME = datetime(
     0,
     tzinfo=timezone.utc,
 )
+V2_PROFILE_FINGERPRINT = "sha256:" + "a" * 64
 
 
 def dataset_row(
@@ -44,6 +46,8 @@ def dataset_row(
     decision_time: datetime,
     feature_name: str = "feature.value",
     feature_schema_version: MLFeatureSchemaVersion = ML_FEATURE_SCHEMA_VERSION,
+    profile_id: str = "inline",
+    profile_fingerprint: str | None = "sha256:profile",
 ) -> MLDatasetRow:
     """Construit une ligne ML neutre valide."""
     return MLDatasetRow(
@@ -57,8 +61,8 @@ def dataset_row(
         calculation_mode="canonical",
         source_algorithm_version=("signal-evaluation-v3"),
         source_dataset_version=("binance-history-v1"),
-        profile_id="inline",
-        profile_fingerprint="sha256:profile",
+        profile_id=profile_id,
+        profile_fingerprint=profile_fingerprint,
         horizon=6,
         entry_policy="signal_close",
         entry_time=decision_time,
@@ -498,12 +502,16 @@ def test_loader_accepts_v2_export() -> None:
             1,
             decision_time=BASE_TIME,
             feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+            profile_id=ML_DATASET_PROFILE_V2_ID,
+            profile_fingerprint=V2_PROFILE_FINGERPRINT,
         ),
         dataset_row(
             2,
             decision_time=BASE_TIME + timedelta(hours=1),
             feature_name="feature.other",
             feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+            profile_id=ML_DATASET_PROFILE_V2_ID,
+            profile_fingerprint=V2_PROFILE_FINGERPRINT,
         ),
     )
 
@@ -524,9 +532,13 @@ def test_loader_accepts_v2_export() -> None:
         )
 
         assert result.manifest.feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2
+        assert result.manifest.profile_ids == [ML_DATASET_PROFILE_V2_ID]
+        assert result.manifest.profile_fingerprints == [V2_PROFILE_FINGERPRINT]
         assert all(
             row.feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2 for row in result.rows
         )
+        assert all(row.profile_id == ML_DATASET_PROFILE_V2_ID for row in result.rows)
+        assert all(row.profile_fingerprint == V2_PROFILE_FINGERPRINT for row in result.rows)
 
 
 def test_loader_rejects_feature_schema_mismatch() -> None:

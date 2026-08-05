@@ -89,16 +89,13 @@ def _is_numeric_value(
     value: object,
 ) -> TypeGuard[int | float]:
     """Détecte les nombres sans accepter les booléens."""
-    return (
-        isinstance(
-            value,
-            (
-                int,
-                float,
-            ),
-        )
-        and not isinstance(value, bool)
-    )
+    return isinstance(
+        value,
+        (
+            int,
+            float,
+        ),
+    ) and not isinstance(value, bool)
 
 
 def _validated_numeric_value(
@@ -200,9 +197,7 @@ def _is_constant_feature(
         }
         return len(normalized_numeric) <= 1
 
-    normalized_values: set[
-        tuple[str, object]
-    ] = set()
+    normalized_values: set[tuple[str, object]] = set()
 
     for value in values:
         if value is None:
@@ -216,9 +211,7 @@ def _is_constant_feature(
 
         if kind == "boolean":
             if not isinstance(value, bool):
-                raise MLPreprocessingError(
-                    f"{feature_name} doit être booléen"
-                )
+                raise MLPreprocessingError(f"{feature_name} doit être booléen")
 
             normalized_values.add(
                 (
