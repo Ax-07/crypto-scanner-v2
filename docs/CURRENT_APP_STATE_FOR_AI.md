@@ -10,6 +10,8 @@ locale. Le rapport détaillé et les preuves sont dans
 - Commit audité initialement : `5d137a57462a53ee984052e9ae003352498279fa`.
 - HEAD observé après publication externe de l'audit pendant la Phase 0 :
   `763ffa8b1c4cfc66433472a23ff65896aec7c5af`.
+- HEAD au démarrage de la Phase 1 : `4b6676b2abb4fde0d65dd4baa28525e8ca01fd06` ;
+  les changements Phase 0 avaient été commités extérieurement et le worktree était propre.
 - Amont : `origin/main`, avance 0, retard 0 au début de l'audit.
 - État initial : aucun fichier suivi modifié et aucun fichier non suivi.
 - `frontend/src/lib/utils.ts` est requis par 27 composants. La Phase 0 a ajouté des négations
@@ -45,7 +47,7 @@ backend/
   app/
     api/            REST scanner, bougies, historique, backtests, expériences
     core/           settings, chemins, logs, exceptions
-    database/       connexion SQLite, migrations 1 à 8
+    database/       connexion SQLite, migrations 1 à 9
     domain/         candles, indicateurs, décision, analyses, portefeuille
     models/         contrats Pydantic publics
     repositories/   persistance SQLite
@@ -112,7 +114,7 @@ d'une évolution de contrat.
 
 ## SQLite et persistance
 
-`backend/app/database/schema.py` définit huit migrations :
+`backend/app/database/schema.py` définit neuf migrations :
 
 1. bougies ;
 2. marchés, sync, backfill et gaps ;
@@ -121,6 +123,7 @@ d'une évolution de contrat.
 6. expériences, profils, promotions, shadow ;
 7. checkpoints, artifacts, lifecycle ;
 8. run/ordres/exécutions/trades/equity portefeuille.
+9. revendication atomique des identités de sources ML v2.
 
 La copie locale ignorée `backend/data/scanner_crypto.sqlite3` est intègre, en version 8, avec
 143 325 bougies, 283 symboles, 8 timeframes, 8 jobs terminés, 4 711 observations et 22 619
@@ -246,24 +249,29 @@ Benchmark rejeté :
 ### Déjà présent
 
 - `ML_DATASET_PROFILE_V2_ID = "ml-dataset-v2"` ;
-- `build_ml_dataset_profile_v2(timeframe, quote)` active ATR, ADX, Supertrend, Donchian,
+- `build_ml_dataset_profile_v2(timeframe, quote, exchange_id, market_type)` active ATR, ADX, Supertrend, Donchian,
   Keltner en conservant les defaults historiques ;
 - schéma de caractéristiques `causal-features-v2` ;
 - composants continus/normalisés aplatis dans les features ;
 - CLI export accepte `--feature-schema-version causal-features-v2` ;
 - builder/exporter exigent job terminé, profil/config canonique, horizon 6, même fingerprint
   SHA-256 et au moins une ligne ; loader compatible v2.
+- `MLV2SourceService` construit, retrouve, reprend ou crée le source canonique ;
+- `python -m app.ml.cli.prepare_ml_v2_source` expose `--dry-run`, `--wait` et `--json` ;
+- l'identité logique `ml-v2-source-identity-v1` couvre le config complet et la version moteur ;
+- la migration 9 et une transaction `BEGIN IMMEDIATE` empêchent deux revendications identiques ;
+- la couverture locale vérifie warmup, fenêtre, futur h6, timeframes MA, bougies closes et gaps ;
+- l'intégration SQLite temporaire valide backtest, export v2, loader, réutilisation et hash stable.
 
 ### Encore manquant
 
-- commande/service dédié pour créer ou retrouver le backtest source canonique ;
-- job source v2 réel et validation end-to-end sur l'historique local ;
 - fingerprint fort du contenu OHLCV et manifest suffisant pour reconstruire le source ;
 - artefact dataset v2 ;
 - politique d'évaluation v2 séparée, nouvelle période terminale, benchmark v2 ;
 - UI ML ou support `signal_profile_id` dans le formulaire backtest.
 
-Le v2 est donc **partiellement implémenté**, pas un pipeline expérimental achevé. Ne pas modifier
+Le chemin de préparation du source v2 est implémenté, mais le v2 reste **partiellement
+implémenté**, pas un pipeline expérimental achevé. Ne pas modifier
 les policies v1 ni réutiliser le test terminal v1.
 
 ## Exports
@@ -316,10 +324,12 @@ ML :
 ```powershell
 python -m app.ml.cli.export_ml_dataset <job_id> --feature-schema-version causal-features-v1
 python -m app.ml.cli.export_ml_benchmark <manifest> ...
+python -m app.ml.cli.prepare_ml_v2_source BTC/USDC --timeframe 1h --start <ISO> --end <ISO> --dry-run --json
 ```
 
-Pour v2, la même CLI d'export accepte `causal-features-v2`, mais seulement après création manuelle
-d'un job source canonique `ml-dataset-v2`.
+Pour v2, préparer d'abord le source avec la commande dédiée, puis exporter le job retourné avec
+`--feature-schema-version causal-features-v2`. Voir
+[`backend/docs/ml/ml-pipeline-v2.md`](../backend/docs/ml/ml-pipeline-v2.md).
 
 ## Résultats de validation du 5 août 2026 après Phase 0
 
@@ -337,9 +347,22 @@ d'un job source canonique `ml-dataset-v2`.
 - Installation pnpm propre : succès avec lockfile figé, 335 paquets, sans réutiliser le
   `node_modules` principal ; typecheck, build et 311 tests réussis dans la copie temporaire.
 
+## Résultats de validation du 5 août 2026 après Phase 1
+
+- Backend : 1090 passés, 0 échec, 1 ignoré, 27 subtests, 2 warnings pandas historiques.
+- Tests finaux ciblés source/CLI/migrations : 25 passés.
+- compileall : succès ; Black : 199 fichiers ; Flake8 : succès ; mypy : 116 fichiers.
+- Frontend inchangé : 311 tests dans 48 fichiers ; TypeScript, ESLint et build Vite réussis.
+- Preuve manuelle temporaire : `created`, puis `reused`, puis `would-reuse` en dry-run ; un seul
+  job et hash SQLite inchangé pendant le dry-run.
+- Deux exports de 10 lignes ont les mêmes octets et le même SHA-256 :
+  `sha256:665ee28a59826c17d74118cdd80f34083c8ac3b0c5c0bbe8f2998c11c90c26a4` ;
+  les deux sont acceptés par `MLDatasetLoader`.
+- La base et les exports de preuve étaient temporaires et ont été supprimés après contrôle.
+
 ## Problèmes connus
 
-1. Pas d'orchestration source ML v2 ni d'artefact v2 réel.
+1. Pas d'artefact v2 persistant publié ni de modèle/benchmark v2.
 2. Fingerprint OHLCV insuffisamment fort pour une reproduction indépendante.
 3. Deux warnings pandas de perte de nanosecondes dans `market_data.py`.
 4. Contrats Python/TS/Zod partiellement dupliqués ; marché sans modèle Pydantic public.
@@ -367,8 +390,8 @@ builder, service, contrat frontend et flux réel.
 - Portefeuille : `domain/portfolio/`, `services/portfolio_replay.py`, repository/modèles portfolio.
 - SQLite : `database/schema.py` puis ajouter une migration, jamais éditer une table existante en
   place sans compatibilité.
-- Profil/source ML v2 : `ml/domain/ml_dataset_profile.py`, futur CLI/service source,
-  `ml/services/ml_dataset_builder.py`.
+- Profil/source ML v2 : `ml/domain/ml_dataset_profile.py`, `ml/services/ml_v2_source.py`,
+  `ml/cli/prepare_ml_v2_source.py`, `ml/services/ml_dataset_builder.py`.
 - Contrat/features/labels ML : `ml/models/ml_dataset.py`, `ml/domain/ml_dataset.py`.
 - Export/load ML : `ml/services/ml_dataset_{exporter,loader}.py` et CLI.
 - Évaluation : preprocessing, feature policy, temporal split, walk-forward/final/benchmark.
@@ -379,29 +402,21 @@ builder, service, contrat frontend et flux réel.
 
 ## Comment poursuivre le pipeline ML v2
 
-1. Phase 0 terminée : conserver la baseline verte et le helper `utils.ts` versionné.
-2. Créer une CLI/service source v2 utilisant obligatoirement
-   `build_ml_dataset_profile_v2`, `signal_profile_id=ml-dataset-v2`, horizon 6,
-   `snapshot_status=confirmed`, `replay_mode=every_bar` et gap strict.
-3. Donner au source une identité/recherche stable et hacher le contenu OHLCV ordonné, pas seulement
+1. Phases 0 et 1 terminées : conserver la baseline et le service source canonique.
+2. Renforcer l'identité du dataset en hachant le contenu OHLCV ordonné, pas seulement
    ses bornes et son nombre de bougies.
-4. Étendre/versionner le manifest v2 pour inclure le config canonique et les métadonnées permettant
+3. Étendre/versionner le manifest v2 pour inclure le config canonique et les métadonnées permettant
    la vérification/reconstruction.
-5. Exécuter un vrai backtest v2 sur un historique suffisamment long, puis exporter deux fois et
-   comparer byte à byte/hash ; charger le manifest avec `MLDatasetLoader`.
-6. Auditer features, données manquantes, distributions, régimes et causalité avant l'entraînement.
-7. Définir une policy v2 séparée ; ne pas modifier `ML_FEATURE_POLICIES_V1`.
-8. Réserver avant sélection une nouvelle période terminale postérieure au test consommé v1.
-9. Figer candidats/critères, sélectionner seulement sur développement, ouvrir le test une fois et
+4. Générer ensuite un artefact v2 réel sur une fenêtre suffisamment longue et l'auditer.
+5. Auditer features, données manquantes, distributions, régimes et causalité avant l'entraînement.
+6. Définir une policy v2 séparée ; ne pas modifier `ML_FEATURE_POLICIES_V1`.
+7. Réserver avant sélection une nouvelle période terminale postérieure au test consommé v1.
+8. Figer candidats/critères, sélectionner seulement sur développement, ouvrir le test une fois et
    exporter un benchmark v2 immuable avec décision acceptée/rejetée.
-
-Critère de fin de la prochaine phase : un backtest source v2 canonique est créé/retrouvé,
-terminé, possède profil/fingerprint uniques, produit un dataset v2 non vide chargé et vérifié,
-et le même source/config produit les mêmes octets sans dépendre d'une procédure manuelle ambiguë.
 
 ## Ce qui n'a pas été vérifié
 
-Réseau Binance/CCXT et sockets réelles, rendu navigateur manuel, installation frontend fraîche,
-reconstruction intégrale du benchmark v1, exécution réelle du source/export v2, performance
-économique/ML indépendante, liste Black exhaustive, secrets `.env` et état d'un environnement
-externe à cette copie locale.
+Réseau Binance/CCXT et sockets réelles, rendu navigateur manuel, reconstruction intégrale du
+benchmark v1, source/export v2 persistant sur la base locale réelle, performance économique/ML
+indépendante, secrets `.env` et état d'un environnement externe à cette copie locale. La Phase 1
+a vérifié le parcours source/export v2 sur SQLite temporaire et Black sur les 199 fichiers.

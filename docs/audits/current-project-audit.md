@@ -11,8 +11,9 @@ bout et persiste observations, outcomes, analyses et résultats de portefeuille.
 v1 est implémenté, exporté et évalué ; son infrastructure est exploitable mais son premier modèle
 est explicitement rejeté. Le pipeline ML v2 a davantage avancé que l'ancienne documentation :
 le profil canonique `ml-dataset-v2`, le schéma `causal-features-v2`, les composants continus et
-les contrôles de provenance existent. Il n'existe toutefois ni commande dédiée pour créer le
-backtest source v2, ni job source v2 dans la base locale, ni artefact dataset/benchmark v2.
+les contrôles de provenance existent. La Phase 1 ajoute désormais la commande et le service
+reproductibles permettant de préparer ce source. Aucun job source v2 n'a été ajouté à la base
+locale réelle et aucun artefact dataset/benchmark v2 n'a été publié.
 
 Lors de l'audit initial, une régression backend et une régression frontend faisaient échouer les
 suites complètes et Flake8/Black signalaient des défauts de style. La Phase 0 datée du 5 août
@@ -169,7 +170,8 @@ L'agent n'a exécuté ni commit ni push ; les changements Phase 0 restent non co
 Le backend est une application FastAPI créée par `app.main.create_app`, exportée par
 `backend/main.py`. Le lifespan initialise `Database`, repositories et managers, applique les
 migrations, marque les jobs abandonnés et ferme les ressources. Le domaine technique est séparé
-des adaptateurs FastAPI/CCXT/SQLite. La persistance utilise SQLite et huit migrations.
+des adaptateurs FastAPI/CCXT/SQLite. La persistance utilise SQLite et neuf migrations depuis la
+Phase 1.
 
 Le frontend est une SPA React 19/Vite 8. React Router charge les pages par feature, Zustand
 conserve scanner/marché/backtests, React Hook Form et Zod valident les formulaires, Shadcn/Radix
@@ -321,45 +323,37 @@ d'inférence n'existe.
 
 ## 11. Pipeline ML v2
 
-### Implémenté et testé
+### Phase 1 — source canonique
 
-- `ML_DATASET_PROFILE_V2_ID = "ml-dataset-v2"` et
-  `build_ml_dataset_profile_v2(timeframe, quote)` ;
-- activation canonique ATR, ADX, Supertrend, Donchian et Keltner, avec indicateurs historiques
-  inchangés ;
-- contrat `causal-features-v2` dans `MLDatasetRow` et le manifeste ;
-- composants continus/normalisés exportables pour les indicateurs ;
-- option CLI `--feature-schema-version causal-features-v2` ;
-- garde-fous builder/exporteur : job terminé, identifiant v2, config exactement canonique,
-  horizon 6, observations avec même fingerprint SHA-256, dataset non vide ;
-- loader compatible v2 et nombreux tests unitaires/service.
+- `build_ml_v2_source_config` impose le profil officiel, confirmed/every-bar, horizon 6,
+  signal-close, gap strict et absence de portefeuille ;
+- `MLV2SourceService` sépare construction, recherche, politique d'état, couverture et manager ;
+- `python -m app.ml.cli.prepare_ml_v2_source` fournit sorties humaine/JSON, `--dry-run` sans
+  écriture et `--wait` pour un runner externe ;
+- l'identité `ml-v2-source-identity-v1` hash le config complet canonique et la version moteur ;
+- la migration 9 ajoute `ml_v2_source_claims` ; `BEGIN IMMEDIATE` et la clé unique arbitrent les
+  créations concurrentes sans verrou global ;
+- un job completed n'est réutilisé qu'après validation réelle par le builder v2 ; pending/running
+  n'est pas dupliqué ; interrupted est repris avec checkpoint compatible ; failed/cancelled ou
+  incomplet est remplacé sans suppression historique ;
+- la couverture contrôle warmup principal et MA, fenêtre, futur h6, bougies closes et gaps, sans
+  réseau ni backfill automatique ;
+- un test SQLite déterministe exécute le vrai moteur, vérifie observations/outcomes, construit et
+  charge `causal-features-v2`, réutilise le job et compare deux exports identiques.
 
-### Partiel ou absent
+Le profil accepte désormais explicitement exchange et type de marché ; le builder les reprend
+pour comparer le profil officiel sans rendre les paramètres techniques configurables.
 
-- aucune CLI/service dédié ne crée le backtest source avec ce profil ;
-- le builder de profil n'est appelé que pour vérifier un job existant, pas pour le créer ;
-- l'API générique peut techniquement recevoir le bon config + identifiant, mais l'UI ne peut pas
-  exprimer `signal_profile_id` et aucune recette officielle exacte n'est fournie ;
-- aucun job local n'a `signal_profile_id=ml-dataset-v2` : les 8 jobs sont `inline` ;
-- aucun JSONL/manifeste/benchmark v2 n'est présent ;
-- aucune nouvelle période terminale, politique d'entraînement v2 ou décision de modèle v2 n'est
-  figée ; `ML_FEATURE_POLICIES_V1` protège le benchmark v1 mais il n'existe pas de politique
-  d'évaluation v2 achevée.
+### Limites conservées
 
-### Réponse aux cinq questions de reproductibilité
+- aucun job n'a été créé dans `backend/data/scanner_crypto.sqlite3` pendant la Phase 1 ;
+- aucun JSONL/manifeste/benchmark v2 n'est publié dans le dépôt ;
+- `dataset_version` reste un fingerprint faible de fenêtre, pas un hash des octets OHLCV ;
+- aucune période terminale, politique d'entraînement ou décision de modèle v2 n'est définie ;
+- le frontend reste inchangé et n'expose pas le profil système.
 
-1. **Créer déterministement le source** : partiellement. Le calcul est déterministe pour une
-   config et une base données données, mais l'ID de job est aléatoire, aucune commande dédiée ne
-   construit le config canonique et l'identité OHLCV est faible.
-2. **Retrouver/identifier** : oui par job ID et `signal_profile_id`, si le job existe ; aucun job
-   v2 local n'existe et aucune recherche API par profil/fingerprint n'est fournie.
-3. **Exporter** : oui en théorie via la CLI générique et les garde-fous v2 ; pas validé de bout en
-   bout sur un vrai job v2, et une fixture d'acceptation loader échoue actuellement.
-4. **Produire un dataset** : le code est relié du repository à l'export, mais aucun dataset v2
-   réel ne prouve le parcours complet.
-5. **Reproduire depuis les métadonnées** : non complètement. Le manifeste référence job,
-   versions, profil et hash du JSONL, mais ne contient pas le config complet du backtest ni un
-   hash fort des OHLCV ; il dépend de la base SQLite conservée.
+La documentation opératoire complète est
+[`backend/docs/ml/ml-pipeline-v2.md`](../../backend/docs/ml/ml-pipeline-v2.md).
 
 ## 12. Exports
 
@@ -462,16 +456,18 @@ copie frontend propre validée. Risque résiduel :
 choisir à tort d'implémenter les indicateurs volume alors que la roadmap les laisse futurs. Pas de
 migration ; une clarification de contrat frontend peut être nécessaire.
 
-### Phase 1 — Backtest source canonique ML v2
+### Phase 1 — Backtest source canonique ML v2 — terminée le 5 août 2026
 
-Objectif : ajouter une commande/service unique qui construit `BacktestConfig` depuis
-`build_ml_dataset_profile_v2`, impose horizon 6, confirmed/every_bar/gap strict, affiche le config
-canonique et crée ou retrouve le source. Fichiers probables : nouveau CLI sous `app/ml/cli`,
-`ml_dataset_profile.py`, `backtest_manager.py`, repository et tests integration/CLI. Dépendance :
-Phase 0. Tests : identité du config, propagation profil/fingerprint, reprise, causalité, création
-réelle sur fixture SQLite. Acceptation : source v2 terminé, retrouvable et exportable deux fois à
-contenu identique. Risques : doublons de jobs et résolution de profil. Pas de rupture REST requise ;
-une table/index d'identité peut nécessiter migration 9.
+La commande `app.ml.cli.prepare_ml_v2_source`, le service `MLV2SourceService` et la migration 9
+réalisent la construction canonique, la recherche, la reprise sûre, la couverture locale et
+l'arbitrage concurrent. Le profil reste fermé, le frontend et les routes sont inchangés.
+
+Validation finale : 1090 tests backend passés, 1 ignoré, 27 subtests et les 2 warnings pandas
+historiques ; 311 tests frontend ; compileall, Black (199 fichiers), Flake8, mypy (116 fichiers),
+TypeScript, ESLint et build réussis. La preuve manuelle temporaire a obtenu `created`, `reused`,
+`would-reuse`, un seul job, puis deux exports de 10 lignes byte-identiques au SHA-256
+`665ee28a59826c17d74118cdd80f34083c8ac3b0c5c0bbe8f2998c11c90c26a4`, tous deux chargés.
+La base temporaire a été supprimée ; la base locale réelle n'a pas été modifiée.
 
 ### Phase 2 — Fingerprint fort et manifeste de reproduction
 
@@ -516,13 +512,12 @@ benchmark possible, aucune migration applicative nécessaire.
 
 - aucun appel réseau Binance/CCXT ni WebSocket réel ;
 - aucun serveur FastAPI ou navigateur lancé pour un test manuel ;
-- aucune installation propre des dépendances frontend, l'opération exigeant une confirmation de
-  recréation de `node_modules` ;
+- aucune nouvelle installation propre des dépendances frontend pendant la Phase 1 ; la preuve
+  propre de Phase 0 reste valide ;
 - aucune reconstruction du benchmark v1 ;
-- aucun backtest/export v2 réel, car cela aurait créé des données et il n'existe pas de source
-  canonique prêt à l'emploi ;
+- aucun backtest/export v2 persistant sur la base locale réelle ; le parcours a été prouvé sur
+  une base SQLite temporaire puis supprimé ;
 - aucune performance ML/economique indépendante des artefacts existants ;
-- liste Black exhaustive, les deux exécutions ayant expiré ;
 - contenus secrets de `.env`, volontairement non lus ;
 - fidélité de la copie SQLite par rapport à un environnement externe.
 
