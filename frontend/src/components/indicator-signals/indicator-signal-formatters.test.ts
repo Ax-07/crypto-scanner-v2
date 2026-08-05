@@ -24,9 +24,6 @@ describe("indicator signal display configuration", () => {
       "supertrend",
       "donchian",
       "keltner",
-      "relative_volume",
-      "cmf",
-      "obv",
     ])
     expect(INDICATOR_ORDER.map((name) => INDICATOR_LABELS[name])).toEqual([
       "RSI",
@@ -40,9 +37,6 @@ describe("indicator signal display configuration", () => {
       "Supertrend",
       "Canaux de Donchian",
       "Canaux de Keltner",
-      "Volume relatif",
-      "CMF",
-      "OBV",
     ])
     expect(INDICATOR_CONFIG.rsi.description).toBe("Indice de force relative")
   })
