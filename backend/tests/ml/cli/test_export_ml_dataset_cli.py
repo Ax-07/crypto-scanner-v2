@@ -25,6 +25,11 @@ from app.ml.services.ml_dataset_builder import (
 from app.ml.services.ml_dataset_exporter import (
     MLDatasetExportResult,
 )
+from app.ml.models.ml_dataset import (
+    ML_FEATURE_SCHEMA_VERSION,
+    ML_FEATURE_SCHEMA_VERSION_V2,
+    MLFeatureSchemaVersion,
+)
 
 EMPTY_SHA256 = "sha256:" "e3b0c44298fc1c149afbf4c8996fb924" "27ae41e4649b934ca495991b7852b855"
 
@@ -33,6 +38,7 @@ def empty_build_result(
     *,
     job_id: str = "job-1",
     natr_multiplier: float = 1.25,
+    feature_schema_version: MLFeatureSchemaVersion = ML_FEATURE_SCHEMA_VERSION,
 ) -> MLDatasetBuildResult:
     """Construit un résultat de génération vide et cohérent."""
     report = MLDatasetBuildReport(
@@ -54,6 +60,7 @@ def empty_build_result(
         natr_multiplier=natr_multiplier,
         rows=(),
         report=report,
+        feature_schema_version=feature_schema_version,
     )
 
 
@@ -62,6 +69,7 @@ def empty_export_result(
     *,
     job_id: str = "job-1",
     natr_multiplier: float = 1.25,
+    feature_schema_version: MLFeatureSchemaVersion = ML_FEATURE_SCHEMA_VERSION,
 ) -> MLDatasetExportResult:
     """Construit un résultat d'export vide et cohérent."""
     stats = MLDatasetExportStats(
@@ -88,6 +96,7 @@ def empty_export_result(
         last_decision_time=None,
         feature_names=[],
         stats=stats,
+        feature_schema_version=feature_schema_version,
     )
 
     return MLDatasetExportResult(
@@ -118,6 +127,8 @@ class ExportMLDatasetCliOptionTests(unittest.TestCase):
                         "1.5",
                         "--file-stem",
                         " custom-export ",
+                        "--feature-schema-version",
+                        ML_FEATURE_SCHEMA_VERSION_V2,
                     ]
                 )
             )
@@ -145,6 +156,10 @@ class ExportMLDatasetCliOptionTests(unittest.TestCase):
             self.assertEqual(
                 options.file_stem,
                 "custom-export",
+            )
+            self.assertEqual(
+                options.feature_schema_version,
+                ML_FEATURE_SCHEMA_VERSION_V2,
             )
 
     def test_missing_database_is_rejected(self) -> None:
@@ -234,6 +249,27 @@ class ExportMLDatasetCliOptionTests(unittest.TestCase):
             stderr.getvalue(),
         )
 
+    def test_feature_schema_defaults_to_v1(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database_path = Path(temporary) / "source.sqlite3"
+            database_path.write_bytes(b"")
+
+            parser = build_parser()
+            options = options_from_args(
+                parser.parse_args(
+                    [
+                        "job-1",
+                        "--database-path",
+                        str(database_path),
+                    ]
+                )
+            )
+
+            self.assertEqual(
+                options.feature_schema_version,
+                ML_FEATURE_SCHEMA_VERSION,
+            )
+
 
 class ExportMLDatasetCliAsyncTests(unittest.IsolatedAsyncioTestCase):
     async def test_run_cli_builds_exports_prints_and_closes(
@@ -258,11 +294,18 @@ class ExportMLDatasetCliAsyncTests(unittest.IsolatedAsyncioTestCase):
                     "1.25",
                     "--file-stem",
                     "custom",
+                    "--feature-schema-version",
+                    ML_FEATURE_SCHEMA_VERSION_V2,
                 ]
             )
 
-            build_result = empty_build_result()
-            export_result = empty_export_result(output_directory)
+            build_result = empty_build_result(
+                feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+            )
+            export_result = empty_export_result(
+                output_directory,
+                feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+            )
 
             database = MagicMock()
             database.initialize = AsyncMock()
@@ -312,6 +355,7 @@ class ExportMLDatasetCliAsyncTests(unittest.IsolatedAsyncioTestCase):
                 "job-1",
                 batch_size=50,
                 natr_multiplier=1.25,
+                feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
             )
 
             exporter_class.assert_called_once_with()
@@ -336,6 +380,10 @@ class ExportMLDatasetCliAsyncTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 payload["natr_multiplier"],
                 1.25,
+            )
+            self.assertEqual(
+                payload["feature_schema_version"],
+                ML_FEATURE_SCHEMA_VERSION_V2,
             )
             self.assertEqual(
                 payload["row_count"],

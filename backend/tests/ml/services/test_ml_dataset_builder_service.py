@@ -12,12 +12,25 @@ from app.models.backtest import (
     ForwardOutcome,
     SignalObservation,
 )
-from app.ml.models.ml_dataset import MarketDirectionLabel
+from app.ml.models.ml_dataset import (
+    ML_FEATURE_SCHEMA_VERSION,
+    ML_FEATURE_SCHEMA_VERSION_V2,
+    MLFeatureSchemaVersion,
+    MarketDirectionLabel,
+)
+from app.core.settings import ScanConfig
+from app.ml.domain.ml_dataset_profile import (
+    ML_DATASET_PROFILE_V2_ID,
+    build_ml_dataset_profile_v2,
+)
 from app.repositories.backtest_repository import BacktestRepository
 from app.ml.services.ml_dataset_builder import MLDatasetBuilder
 
 JOB_ID = "ml-service-test"
 DECISION_TIME = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+PROFILE_FINGERPRINT_A = "sha256:" + ("a" * 64)
+PROFILE_FINGERPRINT_B = "sha256:" + ("b" * 64)
+DEFAULT_PROFILE_FINGERPRINT = object()
 
 
 class FakeBacktestRepository:
@@ -70,6 +83,8 @@ class FakeBacktestRepository:
 def completed_job(
     *,
     status: BacktestStatus = BacktestStatus.COMPLETED,
+    signal_profile_id: str = "inline",
+    signal_config: ScanConfig | None = None,
 ) -> BacktestJob:
     """Construit un backtest source minimal."""
     return BacktestJob(
@@ -79,6 +94,8 @@ def completed_job(
             symbols=["BTC/USDC"],
             start=DECISION_TIME - timedelta(days=1),
             end=DECISION_TIME + timedelta(days=1),
+            signal_config=signal_config or ScanConfig(),
+            signal_profile_id=signal_profile_id,
             horizons=[6],
         ),
     )
@@ -88,6 +105,8 @@ def observation(
     observation_id: int,
     *,
     with_natr: bool = True,
+    profile_id: str = "inline",
+    profile_fingerprint: str | None | object = (DEFAULT_PROFILE_FINGERPRINT),
 ) -> SignalObservation:
     """Construit une observation confirmée persistée."""
     indicator_signals: dict[str, object] = {}
@@ -110,6 +129,12 @@ def observation(
             },
         }
 
+    resolved_profile_fingerprint = (
+        PROFILE_FINGERPRINT_A
+        if profile_fingerprint is DEFAULT_PROFILE_FINGERPRINT
+        else profile_fingerprint
+    )
+
     return SignalObservation.model_validate(
         {
             "id": observation_id,
@@ -124,6 +149,8 @@ def observation(
             "indicator_signals": indicator_signals,
             "algorithm_version": "signal-evaluation-v3",
             "dataset_version": "service-test-v1",
+            "profile_id": profile_id,
+            "profile_fingerprint": resolved_profile_fingerprint,
         }
     )
 
@@ -245,7 +272,7 @@ async def test_builder_service_batches_and_counts_rejections() -> None:
     assert result.job_id == JOB_ID
     assert result.horizon == 6
     assert result.natr_multiplier == pytest.approx(1.0)
-
+    assert result.feature_schema_version == ML_FEATURE_SCHEMA_VERSION
     assert len(result.rows) == 2
     assert [row.observation_id for row in result.rows] == [
         1,
@@ -255,6 +282,7 @@ async def test_builder_service_batches_and_counts_rejections() -> None:
         MarketDirectionLabel.UP,
         MarketDirectionLabel.NEUTRAL,
     ]
+    assert all(row.feature_schema_version == ML_FEATURE_SCHEMA_VERSION for row in result.rows)
 
     report = result.report
 
@@ -273,6 +301,199 @@ async def test_builder_service_batches_and_counts_rejections() -> None:
 
     assert sum(report.rejection_reasons.values()) == 1
     assert any("gross_return est requis" in reason for reason in report.rejection_reasons)
+
+
+@pytest.mark.asyncio
+async def test_builder_service_propagates_v2_feature_schema() -> None:
+    repository = FakeBacktestRepository(
+        completed_job(
+            signal_profile_id=ML_DATASET_PROFILE_V2_ID,
+            signal_config=build_ml_dataset_profile_v2(
+                timeframe="1h",
+            ),
+        ),
+        [
+            (
+                observation(
+                    1,
+                    profile_id=ML_DATASET_PROFILE_V2_ID,
+                    profile_fingerprint=PROFILE_FINGERPRINT_A,
+                ),
+                outcome(1),
+            ),
+        ],
+    )
+
+    result = await service_for(repository).build(
+        JOB_ID,
+        feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+    )
+
+    assert result.feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2
+    assert len(result.rows) == 1
+    assert result.rows[0].feature_schema_version == (ML_FEATURE_SCHEMA_VERSION_V2)
+    assert result.rows[0].profile_id == ML_DATASET_PROFILE_V2_ID
+    assert result.rows[0].profile_fingerprint == PROFILE_FINGERPRINT_A
+
+
+@pytest.mark.asyncio
+async def test_builder_service_rejects_v2_from_inline_job() -> None:
+    repository = FakeBacktestRepository(
+        completed_job(),
+        [],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="signal_profile_id",
+    ):
+        await service_for(repository).build(
+            JOB_ID,
+            feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+        )
+
+    assert repository.calls == []
+
+
+@pytest.mark.asyncio
+async def test_builder_service_rejects_noncanonical_v2_profile() -> None:
+    repository = FakeBacktestRepository(
+        completed_job(
+            signal_profile_id=ML_DATASET_PROFILE_V2_ID,
+            signal_config=ScanConfig(
+                timeframe="1h",
+            ),
+        ),
+        [],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="profil technique canonique",
+    ):
+        await service_for(repository).build(
+            JOB_ID,
+            feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+        )
+
+    assert repository.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("profile_id", "profile_fingerprint", "message"),
+    [
+        (
+            "inline",
+            PROFILE_FINGERPRINT_A,
+            "profile_id",
+        ),
+        (
+            ML_DATASET_PROFILE_V2_ID,
+            None,
+            "profile_fingerprint",
+        ),
+        (
+            ML_DATASET_PROFILE_V2_ID,
+            "sha256:invalid",
+            "profile_fingerprint",
+        ),
+    ],
+)
+async def test_builder_service_rejects_invalid_v2_observation_provenance(
+    profile_id: str,
+    profile_fingerprint: str | None,
+    message: str,
+) -> None:
+    repository = FakeBacktestRepository(
+        completed_job(
+            signal_profile_id=ML_DATASET_PROFILE_V2_ID,
+            signal_config=build_ml_dataset_profile_v2(
+                timeframe="1h",
+            ),
+        ),
+        [
+            (
+                observation(
+                    1,
+                    profile_id=profile_id,
+                    profile_fingerprint=profile_fingerprint,
+                ),
+                outcome(1),
+            ),
+        ],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=message,
+    ):
+        await service_for(repository).build(
+            JOB_ID,
+            feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+        )
+
+
+@pytest.mark.asyncio
+async def test_builder_service_rejects_mixed_v2_fingerprints() -> None:
+    repository = FakeBacktestRepository(
+        completed_job(
+            signal_profile_id=ML_DATASET_PROFILE_V2_ID,
+            signal_config=build_ml_dataset_profile_v2(
+                timeframe="1h",
+            ),
+        ),
+        [
+            (
+                observation(
+                    1,
+                    profile_id=ML_DATASET_PROFILE_V2_ID,
+                    profile_fingerprint=PROFILE_FINGERPRINT_A,
+                ),
+                outcome(1),
+            ),
+            (
+                observation(
+                    2,
+                    profile_id=ML_DATASET_PROFILE_V2_ID,
+                    profile_fingerprint=PROFILE_FINGERPRINT_B,
+                ),
+                outcome(2),
+            ),
+        ],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="plusieurs profile_fingerprints",
+    ):
+        await service_for(repository).build(
+            JOB_ID,
+            batch_size=1,
+            feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+        )
+
+
+@pytest.mark.asyncio
+async def test_builder_service_rejects_empty_v2_dataset() -> None:
+    repository = FakeBacktestRepository(
+        completed_job(
+            signal_profile_id=ML_DATASET_PROFILE_V2_ID,
+            signal_config=build_ml_dataset_profile_v2(
+                timeframe="1h",
+            ),
+        ),
+        [],
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="sans ligne ML exploitable",
+    ):
+        await service_for(repository).build(
+            JOB_ID,
+            feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+        )
 
 
 @pytest.mark.asyncio
@@ -302,6 +523,31 @@ async def test_builder_service_applies_natr_multiplier() -> None:
     assert row.natr_multiplier == pytest.approx(1.5)
     assert row.neutral_threshold_return == pytest.approx(0.03)
     assert row.label is MarketDirectionLabel.NEUTRAL
+
+
+@pytest.mark.asyncio
+async def test_builder_service_rejects_unknown_feature_schema() -> None:
+    repository = FakeBacktestRepository(
+        completed_job(),
+        [],
+    )
+
+    invalid_schema = cast(
+        MLFeatureSchemaVersion,
+        "causal-features-v999",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="feature_schema_version",
+    ):
+        await service_for(repository).build(
+            JOB_ID,
+            feature_schema_version=invalid_schema,
+        )
+
+    assert repository.get_job_calls == []
+    assert repository.calls == []
 
 
 @pytest.mark.asyncio

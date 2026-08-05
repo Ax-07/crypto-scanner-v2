@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from app.domain.indicators.types import (
+    IndicatorComponent,
     IndicatorEvent,
     IndicatorSignal,
     StochasticSignal,
@@ -61,6 +62,77 @@ def detect_stochastic_signal(
     return "neutral"
 
 
+def _stochastic_components(
+    *,
+    current_k: float,
+    current_d: float,
+    previous_k: float | None,
+    previous_d: float | None,
+) -> dict[str, IndicatorComponent]:
+    """Construit les composantes continues et causales du stochastique."""
+    finite_previous_k = previous_k if previous_k is not None and math.isfinite(previous_k) else None
+    finite_previous_d = previous_d if previous_d is not None and math.isfinite(previous_d) else None
+
+    current_spread = current_k - current_d
+    previous_spread = (
+        finite_previous_k - finite_previous_d
+        if finite_previous_k is not None and finite_previous_d is not None
+        else None
+    )
+
+    k_change = current_k - finite_previous_k if finite_previous_k is not None else None
+    d_change = current_d - finite_previous_d if finite_previous_d is not None else None
+    spread_change = current_spread - previous_spread if previous_spread is not None else None
+
+    return {
+        "k": IndicatorComponent(
+            value=current_k,
+            normalized_value=current_k / 100.0,
+            unit="index",
+        ),
+        "d": IndicatorComponent(
+            value=current_d,
+            normalized_value=current_d / 100.0,
+            unit="index",
+        ),
+        "spread": IndicatorComponent(
+            value=current_spread,
+            normalized_value=current_spread / 100.0,
+            unit="index",
+        ),
+        "previous_k": IndicatorComponent(
+            value=finite_previous_k,
+            normalized_value=(finite_previous_k / 100.0 if finite_previous_k is not None else None),
+            unit="index",
+        ),
+        "previous_d": IndicatorComponent(
+            value=finite_previous_d,
+            normalized_value=(finite_previous_d / 100.0 if finite_previous_d is not None else None),
+            unit="index",
+        ),
+        "previous_spread": IndicatorComponent(
+            value=previous_spread,
+            normalized_value=(previous_spread / 100.0 if previous_spread is not None else None),
+            unit="index",
+        ),
+        "k_change": IndicatorComponent(
+            value=k_change,
+            normalized_value=k_change / 100.0 if k_change is not None else None,
+            unit="index",
+        ),
+        "d_change": IndicatorComponent(
+            value=d_change,
+            normalized_value=d_change / 100.0 if d_change is not None else None,
+            unit="index",
+        ),
+        "spread_change": IndicatorComponent(
+            value=spread_change,
+            normalized_value=(spread_change / 100.0 if spread_change is not None else None),
+            unit="index",
+        ),
+    }
+
+
 def build_stochastic_signal(
     data: dict[str, pd.Series],
     oversold_level: float = 20,
@@ -93,13 +165,25 @@ def build_stochastic_signal(
     else:
         state = "neutral"
 
+    previous_k: float | None = None
+    previous_d: float | None = None
     event: str | None = None
+
     if len(frame) >= 2:
-        previous_k, previous_d = float(frame["k"].iloc[-2]), float(frame["d"].iloc[-2])
+        previous_k = float(frame["k"].iloc[-2])
+        previous_d = float(frame["d"].iloc[-2])
+
         if previous_k <= previous_d and current_k > current_d:
             event = "bullish_cross"
         elif previous_k >= previous_d and current_k < current_d:
             event = "bearish_cross"
+
+    components = _stochastic_components(
+        current_k=current_k,
+        current_d=current_d,
+        previous_k=previous_k,
+        previous_d=previous_d,
+    )
 
     if event == "bullish_cross":
         strength = 1.0 if state == "oversold" else 0.6
@@ -114,6 +198,7 @@ def build_stochastic_signal(
             strength=_clamp_strength(strength),
             reason=reason,
             raw_value=current_k,
+            components=components,
         )
     if event == "bearish_cross":
         strength = 1.0 if state == "overbought" else 0.6
@@ -128,6 +213,7 @@ def build_stochastic_signal(
             strength=_clamp_strength(strength),
             reason=reason,
             raw_value=current_k,
+            components=components,
         )
     if state == "oversold":
         return IndicatorSignal(
@@ -138,6 +224,7 @@ def build_stochastic_signal(
             strength=_clamp_strength(0.5),
             reason="Stochastique en zone de survente sans croisement",
             raw_value=current_k,
+            components=components,
         )
     if state == "overbought":
         return IndicatorSignal(
@@ -148,6 +235,7 @@ def build_stochastic_signal(
             strength=_clamp_strength(0.5),
             reason="Stochastique en zone de surachat sans croisement",
             raw_value=current_k,
+            components=components,
         )
     return IndicatorSignal(
         status="available",
@@ -157,6 +245,7 @@ def build_stochastic_signal(
         strength=0.0,
         reason="Stochastique en zone neutre",
         raw_value=current_k,
+        components=components,
     )
 
 
@@ -235,38 +324,18 @@ def detect_stochastic_events(
         ):
             continue
 
-        bullish_cross = (
-            previous_k <= previous_d
-            and current_k > current_d
-        )
-        bearish_cross = (
-            previous_k >= previous_d
-            and current_k < current_d
-        )
+        bullish_cross = previous_k <= previous_d and current_k > current_d
+        bearish_cross = previous_k >= previous_d and current_k < current_d
 
         # Le croisement peut faire sortir %K de la zone extrême sur la
         # bougie courante. On accepte donc la zone précédente ou actuelle.
-        bullish_extreme_zone = (
-            (
-                previous_k <= oversold_level
-                and previous_d <= oversold_level
-            )
-            or (
-                current_k <= oversold_level
-                and current_d <= oversold_level
-            )
+        bullish_extreme_zone = (previous_k <= oversold_level and previous_d <= oversold_level) or (
+            current_k <= oversold_level and current_d <= oversold_level
         )
 
         bearish_extreme_zone = (
-            (
-                previous_k >= overbought_level
-                and previous_d >= overbought_level
-            )
-            or (
-                current_k >= overbought_level
-                and current_d >= overbought_level
-            )
-        )
+            previous_k >= overbought_level and previous_d >= overbought_level
+        ) or (current_k >= overbought_level and current_d >= overbought_level)
 
         if bullish_cross and bullish_extreme_zone:
             events.append(

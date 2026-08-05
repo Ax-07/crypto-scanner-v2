@@ -10,6 +10,7 @@ from app.domain.indicators.atr import calculate_atr
 from app.domain.indicators.moving_averages import calculate_ema
 from app.domain.indicators.types import (
     IndicatorComponent,
+    IndicatorComponentUnit,
     IndicatorEvent,
     IndicatorSignal,
     _clamp_strength,
@@ -82,12 +83,81 @@ def calculate_keltner_channels(
     }
 
 
-def _component(value: float, unit: str) -> IndicatorComponent:
+def _component(
+    value: float | None,
+    unit: IndicatorComponentUnit,
+    *,
+    normalized_value: float | None = None,
+) -> IndicatorComponent:
+    """Construit une composante Keltner éventuellement indisponible."""
+    if value is None:
+        return IndicatorComponent(
+            value=None,
+            normalized_value=None,
+            unit=unit,
+        )
+
+    normalized = normalized_value
+
+    if normalized is None:
+        if unit == "ratio":
+            normalized = value
+        elif unit == "percent":
+            normalized = value / 100.0
+
     return IndicatorComponent(
         value=value,
-        normalized_value=value if unit == "ratio" else value / 100 if unit == "percent" else None,
-        unit=unit,  # type: ignore[typeddict-item]
+        normalized_value=normalized,
+        unit=unit,
     )
+
+
+def _finite_value(
+    values: pd.Series,
+    position: int,
+) -> float | None:
+    """Retourne une valeur finie d'une série lorsqu'elle existe."""
+    try:
+        value = float(values.iloc[position])
+    except (IndexError, TypeError, ValueError):
+        return None
+
+    return value if math.isfinite(value) else None
+
+
+def _normalized_price(
+    value: float | None,
+    close_value: float | None,
+) -> float | None:
+    """Normalise une valeur exprimée en prix par la clôture."""
+    if value is None or close_value is None or close_value <= 0:
+        return None
+
+    return value / close_value
+
+
+def _difference(
+    current: float,
+    previous: float | None,
+) -> float | None:
+    """Retourne une différence causale lorsque la référence existe."""
+    if previous is None:
+        return None
+
+    return current - previous
+
+
+def _relative_change(
+    current: float,
+    previous: float,
+) -> float:
+    """Normalise une variation signée entre deux valeurs."""
+    denominator = abs(current) + abs(previous)
+
+    if denominator <= 1e-12:
+        return 0.0
+
+    return (current - previous) / denominator
 
 
 def build_keltner_signal(
@@ -141,14 +211,298 @@ def build_keltner_signal(
                 event = "breakout_down"
                 distance_atr = (previous_lower - current_close) / max(values["atr"], 1e-12)
 
+    previous_close_value = _finite_value(
+        close,
+        -2,
+    )
+    if previous_close_value is not None and previous_close_value <= 0:
+        previous_close_value = None
+
+    previous_middle = _finite_value(
+        data["middle_line"],
+        -2,
+    )
+    previous_upper_value = _finite_value(
+        data["upper_channel"],
+        -2,
+    )
+    previous_lower_value = _finite_value(
+        data["lower_channel"],
+        -2,
+    )
+    previous_atr = _finite_value(
+        data["atr"],
+        -2,
+    )
+    previous_width = _finite_value(
+        data["channel_width"],
+        -2,
+    )
+    previous_width_percent = _finite_value(
+        data["channel_width_percent"],
+        -2,
+    )
+    previous_position = _finite_value(
+        data["channel_position"],
+        -2,
+    )
+
+    price_to_middle = current_close - values["middle_line"]
+    price_to_upper = current_close - values["upper_channel"]
+    price_to_lower = current_close - values["lower_channel"]
+
+    price_to_previous_upper = _difference(
+        current_close,
+        previous_upper_value,
+    )
+    price_to_previous_lower = _difference(
+        current_close,
+        previous_lower_value,
+    )
+
+    atr_denominator = max(
+        values["atr"],
+        1e-12,
+    )
+
+    middle_line_change = _difference(
+        values["middle_line"],
+        previous_middle,
+    )
+    upper_channel_change = _difference(
+        values["upper_channel"],
+        previous_upper_value,
+    )
+    lower_channel_change = _difference(
+        values["lower_channel"],
+        previous_lower_value,
+    )
+    atr_change = _difference(
+        values["atr"],
+        previous_atr,
+    )
+    channel_width_change = _difference(
+        values["channel_width"],
+        previous_width,
+    )
+    channel_width_percent_change = _difference(
+        values["channel_width_percent"],
+        previous_width_percent,
+    )
+    channel_position_change = _difference(
+        values["channel_position"],
+        previous_position,
+    )
+
     components = {
-        "middle_line": _component(values["middle_line"], "price"),
-        "upper_channel": _component(values["upper_channel"], "price"),
-        "lower_channel": _component(values["lower_channel"], "price"),
-        "atr": _component(values["atr"], "price"),
-        "channel_width": _component(values["channel_width"], "price"),
-        "channel_width_percent": _component(values["channel_width_percent"], "percent"),
-        "channel_position": _component(values["channel_position"], "ratio"),
+        "middle_line": _component(
+            values["middle_line"],
+            "price",
+            normalized_value=(values["middle_line"] / current_close),
+        ),
+        "upper_channel": _component(
+            values["upper_channel"],
+            "price",
+            normalized_value=(values["upper_channel"] / current_close),
+        ),
+        "lower_channel": _component(
+            values["lower_channel"],
+            "price",
+            normalized_value=(values["lower_channel"] / current_close),
+        ),
+        "atr": _component(
+            values["atr"],
+            "price",
+            normalized_value=(values["atr"] / current_close),
+        ),
+        "channel_width": _component(
+            values["channel_width"],
+            "price",
+            normalized_value=(values["channel_width"] / current_close),
+        ),
+        "channel_width_percent": _component(
+            values["channel_width_percent"],
+            "percent",
+        ),
+        "channel_position": _component(
+            values["channel_position"],
+            "ratio",
+        ),
+        "price_to_middle_distance": _component(
+            price_to_middle,
+            "price",
+            normalized_value=(price_to_middle / current_close),
+        ),
+        "price_to_upper_distance": _component(
+            price_to_upper,
+            "price",
+            normalized_value=(price_to_upper / current_close),
+        ),
+        "price_to_lower_distance": _component(
+            price_to_lower,
+            "price",
+            normalized_value=(price_to_lower / current_close),
+        ),
+        "price_to_previous_upper_distance": _component(
+            price_to_previous_upper,
+            "price",
+            normalized_value=_normalized_price(
+                price_to_previous_upper,
+                current_close,
+            ),
+        ),
+        "price_to_previous_lower_distance": _component(
+            price_to_previous_lower,
+            "price",
+            normalized_value=_normalized_price(
+                price_to_previous_lower,
+                current_close,
+            ),
+        ),
+        "price_to_middle_atr": _component(
+            price_to_middle / atr_denominator,
+            "ratio",
+        ),
+        "price_to_upper_atr": _component(
+            price_to_upper / atr_denominator,
+            "ratio",
+        ),
+        "price_to_lower_atr": _component(
+            price_to_lower / atr_denominator,
+            "ratio",
+        ),
+        "price_to_previous_upper_atr": _component(
+            (
+                price_to_previous_upper / atr_denominator
+                if price_to_previous_upper is not None
+                else None
+            ),
+            "ratio",
+        ),
+        "price_to_previous_lower_atr": _component(
+            (
+                price_to_previous_lower / atr_denominator
+                if price_to_previous_lower is not None
+                else None
+            ),
+            "ratio",
+        ),
+        "previous_middle_line": _component(
+            previous_middle,
+            "price",
+            normalized_value=_normalized_price(
+                previous_middle,
+                previous_close_value,
+            ),
+        ),
+        "previous_upper_channel": _component(
+            previous_upper_value,
+            "price",
+            normalized_value=_normalized_price(
+                previous_upper_value,
+                previous_close_value,
+            ),
+        ),
+        "previous_lower_channel": _component(
+            previous_lower_value,
+            "price",
+            normalized_value=_normalized_price(
+                previous_lower_value,
+                previous_close_value,
+            ),
+        ),
+        "previous_atr": _component(
+            previous_atr,
+            "price",
+            normalized_value=_normalized_price(
+                previous_atr,
+                previous_close_value,
+            ),
+        ),
+        "previous_channel_width": _component(
+            previous_width,
+            "price",
+            normalized_value=_normalized_price(
+                previous_width,
+                previous_close_value,
+            ),
+        ),
+        "previous_channel_width_percent": _component(
+            previous_width_percent,
+            "percent",
+        ),
+        "previous_channel_position": _component(
+            previous_position,
+            "ratio",
+        ),
+        "middle_line_change": _component(
+            middle_line_change,
+            "price",
+            normalized_value=(
+                _relative_change(
+                    values["middle_line"],
+                    previous_middle,
+                )
+                if previous_middle is not None
+                else None
+            ),
+        ),
+        "upper_channel_change": _component(
+            upper_channel_change,
+            "price",
+            normalized_value=(
+                _relative_change(
+                    values["upper_channel"],
+                    previous_upper_value,
+                )
+                if previous_upper_value is not None
+                else None
+            ),
+        ),
+        "lower_channel_change": _component(
+            lower_channel_change,
+            "price",
+            normalized_value=(
+                _relative_change(
+                    values["lower_channel"],
+                    previous_lower_value,
+                )
+                if previous_lower_value is not None
+                else None
+            ),
+        ),
+        "atr_change": _component(
+            atr_change,
+            "price",
+            normalized_value=(
+                _relative_change(
+                    values["atr"],
+                    previous_atr,
+                )
+                if previous_atr is not None
+                else None
+            ),
+        ),
+        "channel_width_change": _component(
+            channel_width_change,
+            "price",
+            normalized_value=(
+                _relative_change(
+                    values["channel_width"],
+                    previous_width,
+                )
+                if previous_width is not None
+                else None
+            ),
+        ),
+        "channel_width_percent_change": _component(
+            channel_width_percent_change,
+            "percent",
+        ),
+        "channel_position_change": _component(
+            channel_position_change,
+            "ratio",
+        ),
     }
     return IndicatorSignal(
         status="available",

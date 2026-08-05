@@ -64,38 +64,202 @@ def calculate_bollinger_band_width(
     }
 
 
+def _normalized_price_distance(
+    first: float,
+    second: float,
+) -> float:
+    """Normalise une distance signée entre deux niveaux de prix."""
+    denominator = abs(first) + abs(second)
+
+    if denominator <= 1e-12:
+        return 0.0
+
+    return (first - second) / denominator
+
+
 def _bollinger_components(
     close: pd.Series,
     bands: dict[str, pd.Series],
 ) -> dict[str, IndicatorComponent] | None:
+    """Construit les composantes continues et causales de Bollinger."""
     if not {"upper", "middle", "lower"} <= set(bands):
         return None
+
     derived = calculate_bollinger_band_width(close, bands)
-    values = {name: float(series.iloc[-1]) for name, series in derived.items()}
-    if not all(math.isfinite(value) for value in values.values()):
+
+    frame = pd.concat(
+        [
+            close.astype(float).rename("close"),
+            *[series.astype(float).rename(name) for name, series in derived.items()],
+        ],
+        axis=1,
+    )
+
+    if frame.empty:
         return None
+
+    current = frame.iloc[-1]
+    current_values = {
+        name: float(current[name])
+        for name in (
+            "close",
+            "middle_band",
+            "upper_band",
+            "lower_band",
+            "band_width",
+            "band_width_percent",
+            "band_position",
+        )
+    }
+
+    if not all(math.isfinite(value) for value in current_values.values()):
+        return None
+
+    previous_middle: float | None = None
+    previous_width_percent: float | None = None
+    previous_position: float | None = None
+
+    if len(frame) >= 2:
+        previous = frame.iloc[-2]
+
+        candidate_previous_middle = float(previous["middle_band"])
+        candidate_previous_width_percent = float(previous["band_width_percent"])
+        candidate_previous_position = float(previous["band_position"])
+
+        if all(
+            math.isfinite(value)
+            for value in (
+                candidate_previous_middle,
+                candidate_previous_width_percent,
+                candidate_previous_position,
+            )
+        ):
+            previous_middle = candidate_previous_middle
+            previous_width_percent = candidate_previous_width_percent
+            previous_position = candidate_previous_position
+
+    current_close = current_values["close"]
+    current_middle = current_values["middle_band"]
+    current_upper = current_values["upper_band"]
+    current_lower = current_values["lower_band"]
+    current_width = current_values["band_width"]
+    current_width_percent = current_values["band_width_percent"]
+    current_position = current_values["band_position"]
+
+    width_percent_change = (
+        current_width_percent - previous_width_percent
+        if previous_width_percent is not None
+        else None
+    )
+    position_change = (
+        current_position - previous_position if previous_position is not None else None
+    )
+    middle_change = current_middle - previous_middle if previous_middle is not None else None
+
+    normalized_middle_change = (
+        _normalized_price_distance(
+            current_middle,
+            previous_middle,
+        )
+        if previous_middle is not None
+        else None
+    )
+
+    normalized_close_denominator = abs(current_close)
+
     return {
         "middle_band": IndicatorComponent(
-            value=values["middle_band"], normalized_value=None, unit="price"
+            value=current_middle,
+            normalized_value=(
+                current_middle / current_close if normalized_close_denominator > 1e-12 else None
+            ),
+            unit="price",
         ),
         "upper_band": IndicatorComponent(
-            value=values["upper_band"], normalized_value=None, unit="price"
+            value=current_upper,
+            normalized_value=(
+                current_upper / current_close if normalized_close_denominator > 1e-12 else None
+            ),
+            unit="price",
         ),
         "lower_band": IndicatorComponent(
-            value=values["lower_band"], normalized_value=None, unit="price"
+            value=current_lower,
+            normalized_value=(
+                current_lower / current_close if normalized_close_denominator > 1e-12 else None
+            ),
+            unit="price",
         ),
         "band_width": IndicatorComponent(
-            value=values["band_width"], normalized_value=None, unit="price"
+            value=current_width,
+            normalized_value=(
+                current_width / normalized_close_denominator
+                if normalized_close_denominator > 1e-12
+                else None
+            ),
+            unit="price",
         ),
         "band_width_percent": IndicatorComponent(
-            value=values["band_width_percent"],
-            normalized_value=values["band_width_percent"] / 100.0,
+            value=current_width_percent,
+            normalized_value=current_width_percent / 100.0,
             unit="percent",
         ),
         "band_position": IndicatorComponent(
-            value=values["band_position"],
-            normalized_value=values["band_position"],
+            value=current_position,
+            normalized_value=current_position,
             unit="ratio",
+        ),
+        "price_to_middle_distance": IndicatorComponent(
+            value=current_close - current_middle,
+            normalized_value=_normalized_price_distance(
+                current_close,
+                current_middle,
+            ),
+            unit="price",
+        ),
+        "price_to_upper_distance": IndicatorComponent(
+            value=current_close - current_upper,
+            normalized_value=_normalized_price_distance(
+                current_close,
+                current_upper,
+            ),
+            unit="price",
+        ),
+        "price_to_lower_distance": IndicatorComponent(
+            value=current_close - current_lower,
+            normalized_value=_normalized_price_distance(
+                current_close,
+                current_lower,
+            ),
+            unit="price",
+        ),
+        "previous_band_width_percent": IndicatorComponent(
+            value=previous_width_percent,
+            normalized_value=(
+                previous_width_percent / 100.0 if previous_width_percent is not None else None
+            ),
+            unit="percent",
+        ),
+        "previous_band_position": IndicatorComponent(
+            value=previous_position,
+            normalized_value=previous_position,
+            unit="ratio",
+        ),
+        "band_width_percent_change": IndicatorComponent(
+            value=width_percent_change,
+            normalized_value=(
+                width_percent_change / 100.0 if width_percent_change is not None else None
+            ),
+            unit="percent",
+        ),
+        "band_position_change": IndicatorComponent(
+            value=position_change,
+            normalized_value=position_change,
+            unit="ratio",
+        ),
+        "middle_band_change": IndicatorComponent(
+            value=middle_change,
+            normalized_value=normalized_middle_change,
+            unit="price",
         ),
     }
 
@@ -216,25 +380,17 @@ def detect_bollinger_events(
         current_width = current_upper - current_lower
 
         previous_degenerate = (
-            previous_width <= 1e-12
-            or previous_width / max(abs(previous_close), 1e-12) <= 1e-10
+            previous_width <= 1e-12 or previous_width / max(abs(previous_close), 1e-12) <= 1e-10
         )
         current_degenerate = (
-            current_width <= 1e-12
-            or current_width / max(abs(current_close), 1e-12) <= 1e-10
+            current_width <= 1e-12 or current_width / max(abs(current_close), 1e-12) <= 1e-10
         )
 
         if previous_degenerate or current_degenerate:
             continue
 
-        lower_reentry = (
-            previous_close <= previous_lower
-            and current_close > current_lower
-        )
-        upper_reentry = (
-            previous_close >= previous_upper
-            and current_close < current_upper
-        )
+        lower_reentry = previous_close <= previous_lower and current_close > current_lower
+        upper_reentry = previous_close >= previous_upper and current_close < current_upper
 
         if lower_reentry:
             events.append(

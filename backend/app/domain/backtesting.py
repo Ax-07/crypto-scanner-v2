@@ -80,8 +80,25 @@ def evaluate_information_set(
     rsi = float(valid_rsi.iloc[-1]) if valid_rsi is not None and not valid_rsi.empty else None
     rsi = round(rsi, 2) if rsi is not None else None
 
+    primary_sma_fast: pd.Series | None = None
+    primary_sma_slow: pd.Series | None = None
     primary_ema_fast: pd.Series | None = None
     primary_ema_slow: pd.Series | None = None
+
+    if config.use_ma and config.use_sma:
+        primary_sma_periods = sorted(set(config.sma_periods))
+
+        if primary_sma_periods:
+            primary_sma_fast = calculate_sma(
+                frame["close"],
+                primary_sma_periods[0],
+            )
+
+        if len(primary_sma_periods) >= 2:
+            primary_sma_slow = calculate_sma(
+                frame["close"],
+                primary_sma_periods[1],
+            )
 
     if config.use_ma and config.use_ema:
         primary_ema_periods = sorted(set(config.ema_periods))
@@ -235,18 +252,24 @@ def evaluate_information_set(
         "bollinger": config.use_bollinger,
         "stochastic": config.use_stochastic,
     }
-    # Signaux structurés (IndicatorSignal) pour RSI, MACD, Bollinger,
-    # Stochastique et les indicateurs étendus.
+    # Signaux structurés du timeframe principal pour RSI, SMA, EMA, MACD,
+    # Bollinger, Stochastique et les indicateurs étendus.
     #
-    # La tendance SMA/EMA multi-timeframes reste représentée par
-    # trend_states/trend_score. Le moteur ne construit donc pas ici de signaux
-    # structurés SMA/EMA. Les EMA du timeframe principal sont néanmoins
-    # conservées séparément pour détecter leurs croisements ponctuels dans
-    # indicator_events.
+    # Les signaux SMA/EMA ci-dessous utilisent uniquement les bougies closes du
+    # timeframe principal. La tendance multi-timeframes reste représentée
+    # séparément par trend_states/trend_score et n'est pas fusionnée avec ces
+    # signaux. Les EMA principales restent également utilisées pour produire les
+    # événements ponctuels de croisement.
     indicator_signals = build_indicator_signals(
         close=frame["close"],
         rsi_series=rsi_series,
         use_rsi=config.use_rsi,
+        sma_fast=primary_sma_fast,
+        sma_slow=primary_sma_slow,
+        use_sma=config.use_ma and config.use_sma,
+        ema_fast=primary_ema_fast,
+        ema_slow=primary_ema_slow,
+        use_ema=config.use_ma and config.use_ema,
         macd_data=macd,
         use_macd=config.use_macd,
         bollinger_bands=bands,
@@ -310,9 +333,7 @@ def evaluate_information_set(
         for name, details in (confluence["details"] if confluence else {}).items()
     }
     excluded_profile_fields = {
-        name
-        for name in OPTIONAL_INDICATOR_EXTENSION_FIELDS
-        if getattr(config, name, None) is None
+        name for name in OPTIONAL_INDICATOR_EXTENSION_FIELDS if getattr(config, name, None) is None
     }
     if config.structured_signal_filters is None:
         excluded_profile_fields.add("structured_signal_filters")

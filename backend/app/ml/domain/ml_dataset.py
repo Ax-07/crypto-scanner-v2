@@ -8,7 +8,9 @@ from typing import Final, Literal
 
 from app.models.backtest import ForwardOutcome, SignalObservation
 from app.ml.models.ml_dataset import (
+    ML_FEATURE_SCHEMA_VERSION,
     MLDatasetRow,
+    MLFeatureSchemaVersion,
     MLFeatureValue,
     MarketDirectionLabel,
 )
@@ -298,6 +300,7 @@ def build_ml_dataset_row(
     observation: SignalObservation,
     outcome: ForwardOutcome,
     *,
+    feature_schema_version: MLFeatureSchemaVersion = ML_FEATURE_SCHEMA_VERSION,
     natr_multiplier: float = 1.0,
 ) -> MLDatasetRow:
     """Associe une observation causale à son outcome à six bougies."""
@@ -343,6 +346,7 @@ def build_ml_dataset_row(
     features["volatility.natr_percent"] = natr_percent
 
     return MLDatasetRow(
+        feature_schema_version=feature_schema_version,
         observation_id=observation.id,
         job_id=observation.job_id,
         symbol=observation.symbol,

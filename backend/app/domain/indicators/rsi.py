@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from app.domain.indicators.types import (
+    IndicatorComponent,
     IndicatorEvent,
     IndicatorSignal,
     SignalDirection,
@@ -84,6 +85,57 @@ def _rsi_state(value: float, oversold_level: float, overbought_level: float) -> 
     return "neutral"
 
 
+def _rsi_components(
+    *,
+    previous_value: float | None,
+    current_value: float,
+    oversold_level: float,
+    overbought_level: float,
+) -> dict[str, IndicatorComponent]:
+    """Construit les composantes continues et normalisées du RSI.
+
+    Toutes les valeurs sont causales : elles utilisent uniquement la valeur
+    courante et, lorsqu'elle existe, la valeur immédiatement précédente.
+    """
+    finite_previous = (
+        previous_value if previous_value is not None and math.isfinite(previous_value) else None
+    )
+    change = current_value - finite_previous if finite_previous is not None else None
+
+    return {
+        "rsi": IndicatorComponent(
+            value=current_value,
+            normalized_value=current_value / 100.0,
+            unit="index",
+        ),
+        "previous_value": IndicatorComponent(
+            value=finite_previous,
+            normalized_value=(finite_previous / 100.0 if finite_previous is not None else None),
+            unit="index",
+        ),
+        "change": IndicatorComponent(
+            value=change,
+            normalized_value=change / 100.0 if change is not None else None,
+            unit="index",
+        ),
+        "distance_from_midpoint": IndicatorComponent(
+            value=current_value - 50.0,
+            normalized_value=(current_value - 50.0) / 100.0,
+            unit="index",
+        ),
+        "distance_from_oversold": IndicatorComponent(
+            value=current_value - oversold_level,
+            normalized_value=(current_value - oversold_level) / 100.0,
+            unit="index",
+        ),
+        "distance_from_overbought": IndicatorComponent(
+            value=current_value - overbought_level,
+            normalized_value=(current_value - overbought_level) / 100.0,
+            unit="index",
+        ),
+    }
+
+
 _RSI_STATE_DIRECTION: dict[str, SignalDirection] = {
     "oversold": "bullish",
     "near_oversold": "bullish",
@@ -125,6 +177,13 @@ def detect_rsi_signal(
     if not math.isfinite(current_value):
         return _unavailable_signal("invalid_data", "Valeur de RSI non finie")
 
+    components = _rsi_components(
+        previous_value=previous_value,
+        current_value=current_value,
+        oversold_level=oversold_level,
+        overbought_level=overbought_level,
+    )
+
     if previous_value is not None and math.isfinite(previous_value):
         if previous_value <= oversold_level and current_value > oversold_level:
             return IndicatorSignal(
@@ -135,6 +194,7 @@ def detect_rsi_signal(
                 strength=_clamp_strength(0.75),
                 reason=f"RSI sort de la zone de survente ({current_value:.2f})",
                 raw_value=current_value,
+                components=components,
             )
         if previous_value >= overbought_level and current_value < overbought_level:
             return IndicatorSignal(
@@ -145,6 +205,7 @@ def detect_rsi_signal(
                 strength=_clamp_strength(0.75),
                 reason=f"RSI sort de la zone de surachat ({current_value:.2f})",
                 raw_value=current_value,
+                components=components,
             )
 
     state = _rsi_state(current_value, oversold_level, overbought_level)
@@ -156,6 +217,7 @@ def detect_rsi_signal(
         strength=_clamp_strength(_RSI_STATE_STRENGTH[state]),
         reason=f"RSI en zone {state} ({current_value:.2f})",
         raw_value=current_value,
+        components=components,
     )
 
 

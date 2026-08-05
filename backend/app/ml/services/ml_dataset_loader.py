@@ -146,6 +146,11 @@ def _validate_manifest_metadata(
     if len(rows) != manifest.row_count:
         raise MLDatasetLoadError("row_count ne correspond pas au nombre de lignes JSONL")
 
+    if any(row.feature_schema_version != manifest.feature_schema_version for row in rows):
+        raise MLDatasetLoadError(
+            "feature_schema_version du manifeste ne correspond pas " "à toutes les lignes JSONL"
+        )
+
     if not rows:
         return
 

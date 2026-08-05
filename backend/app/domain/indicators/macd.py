@@ -8,6 +8,7 @@ import pandas as pd
 
 from app.domain.indicators.moving_averages import calculate_ema
 from app.domain.indicators.types import (
+    IndicatorComponent,
     IndicatorEvent,
     IndicatorSignal,
     MacdSignal,
@@ -37,6 +38,142 @@ def calculate_macd(
     signal = macd.ewm(span=signal_period, adjust=False, min_periods=signal_period).mean()
     histogram = macd - signal
     return {"macd": macd, "signal": signal, "histogram": histogram}
+
+
+def _normalized_change(
+    current_value: float,
+    previous_value: float | None,
+) -> tuple[float | None, float | None]:
+    """Retourne une variation brute et sa forme relative bornée par l'amplitude."""
+    if previous_value is None or not math.isfinite(previous_value):
+        return None, None
+
+    change = current_value - previous_value
+    denominator = abs(current_value) + abs(previous_value)
+    normalized_change = change / denominator if denominator > 1e-12 else 0.0
+
+    return change, normalized_change
+
+
+def _macd_components(
+    *,
+    current_macd: float,
+    current_signal: float,
+    previous_macd: float | None,
+    previous_signal: float | None,
+    relative_distance: float,
+) -> dict[str, IndicatorComponent]:
+    """Construit les composantes continues et causales du MACD."""
+    finite_previous_macd = (
+        previous_macd if previous_macd is not None and math.isfinite(previous_macd) else None
+    )
+    finite_previous_signal = (
+        previous_signal if previous_signal is not None and math.isfinite(previous_signal) else None
+    )
+
+    current_histogram = current_macd - current_signal
+    current_denominator = abs(current_macd) + abs(current_signal)
+
+    previous_histogram = (
+        finite_previous_macd - finite_previous_signal
+        if finite_previous_macd is not None and finite_previous_signal is not None
+        else None
+    )
+    previous_denominator = (
+        abs(finite_previous_macd) + abs(finite_previous_signal)
+        if finite_previous_macd is not None and finite_previous_signal is not None
+        else None
+    )
+
+    macd_change, normalized_macd_change = _normalized_change(
+        current_macd,
+        finite_previous_macd,
+    )
+    signal_change, normalized_signal_change = _normalized_change(
+        current_signal,
+        finite_previous_signal,
+    )
+    histogram_change, normalized_histogram_change = _normalized_change(
+        current_histogram,
+        previous_histogram,
+    )
+
+    return {
+        "macd": IndicatorComponent(
+            value=current_macd,
+            normalized_value=(
+                current_macd / current_denominator if current_denominator > 1e-12 else 0.0
+            ),
+            unit="price",
+        ),
+        "signal_line": IndicatorComponent(
+            value=current_signal,
+            normalized_value=(
+                current_signal / current_denominator if current_denominator > 1e-12 else 0.0
+            ),
+            unit="price",
+        ),
+        "histogram": IndicatorComponent(
+            value=current_histogram,
+            normalized_value=(
+                current_histogram / current_denominator if current_denominator > 1e-12 else 0.0
+            ),
+            unit="price",
+        ),
+        "relative_distance": IndicatorComponent(
+            value=relative_distance,
+            normalized_value=relative_distance,
+            unit="ratio",
+        ),
+        "previous_macd": IndicatorComponent(
+            value=finite_previous_macd,
+            normalized_value=(
+                finite_previous_macd / previous_denominator
+                if finite_previous_macd is not None
+                and previous_denominator is not None
+                and previous_denominator > 1e-12
+                else None
+            ),
+            unit="price",
+        ),
+        "previous_signal_line": IndicatorComponent(
+            value=finite_previous_signal,
+            normalized_value=(
+                finite_previous_signal / previous_denominator
+                if finite_previous_signal is not None
+                and previous_denominator is not None
+                and previous_denominator > 1e-12
+                else None
+            ),
+            unit="price",
+        ),
+        "previous_histogram": IndicatorComponent(
+            value=previous_histogram,
+            normalized_value=(
+                previous_histogram / previous_denominator
+                if previous_histogram is not None
+                and previous_denominator is not None
+                and previous_denominator > 1e-12
+                else None
+            ),
+            unit="price",
+        ),
+        "macd_change": IndicatorComponent(
+            value=macd_change,
+            normalized_value=normalized_macd_change,
+            unit="price",
+        ),
+        "signal_change": IndicatorComponent(
+            value=signal_change,
+            normalized_value=normalized_signal_change,
+            unit="price",
+        ),
+        "histogram_change": IndicatorComponent(
+            value=histogram_change,
+            normalized_value=normalized_histogram_change,
+            unit="price",
+        ),
+    }
 
 
 def detect_macd_signal(data: dict[str, pd.Series]) -> MacdSignal:
@@ -188,21 +325,15 @@ def detect_macd_events(
 
         denominator = abs(current_macd) + abs(current_signal)
         relative_distance = (
-            abs(current_macd - current_signal) / denominator
-            if denominator > 1e-12
-            else 0.0
+            abs(current_macd - current_signal) / denominator if denominator > 1e-12 else 0.0
         )
 
-        zero_confirmation = (
-            direction == "bullish" and current_macd > 0
-        ) or (
+        zero_confirmation = (direction == "bullish" and current_macd > 0) or (
             direction == "bearish" and current_macd < 0
         )
 
         strength = _clamp_strength(
-            0.75
-            + (0.15 if zero_confirmation else 0.0)
-            + min(relative_distance, 0.1)
+            0.75 + (0.15 if zero_confirmation else 0.0) + min(relative_distance, 0.1)
         )
 
         metadata: dict[str, object] = {
@@ -280,15 +411,26 @@ def build_macd_signal(data: dict[str, pd.Series]) -> IndicatorSignal:
         abs(current_macd - current_signal) / denominator if denominator > 1e-12 else 0.0
     )
 
+    previous_macd: float | None = None
+    previous_signal: float | None = None
     event: str | None = None
+
     if len(frame) >= 2:
         previous_macd = float(frame["macd"].iloc[-2])
         previous_signal = float(frame["signal"].iloc[-2])
+
         if previous_macd <= previous_signal and current_macd > current_signal:
             event = "bullish_cross"
         elif previous_macd >= previous_signal and current_macd < current_signal:
             event = "bearish_cross"
 
+    components = _macd_components(
+        current_macd=current_macd,
+        current_signal=current_signal,
+        previous_macd=previous_macd,
+        previous_signal=previous_signal,
+        relative_distance=relative_distance,
+    )
     if event == "bullish_cross":
         strength = _clamp_strength(
             0.75 + (0.15 if zero_state == "above_zero" else 0.0) + min(relative_distance, 0.1)
@@ -301,6 +443,7 @@ def build_macd_signal(data: dict[str, pd.Series]) -> IndicatorSignal:
             strength=strength,
             reason="Croisement haussier du MACD au-dessus de sa ligne de signal",
             raw_value=current_macd,
+            components=components,
         )
     if event == "bearish_cross":
         strength = _clamp_strength(
@@ -314,6 +457,7 @@ def build_macd_signal(data: dict[str, pd.Series]) -> IndicatorSignal:
             strength=strength,
             reason="Croisement baissier du MACD sous sa ligne de signal",
             raw_value=current_macd,
+            components=components,
         )
     if line_state == "above_signal":
         strength = _clamp_strength(0.5 + min(relative_distance, 0.25))
@@ -325,6 +469,7 @@ def build_macd_signal(data: dict[str, pd.Series]) -> IndicatorSignal:
             strength=strength,
             reason="MACD maintenu au-dessus de sa ligne de signal",
             raw_value=current_macd,
+            components=components,
         )
     if line_state == "below_signal":
         strength = _clamp_strength(0.5 + min(relative_distance, 0.25))
@@ -336,6 +481,7 @@ def build_macd_signal(data: dict[str, pd.Series]) -> IndicatorSignal:
             strength=strength,
             reason="MACD maintenu sous sa ligne de signal",
             raw_value=current_macd,
+            components=components,
         )
     return IndicatorSignal(
         status="available",
@@ -345,4 +491,5 @@ def build_macd_signal(data: dict[str, pd.Series]) -> IndicatorSignal:
         strength=0.0,
         reason="MACD proche de sa ligne de signal, position neutre",
         raw_value=current_macd,
+        components=components,
     )

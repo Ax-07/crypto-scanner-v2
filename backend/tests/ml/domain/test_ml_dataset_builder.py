@@ -12,7 +12,11 @@ from app.ml.domain.ml_dataset import (
     extract_natr_percent,
 )
 from app.models.backtest import ForwardOutcome, SignalObservation
-from app.ml.models.ml_dataset import MarketDirectionLabel
+from app.ml.models.ml_dataset import (
+    ML_FEATURE_SCHEMA_VERSION,
+    ML_FEATURE_SCHEMA_VERSION_V2,
+    MarketDirectionLabel,
+)
 
 DECISION_TIME = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -215,6 +219,619 @@ def test_extract_causal_features_flattens_signals_and_events() -> None:
     assert features["quality.available_bars"] == 250
 
 
+def test_extract_causal_features_flattens_atr_components() -> None:
+    observation = valid_observation(
+        indicator_signals={
+            **valid_observation().indicator_signals,
+            "atr": {
+                "status": "available",
+                "direction": "neutral",
+                "signal": None,
+                "state": "expanding",
+                "strength": 0.25,
+                "reason": "NATR expanding",
+                "raw_value": 1.5,
+                "components": {
+                    "true_range": {
+                        "value": 2.0,
+                        "normalized_value": 0.02,
+                        "unit": "price",
+                    },
+                    "atr": {
+                        "value": 1.5,
+                        "normalized_value": 0.015,
+                        "unit": "price",
+                    },
+                    "natr": {
+                        "value": 1.5,
+                        "normalized_value": 0.015,
+                        "unit": "percent",
+                    },
+                    "previous_natr": {
+                        "value": 1.2,
+                        "normalized_value": 0.012,
+                        "unit": "percent",
+                    },
+                    "natr_change": {
+                        "value": 0.3,
+                        "normalized_value": 0.003,
+                        "unit": "percent",
+                    },
+                    "relative_natr_change": {
+                        "value": 0.25,
+                        "normalized_value": 0.25,
+                        "unit": "ratio",
+                    },
+                },
+            },
+        },
+    )
+
+    features = extract_causal_features(observation)
+
+    assert features["indicator.atr.raw_value"] == pytest.approx(1.5)
+
+    assert features["indicator.atr.component.true_range.normalized_value"] == pytest.approx(0.02)
+
+    assert features["indicator.atr.component.atr.normalized_value"] == pytest.approx(0.015)
+
+    assert features["indicator.atr.component.previous_natr.value"] == pytest.approx(1.2)
+
+    assert features["indicator.atr.component.natr_change.normalized_value"] == pytest.approx(0.003)
+
+    assert features["indicator.atr.component.relative_natr_change.value"] == pytest.approx(0.25)
+
+
+def test_extract_causal_features_flattens_adx_components() -> None:
+    observation = valid_observation(
+        indicator_signals={
+            **valid_observation().indicator_signals,
+            "adx": {
+                "status": "available",
+                "direction": "bullish",
+                "signal": "bullish_cross",
+                "state": "strong_trend",
+                "strength": 0.6,
+                "reason": "ADX strong_trend",
+                "raw_value": 30.0,
+                "components": {
+                    "adx": {
+                        "value": 30.0,
+                        "normalized_value": 0.3,
+                        "unit": "index",
+                    },
+                    "plus_di": {
+                        "value": 40.0,
+                        "normalized_value": 0.4,
+                        "unit": "index",
+                    },
+                    "minus_di": {
+                        "value": 20.0,
+                        "normalized_value": 0.2,
+                        "unit": "index",
+                    },
+                    "di_spread": {
+                        "value": 20.0,
+                        "normalized_value": 0.2,
+                        "unit": "index",
+                    },
+                    "di_balance": {
+                        "value": 20 / 60,
+                        "normalized_value": 20 / 60,
+                        "unit": "ratio",
+                    },
+                    "adx_change": {
+                        "value": 12.0,
+                        "normalized_value": 0.12,
+                        "unit": "index",
+                    },
+                },
+            },
+        },
+    )
+
+    features = extract_causal_features(observation)
+
+    assert features["indicator.adx.raw_value"] == pytest.approx(30.0)
+
+    assert features["indicator.adx.component.adx.normalized_value"] == pytest.approx(0.3)
+
+    assert features["indicator.adx.component.plus_di.value"] == pytest.approx(40.0)
+
+    assert features["indicator.adx.component.di_spread.normalized_value"] == pytest.approx(0.2)
+
+    assert features["indicator.adx.component.di_balance.value"] == pytest.approx(20 / 60)
+
+    assert features["indicator.adx.component.adx_change.normalized_value"] == pytest.approx(0.12)
+
+
+def test_extract_causal_features_flattens_supertrend_components() -> None:
+    observation = valid_observation(
+        indicator_signals={
+            **valid_observation().indicator_signals,
+            "supertrend": {
+                "status": "available",
+                "direction": "bullish",
+                "signal": "bullish_flip",
+                "state": "uptrend",
+                "strength": 1.0,
+                "reason": "Supertrend uptrend",
+                "raw_value": 100.0,
+                "components": {
+                    "supertrend": {
+                        "value": 100.0,
+                        "normalized_value": 100 / 110,
+                        "unit": "price",
+                    },
+                    "distance_ratio": {
+                        "value": 10 / 110,
+                        "normalized_value": 10 / 110,
+                        "unit": "ratio",
+                    },
+                    "distance_atr": {
+                        "value": 2.0,
+                        "normalized_value": 2.0,
+                        "unit": "ratio",
+                    },
+                    "band_position": {
+                        "value": 15 / 20,
+                        "normalized_value": 15 / 20,
+                        "unit": "ratio",
+                    },
+                    "supertrend_change": {
+                        "value": 5.0,
+                        "normalized_value": 5 / 195,
+                        "unit": "price",
+                    },
+                },
+            },
+        },
+    )
+
+    features = extract_causal_features(observation)
+
+    assert features["indicator.supertrend.raw_value"] == pytest.approx(100.0)
+
+    assert features["indicator.supertrend.component.supertrend.normalized_value"] == pytest.approx(
+        100 / 110
+    )
+
+    assert features["indicator.supertrend.component.distance_ratio.value"] == pytest.approx(
+        10 / 110
+    )
+
+    assert features[
+        "indicator.supertrend.component.distance_atr.normalized_value"
+    ] == pytest.approx(2.0)
+
+    assert features["indicator.supertrend.component.band_position.value"] == pytest.approx(15 / 20)
+
+    assert features[
+        "indicator.supertrend.component.supertrend_change.normalized_value"
+    ] == pytest.approx(5 / 195)
+
+
+def test_extract_causal_features_flattens_donchian_components() -> None:
+    observation = valid_observation(
+        indicator_signals={
+            **valid_observation().indicator_signals,
+            "donchian": {
+                "status": "available",
+                "direction": "bullish",
+                "signal": "breakout_up",
+                "state": "above_channel",
+                "strength": 0.15,
+                "reason": "Cassure haussière du canal Donchian",
+                "raw_value": 0.8,
+                "components": {
+                    "upper_channel": {
+                        "value": 14.0,
+                        "normalized_value": 14 / 13,
+                        "unit": "price",
+                    },
+                    "channel_width_percent": {
+                        "value": 100 * 5 / 11.5,
+                        "normalized_value": 5 / 11.5,
+                        "unit": "percent",
+                    },
+                    "channel_position": {
+                        "value": 0.8,
+                        "normalized_value": 0.8,
+                        "unit": "ratio",
+                    },
+                    "price_to_previous_upper_distance": {
+                        "value": 2.0,
+                        "normalized_value": 2 / 13,
+                        "unit": "price",
+                    },
+                    "channel_width_percent_change": {
+                        "value": ((100 * 5 / 11.5) - (100 * 3 / 9.5)),
+                        "normalized_value": ((5 / 11.5) - (3 / 9.5)),
+                        "unit": "percent",
+                    },
+                    "channel_position_change": {
+                        "value": 0.8 - (2 / 3),
+                        "normalized_value": 0.8 - (2 / 3),
+                        "unit": "ratio",
+                    },
+                },
+            },
+        },
+    )
+
+    features = extract_causal_features(observation)
+
+    assert features["indicator.donchian.raw_value"] == pytest.approx(0.8)
+
+    assert features["indicator.donchian.component.upper_channel.normalized_value"] == pytest.approx(
+        14 / 13
+    )
+
+    assert features[
+        "indicator.donchian.component.channel_width_percent.normalized_value"
+    ] == pytest.approx(5 / 11.5)
+
+    assert features["indicator.donchian.component.channel_position.value"] == pytest.approx(0.8)
+
+    assert features[
+        "indicator.donchian.component." "price_to_previous_upper_distance.normalized_value"
+    ] == pytest.approx(2 / 13)
+
+    assert features[
+        "indicator.donchian.component." "channel_width_percent_change.normalized_value"
+    ] == pytest.approx((5 / 11.5) - (3 / 9.5))
+
+    assert features[
+        "indicator.donchian.component." "channel_position_change.value"
+    ] == pytest.approx(0.8 - (2 / 3))
+
+
+def test_extract_causal_features_flattens_keltner_components() -> None:
+    observation = valid_observation(
+        indicator_signals={
+            **valid_observation().indicator_signals,
+            "keltner": {
+                "status": "available",
+                "direction": "bullish",
+                "signal": "breakout_up",
+                "state": "above_channel",
+                "strength": 1.0,
+                "reason": "Cassure haussière du canal Keltner",
+                "raw_value": 1.25,
+                "components": {
+                    "middle_line": {
+                        "value": 10.5,
+                        "normalized_value": 10.5 / 12,
+                        "unit": "price",
+                    },
+                    "atr": {
+                        "value": 1.0,
+                        "normalized_value": 1 / 12,
+                        "unit": "price",
+                    },
+                    "channel_width_percent": {
+                        "value": 100 * 2 / 10.5,
+                        "normalized_value": 2 / 10.5,
+                        "unit": "percent",
+                    },
+                    "channel_position": {
+                        "value": 1.25,
+                        "normalized_value": 1.25,
+                        "unit": "ratio",
+                    },
+                    "price_to_previous_upper_atr": {
+                        "value": 1.0,
+                        "normalized_value": 1.0,
+                        "unit": "ratio",
+                    },
+                    "middle_line_change": {
+                        "value": 0.5,
+                        "normalized_value": 0.5 / 20.5,
+                        "unit": "price",
+                    },
+                    "channel_position_change": {
+                        "value": 0.75,
+                        "normalized_value": 0.75,
+                        "unit": "ratio",
+                    },
+                },
+            },
+        },
+    )
+
+    features = extract_causal_features(observation)
+
+    assert features["indicator.keltner.raw_value"] == pytest.approx(1.25)
+
+    assert features["indicator.keltner.component.middle_line.normalized_value"] == pytest.approx(
+        10.5 / 12
+    )
+
+    assert features["indicator.keltner.component.atr.normalized_value"] == pytest.approx(1 / 12)
+
+    assert features[
+        "indicator.keltner.component." "channel_width_percent.normalized_value"
+    ] == pytest.approx(2 / 10.5)
+
+    assert features["indicator.keltner.component.channel_position.value"] == pytest.approx(1.25)
+
+    assert features[
+        "indicator.keltner.component." "price_to_previous_upper_atr.value"
+    ] == pytest.approx(1.0)
+
+    assert features[
+        "indicator.keltner.component." "middle_line_change.normalized_value"
+    ] == pytest.approx(0.5 / 20.5)
+
+    assert features[
+        "indicator.keltner.component." "channel_position_change.value"
+    ] == pytest.approx(0.75)
+
+
+def test_extract_causal_features_flattens_rsi_components() -> None:
+    observation = valid_observation(
+        indicator_signals={
+            **valid_observation().indicator_signals,
+            "rsi": {
+                "status": "available",
+                "direction": "neutral",
+                "signal": "neutral",
+                "state": "neutral",
+                "strength": 0.0,
+                "reason": "RSI en zone neutral",
+                "raw_value": 55.0,
+                "components": {
+                    "rsi": {
+                        "value": 55.0,
+                        "normalized_value": 0.55,
+                        "unit": "index",
+                    },
+                    "previous_value": {
+                        "value": 50.0,
+                        "normalized_value": 0.5,
+                        "unit": "index",
+                    },
+                    "change": {
+                        "value": 5.0,
+                        "normalized_value": 0.05,
+                        "unit": "index",
+                    },
+                    "distance_from_midpoint": {
+                        "value": 5.0,
+                        "normalized_value": 0.05,
+                        "unit": "index",
+                    },
+                },
+            },
+        },
+    )
+
+    features = extract_causal_features(observation)
+
+    assert features["indicator.rsi.raw_value"] == pytest.approx(55.0)
+    assert features["indicator.rsi.component.rsi.value"] == pytest.approx(55.0)
+    assert features["indicator.rsi.component.rsi.normalized_value"] == pytest.approx(0.55)
+    assert features["indicator.rsi.component.previous_value.value"] == pytest.approx(50.0)
+    assert features["indicator.rsi.component.change.value"] == pytest.approx(5.0)
+    assert features["indicator.rsi.component.change.normalized_value"] == pytest.approx(0.05)
+
+
+def test_extract_causal_features_flattens_macd_components() -> None:
+    observation = valid_observation(
+        indicator_signals={
+            **valid_observation().indicator_signals,
+            "macd": {
+                "status": "available",
+                "direction": "bullish",
+                "signal": "above_signal",
+                "state": "above_signal/above_zero",
+                "strength": 0.6,
+                "reason": "MACD maintenu au-dessus de sa ligne de signal",
+                "raw_value": 2.0,
+                "components": {
+                    "macd": {
+                        "value": 2.0,
+                        "normalized_value": 2 / 3,
+                        "unit": "price",
+                    },
+                    "signal_line": {
+                        "value": 1.0,
+                        "normalized_value": 1 / 3,
+                        "unit": "price",
+                    },
+                    "histogram": {
+                        "value": 1.0,
+                        "normalized_value": 1 / 3,
+                        "unit": "price",
+                    },
+                    "relative_distance": {
+                        "value": 1 / 3,
+                        "normalized_value": 1 / 3,
+                        "unit": "ratio",
+                    },
+                    "histogram_change": {
+                        "value": 0.5,
+                        "normalized_value": 1 / 3,
+                        "unit": "price",
+                    },
+                },
+            },
+        },
+    )
+
+    features = extract_causal_features(observation)
+
+    assert features["indicator.macd.raw_value"] == pytest.approx(2.0)
+    assert features["indicator.macd.component.macd.value"] == pytest.approx(2.0)
+    assert features["indicator.macd.component.macd.normalized_value"] == pytest.approx(2 / 3)
+    assert features["indicator.macd.component.signal_line.value"] == pytest.approx(1.0)
+    assert features["indicator.macd.component.histogram.value"] == pytest.approx(1.0)
+    assert features["indicator.macd.component.relative_distance.value"] == pytest.approx(1 / 3)
+    assert features["indicator.macd.component.histogram_change.normalized_value"] == pytest.approx(
+        1 / 3
+    )
+
+
+def test_extract_causal_features_flattens_stochastic_components() -> None:
+    observation = valid_observation(
+        indicator_signals={
+            **valid_observation().indicator_signals,
+            "stochastic": {
+                "status": "available",
+                "direction": "bullish",
+                "signal": "bullish_cross",
+                "state": "neutral",
+                "strength": 0.6,
+                "reason": "Croisement haussier du stochastique",
+                "raw_value": 30.0,
+                "components": {
+                    "k": {
+                        "value": 30.0,
+                        "normalized_value": 0.3,
+                        "unit": "index",
+                    },
+                    "d": {
+                        "value": 25.0,
+                        "normalized_value": 0.25,
+                        "unit": "index",
+                    },
+                    "spread": {
+                        "value": 5.0,
+                        "normalized_value": 0.05,
+                        "unit": "index",
+                    },
+                    "k_change": {
+                        "value": 20.0,
+                        "normalized_value": 0.2,
+                        "unit": "index",
+                    },
+                    "spread_change": {
+                        "value": 15.0,
+                        "normalized_value": 0.15,
+                        "unit": "index",
+                    },
+                },
+            },
+        },
+    )
+
+    features = extract_causal_features(observation)
+
+    assert features["indicator.stochastic.raw_value"] == pytest.approx(30.0)
+    assert features["indicator.stochastic.component.k.value"] == pytest.approx(30.0)
+    assert features["indicator.stochastic.component.k.normalized_value"] == pytest.approx(0.3)
+    assert features["indicator.stochastic.component.d.value"] == pytest.approx(25.0)
+    assert features["indicator.stochastic.component.spread.value"] == pytest.approx(5.0)
+    assert features["indicator.stochastic.component.k_change.normalized_value"] == pytest.approx(
+        0.2
+    )
+    assert features[
+        "indicator.stochastic.component.spread_change.normalized_value"
+    ] == pytest.approx(0.15)
+
+
+def test_extract_causal_features_flattens_moving_average_components() -> None:
+    observation = valid_observation(
+        indicator_signals={
+            **valid_observation().indicator_signals,
+            "ema": {
+                "status": "available",
+                "direction": "bullish",
+                "signal": "bullish_alignment",
+                "state": None,
+                "strength": 0.5,
+                "reason": "EMA: alignement haussier",
+                "raw_value": 100.0,
+                "components": {
+                    "fast": {
+                        "value": 100.0,
+                        "normalized_value": 100 / 110,
+                        "unit": "price",
+                    },
+                    "slow": {
+                        "value": 95.0,
+                        "normalized_value": 95 / 110,
+                        "unit": "price",
+                    },
+                    "price_to_fast_distance": {
+                        "value": 10.0,
+                        "normalized_value": 10 / 210,
+                        "unit": "price",
+                    },
+                    "fast_to_slow_distance": {
+                        "value": 5.0,
+                        "normalized_value": 5 / 195,
+                        "unit": "price",
+                    },
+                },
+            },
+        },
+    )
+
+    features = extract_causal_features(observation)
+
+    assert features["indicator.ema.raw_value"] == pytest.approx(100.0)
+    assert features["indicator.ema.component.fast.value"] == pytest.approx(100.0)
+    assert features["indicator.ema.component.fast.normalized_value"] == pytest.approx(100 / 110)
+    assert features[
+        "indicator.ema.component.price_to_fast_distance.normalized_value"
+    ] == pytest.approx(10 / 210)
+    assert features["indicator.ema.component.fast_to_slow_distance.value"] == pytest.approx(5.0)
+
+
+def test_extract_causal_features_flattens_bollinger_components() -> None:
+    observation = valid_observation(
+        indicator_signals={
+            **valid_observation().indicator_signals,
+            "bollinger": {
+                "status": "available",
+                "direction": "neutral",
+                "signal": "neutral",
+                "state": "neutral",
+                "strength": 0.0,
+                "reason": "Position Bollinger courante: neutral",
+                "raw_value": 110.0,
+                "components": {
+                    "band_width_percent": {
+                        "value": 100 * 30 / 105,
+                        "normalized_value": 30 / 105,
+                        "unit": "percent",
+                    },
+                    "band_position": {
+                        "value": 20 / 30,
+                        "normalized_value": 20 / 30,
+                        "unit": "ratio",
+                    },
+                    "price_to_middle_distance": {
+                        "value": 5.0,
+                        "normalized_value": 5 / 215,
+                        "unit": "price",
+                    },
+                    "band_position_change": {
+                        "value": (20 / 30) - 0.5,
+                        "normalized_value": (20 / 30) - 0.5,
+                        "unit": "ratio",
+                    },
+                },
+            },
+        },
+    )
+
+    features = extract_causal_features(observation)
+
+    assert features["indicator.bollinger.raw_value"] == pytest.approx(110.0)
+    assert features[
+        "indicator.bollinger.component.band_width_percent.normalized_value"
+    ] == pytest.approx(30 / 105)
+    assert features["indicator.bollinger.component.band_position.value"] == pytest.approx(20 / 30)
+    assert features[
+        "indicator.bollinger.component.price_to_middle_distance.normalized_value"
+    ] == pytest.approx(5 / 215)
+    assert features["indicator.bollinger.component.band_position_change.value"] == pytest.approx(
+        (20 / 30) - 0.5
+    )
+
+
 def test_build_ml_dataset_row_creates_up_label() -> None:
     row = build_ml_dataset_row(
         valid_observation(),
@@ -228,6 +845,17 @@ def test_build_ml_dataset_row_creates_up_label() -> None:
     assert row.neutral_threshold_return == pytest.approx(0.02)
     assert row.label is MarketDirectionLabel.UP
     assert row.features["volatility.natr_percent"] == pytest.approx(2.0)
+    assert row.feature_schema_version == ML_FEATURE_SCHEMA_VERSION
+
+
+def test_build_ml_dataset_row_accepts_explicit_v2_schema() -> None:
+    row = build_ml_dataset_row(
+        valid_observation(),
+        valid_outcome(),
+        feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+    )
+
+    assert row.feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2
 
 
 def test_builder_uses_configured_natr_multiplier() -> None:

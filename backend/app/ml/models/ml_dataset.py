@@ -10,12 +10,25 @@ from typing import Final, Literal, TypeAlias
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 ML_DATASET_SCHEMA_VERSION: Final[Literal[1]] = 1
-ML_FEATURE_SCHEMA_VERSION: Final[
-    Literal["causal-features-v1"]
-] = "causal-features-v1"
-ML_LABEL_SCHEMA_VERSION: Final[
-    Literal["direction-natr-h6-v1"]
-] = "direction-natr-h6-v1"
+
+ML_FEATURE_SCHEMA_VERSION_V1: Final[Literal["causal-features-v1"]] = "causal-features-v1"
+
+ML_FEATURE_SCHEMA_VERSION_V2: Final[Literal["causal-features-v2"]] = "causal-features-v2"
+
+MLFeatureSchemaVersion: TypeAlias = Literal[
+    "causal-features-v1",
+    "causal-features-v2",
+]
+
+ML_FEATURE_SCHEMA_VERSIONS: Final[tuple[MLFeatureSchemaVersion, ...]] = (
+    ML_FEATURE_SCHEMA_VERSION_V1,
+    ML_FEATURE_SCHEMA_VERSION_V2,
+)
+
+# Alias historique conservé pour les appels et artefacts v1.
+ML_FEATURE_SCHEMA_VERSION: Final[Literal["causal-features-v1"]] = ML_FEATURE_SCHEMA_VERSION_V1
+
+ML_LABEL_SCHEMA_VERSION: Final[Literal["direction-natr-h6-v1"]] = "direction-natr-h6-v1"
 
 MLFeatureValue: TypeAlias = bool | int | float | str | None
 
@@ -42,7 +55,7 @@ class MLDatasetRow(BaseModel):
     )
 
     dataset_schema_version: Literal[1] = ML_DATASET_SCHEMA_VERSION
-    feature_schema_version: Literal["causal-features-v1"] = ML_FEATURE_SCHEMA_VERSION
+    feature_schema_version: MLFeatureSchemaVersion = ML_FEATURE_SCHEMA_VERSION
     label_schema_version: Literal["direction-natr-h6-v1"] = ML_LABEL_SCHEMA_VERSION
 
     observation_id: int = Field(gt=0)

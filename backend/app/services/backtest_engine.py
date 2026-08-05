@@ -255,9 +255,9 @@ class BacktestEngine:
                     profile=signal,
                     snapshot_status=config.snapshot_status,
                     dataset_version=job.dataset_version,
+                    profile_id=config.signal_profile_id,
                 )
-                if config_fingerprint is not None:
-                    observation.profile_fingerprint = config_fingerprint
+
                 signature: list[object] = [
                     observation.accepted,
                     observation.rejection_stage,

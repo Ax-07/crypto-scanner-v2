@@ -8,6 +8,7 @@ import pandas as pd
 
 from app.domain.indicators.types import (
     IndicatorComponent,
+    IndicatorComponentUnit,
     IndicatorEvent,
     IndicatorSignal,
     _clamp_strength,
@@ -72,13 +73,59 @@ def calculate_donchian_channels(
     }
 
 
-def _component(value: float, unit: str) -> IndicatorComponent:
-    normalized = value if unit == "ratio" else value / 100.0 if unit == "percent" else None
+def _component(
+    value: float | None,
+    unit: IndicatorComponentUnit,
+    *,
+    normalized_value: float | None = None,
+) -> IndicatorComponent:
+    """Construit une composante Donchian éventuellement indisponible."""
+    if value is None:
+        return IndicatorComponent(
+            value=None,
+            normalized_value=None,
+            unit=unit,
+        )
+
+    normalized = normalized_value
+
+    if normalized is None:
+        if unit == "ratio":
+            normalized = value
+        elif unit == "percent":
+            normalized = value / 100.0
+
     return IndicatorComponent(
         value=value,
         normalized_value=normalized,
-        unit=unit,  # type: ignore[typeddict-item]
+        unit=unit,
     )
+
+
+def _finite_value(
+    values: pd.Series,
+    position: int,
+) -> float | None:
+    """Retourne une valeur finie d'une série lorsqu'elle existe."""
+    try:
+        value = float(values.iloc[position])
+    except (IndexError, TypeError, ValueError):
+        return None
+
+    return value if math.isfinite(value) else None
+
+
+def _relative_change(
+    current: float,
+    previous: float,
+) -> float:
+    """Normalise une variation signée entre deux valeurs."""
+    denominator = abs(current) + abs(previous)
+
+    if denominator <= 1e-12:
+        return 0.0
+
+    return (current - previous) / denominator
 
 
 def build_donchian_signal(
@@ -135,16 +182,166 @@ def build_donchian_signal(
         if state == "above_channel"
         else values["previous_lower_channel"]
     )
-    distance = abs(current_close - broken_band) / current_close if state != "inside_channel" else 0
+    distance = (
+        abs(current_close - broken_band) / current_close if state != "inside_channel" else 0.0
+    )
+
+    previous_middle_channel = (
+        values["previous_upper_channel"] + values["previous_lower_channel"]
+    ) / 2.0
+    previous_channel_width = values["previous_upper_channel"] - values["previous_lower_channel"]
+    previous_channel_width_percent = (
+        0.0
+        if abs(previous_middle_channel) <= 1e-12
+        else (100.0 * previous_channel_width / previous_middle_channel)
+    )
+
+    previous_close_value = _finite_value(
+        close,
+        -2,
+    )
+    if previous_close_value is not None and previous_close_value <= 0:
+        previous_close_value = None
+
+    previous_channel_position: float | None = None
+
+    if previous_close_value is not None:
+        previous_channel_position = (
+            0.5
+            if abs(previous_channel_width) <= 1e-12
+            else (previous_close_value - values["previous_lower_channel"]) / previous_channel_width
+        )
+
+    price_to_upper_distance = current_close - values["upper_channel"]
+    price_to_middle_distance = current_close - values["middle_channel"]
+    price_to_lower_distance = current_close - values["lower_channel"]
+    price_to_previous_upper_distance = current_close - values["previous_upper_channel"]
+    price_to_previous_lower_distance = current_close - values["previous_lower_channel"]
+
+    upper_channel_change = values["upper_channel"] - values["previous_upper_channel"]
+    middle_channel_change = values["middle_channel"] - previous_middle_channel
+    lower_channel_change = values["lower_channel"] - values["previous_lower_channel"]
+    channel_width_percent_change = values["channel_width_percent"] - previous_channel_width_percent
+    channel_position_change = (
+        values["channel_position"] - previous_channel_position
+        if previous_channel_position is not None
+        else None
+    )
+
     components = {
-        "upper_channel": _component(values["upper_channel"], "price"),
-        "middle_channel": _component(values["middle_channel"], "price"),
-        "lower_channel": _component(values["lower_channel"], "price"),
-        "previous_upper_channel": _component(values["previous_upper_channel"], "price"),
-        "previous_lower_channel": _component(values["previous_lower_channel"], "price"),
-        "channel_width": _component(values["channel_width"], "price"),
-        "channel_width_percent": _component(values["channel_width_percent"], "percent"),
-        "channel_position": _component(values["channel_position"], "ratio"),
+        "upper_channel": _component(
+            values["upper_channel"],
+            "price",
+            normalized_value=(values["upper_channel"] / current_close),
+        ),
+        "middle_channel": _component(
+            values["middle_channel"],
+            "price",
+            normalized_value=(values["middle_channel"] / current_close),
+        ),
+        "lower_channel": _component(
+            values["lower_channel"],
+            "price",
+            normalized_value=(values["lower_channel"] / current_close),
+        ),
+        "previous_upper_channel": _component(
+            values["previous_upper_channel"],
+            "price",
+            normalized_value=(values["previous_upper_channel"] / current_close),
+        ),
+        "previous_middle_channel": _component(
+            previous_middle_channel,
+            "price",
+            normalized_value=(previous_middle_channel / current_close),
+        ),
+        "previous_lower_channel": _component(
+            values["previous_lower_channel"],
+            "price",
+            normalized_value=(values["previous_lower_channel"] / current_close),
+        ),
+        "channel_width": _component(
+            values["channel_width"],
+            "price",
+            normalized_value=(values["channel_width"] / current_close),
+        ),
+        "channel_width_percent": _component(
+            values["channel_width_percent"],
+            "percent",
+        ),
+        "channel_position": _component(
+            values["channel_position"],
+            "ratio",
+        ),
+        "previous_channel_width": _component(
+            previous_channel_width,
+            "price",
+            normalized_value=(previous_channel_width / current_close),
+        ),
+        "previous_channel_width_percent": _component(
+            previous_channel_width_percent,
+            "percent",
+        ),
+        "previous_channel_position": _component(
+            previous_channel_position,
+            "ratio",
+        ),
+        "price_to_upper_distance": _component(
+            price_to_upper_distance,
+            "price",
+            normalized_value=(price_to_upper_distance / current_close),
+        ),
+        "price_to_middle_distance": _component(
+            price_to_middle_distance,
+            "price",
+            normalized_value=(price_to_middle_distance / current_close),
+        ),
+        "price_to_lower_distance": _component(
+            price_to_lower_distance,
+            "price",
+            normalized_value=(price_to_lower_distance / current_close),
+        ),
+        "price_to_previous_upper_distance": _component(
+            price_to_previous_upper_distance,
+            "price",
+            normalized_value=(price_to_previous_upper_distance / current_close),
+        ),
+        "price_to_previous_lower_distance": _component(
+            price_to_previous_lower_distance,
+            "price",
+            normalized_value=(price_to_previous_lower_distance / current_close),
+        ),
+        "upper_channel_change": _component(
+            upper_channel_change,
+            "price",
+            normalized_value=_relative_change(
+                values["upper_channel"],
+                values["previous_upper_channel"],
+            ),
+        ),
+        "middle_channel_change": _component(
+            middle_channel_change,
+            "price",
+            normalized_value=_relative_change(
+                values["middle_channel"],
+                previous_middle_channel,
+            ),
+        ),
+        "lower_channel_change": _component(
+            lower_channel_change,
+            "price",
+            normalized_value=_relative_change(
+                values["lower_channel"],
+                values["previous_lower_channel"],
+            ),
+        ),
+        "channel_width_percent_change": _component(
+            channel_width_percent_change,
+            "percent",
+        ),
+        "channel_position_change": _component(
+            channel_position_change,
+            "ratio",
+        ),
     }
     return IndicatorSignal(
         status="available",

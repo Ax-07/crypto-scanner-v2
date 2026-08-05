@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
-from typing import Sequence
+from typing import Sequence, cast
 
 from app.ml.models.ml_benchmark import (
     MLBenchmarkFeatureSnapshot,
@@ -13,6 +13,11 @@ from app.ml.models.ml_benchmark import (
     MLBenchmarkReport,
     MLBenchmarkSelectionSnapshot,
     MLBenchmarkStatus,
+    MLBenchmarkFeaturePolicy,
+)
+from app.ml.domain.ml_feature_policy import (
+    ML_FEATURE_POLICIES_V1,
+    MLFeaturePolicy,
 )
 from app.ml.models.ml_dataset_export import (
     MLDatasetExportManifest,
@@ -27,10 +32,26 @@ from app.ml.services.ml_walk_forward_evaluator import (
     MLWalkForwardCandidateEvaluation,
     MLWalkForwardEvaluationResult,
 )
+from app.ml.models.ml_dataset import (
+    ML_FEATURE_SCHEMA_VERSION_V1,
+)
 
 
 class MLBenchmarkBuildError(ValueError):
     """Signale des résultats incompatibles avec le benchmark."""
+
+
+def _benchmark_v1_policy(
+    policy: MLFeaturePolicy,
+) -> MLBenchmarkFeaturePolicy:
+    """Valide et convertit une politique compatible avec le benchmark v1."""
+    if policy not in ML_FEATURE_POLICIES_V1:
+        raise MLBenchmarkBuildError("le benchmark v1 accepte uniquement les politiques ML v1")
+
+    return cast(
+        MLBenchmarkFeaturePolicy,
+        policy.value,
+    )
 
 
 def _manifest_payload(
@@ -207,6 +228,8 @@ def _validate_source_consistency(
     final_result: MLFinalEvaluationResult,
 ) -> None:
     """Vérifie les volumes et identifiants du dataset source."""
+    if loaded.manifest.feature_schema_version != ML_FEATURE_SCHEMA_VERSION_V1:
+        raise MLBenchmarkBuildError("le benchmark v1 exige le contrat " "causal-features-v1")
     if not loaded.rows:
         raise MLBenchmarkBuildError("le dataset chargé ne peut pas être vide")
 
@@ -262,7 +285,7 @@ def build_ml_benchmark_report(
     minimum_columns, maximum_columns = candidate.output_feature_count_range
 
     selection = MLBenchmarkSelectionSnapshot(
-        policy=candidate.policy.value,
+        policy=_benchmark_v1_policy(candidate.policy),
         c_value=candidate.c_value,
         fold_count=(walk_forward_result.fold_count),
         validation_window=(walk_forward_result.validation_window),

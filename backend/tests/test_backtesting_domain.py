@@ -41,7 +41,7 @@ def backtest_config(**updates) -> BacktestConfig:
         "horizons": [1, 3, 6],
     }
     values.update(updates)
-    return BacktestConfig(**values)
+    return BacktestConfig.model_validate(values)
 
 
 def test_dataset_contract_is_versioned() -> None:
@@ -115,9 +115,8 @@ def test_future_mutation_cannot_change_signal() -> None:
 
 
 def test_future_mutation_cannot_change_indicator_signals() -> None:
-    """Anti-look-ahead: la mutation de bougies futures ne doit pas changer les
-    signaux structures `indicator_signals` (rsi/macd/bollinger/stochastic),
-    exactement comme pour les autres champs de SignalObservation."""
+    """Anti-look-ahead: une mutation future ne doit modifier aucun signal
+    structuré, y compris les SMA et EMA du timeframe principal."""
     rows = candles()
     index = 90
     decision = rows[index].close_time
@@ -125,6 +124,11 @@ def test_future_mutation_cannot_change_indicator_signals() -> None:
     config = signal_config().model_copy(
         update={
             "use_rsi": True,
+            "use_ma": True,
+            "use_sma": True,
+            "use_ema": True,
+            "sma_periods": [20, 50],
+            "ema_periods": [20, 50],
             "use_macd": True,
             "use_bollinger": True,
             "use_stochastic": True,
@@ -139,7 +143,23 @@ def test_future_mutation_cannot_change_indicator_signals() -> None:
         config=config,
     )
     assert before.indicator_signals
-    assert set(before.indicator_signals.keys()) >= {"rsi", "macd", "bollinger", "stochastic"}
+    assert set(before.indicator_signals.keys()) >= {
+        "rsi",
+        "sma",
+        "ema",
+        "macd",
+        "bollinger",
+        "stochastic",
+    }
+
+    sma_components = before.indicator_signals["sma"].components
+    ema_components = before.indicator_signals["ema"].components
+
+    assert sma_components is not None
+    assert ema_components is not None
+
+    assert sma_components["fast"].normalized_value is not None
+    assert ema_components["fast"].normalized_value is not None
 
     future = list(rows)
     changed = future[index + 1]

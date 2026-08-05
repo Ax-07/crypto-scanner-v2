@@ -21,7 +21,12 @@ from app.api.backtests import (
     router,
 )
 from app.database.connection import Database
-from app.models.backtest import BacktestConfig, BacktestStatus, BacktestSummary
+from app.models.backtest import (
+    BacktestConfig,
+    BacktestJob,
+    BacktestStatus,
+    BacktestSummary,
+)
 from app.models.portfolio import (
     PortfolioSimulationPublicResult,
     PortfolioSimulationSummary,
@@ -205,6 +210,7 @@ async def test_portfolio_job_exposes_only_summary_and_legacy_payload_stays_clean
         legacy_config = BacktestConfig.model_validate(config_payload())
         legacy = await create_backtest(legacy_config, request)
         assert "portfolio_simulation" not in legacy["config"]
+        assert "signal_profile_id" not in legacy["config"]
         assert "config_fingerprint" not in legacy
         await manager._tasks[legacy["id"]]
         legacy_done = await get_backtest(legacy["id"], request)
@@ -233,3 +239,32 @@ async def test_portfolio_job_exposes_only_summary_and_legacy_payload_stays_clean
         assert "trades" not in portfolio
         assert "equity_curve" not in portfolio
         await database.close()
+
+
+def test_signal_profile_id_is_normalized_and_exposed_only_when_explicit() -> None:
+    inline = BacktestJob(
+        id="inline-profile",
+        config=BacktestConfig.model_validate(config_payload()),
+    )
+
+    assert inline.config.signal_profile_id == "inline"
+    assert "signal_profile_id" not in inline.public_payload()["config"]
+
+    payload = config_payload()
+    payload["signal_profile_id"] = "  ml-dataset-v2  "
+
+    explicit = BacktestJob(
+        id="explicit-profile",
+        config=BacktestConfig.model_validate(payload),
+    )
+
+    assert explicit.config.signal_profile_id == "ml-dataset-v2"
+    assert explicit.public_payload()["config"]["signal_profile_id"] == "ml-dataset-v2"
+
+    payload["signal_profile_id"] = "   "
+
+    with pytest.raises(
+        ValueError,
+        match="signal_profile_id",
+    ):
+        BacktestConfig.model_validate(payload)

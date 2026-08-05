@@ -8,8 +8,14 @@ from pathlib import Path
 
 import pytest
 
+from app.ml.domain.ml_dataset_profile import (
+    ML_DATASET_PROFILE_V2_ID,
+)
 from app.ml.models.ml_dataset import (
+    ML_FEATURE_SCHEMA_VERSION,
+    ML_FEATURE_SCHEMA_VERSION_V2,
     MLDatasetRow,
+    MLFeatureSchemaVersion,
     MarketDirectionLabel,
 )
 from app.ml.services.ml_dataset_builder import (
@@ -28,6 +34,8 @@ BASE_TIME = datetime(
 )
 
 EMPTY_SHA256 = "sha256:" "e3b0c44298fc1c149afbf4c8996fb924" "27ae41e4649b934ca495991b7852b855"
+PROFILE_FINGERPRINT_A = "sha256:" + ("a" * 64)
+PROFILE_FINGERPRINT_B = "sha256:" + ("b" * 64)
 
 
 def dataset_row(
@@ -36,7 +44,9 @@ def dataset_row(
     decision_time: datetime,
     future_return: float,
     feature_name: str,
+    profile_id: str = "inline",
     profile_fingerprint: str | None = "sha256:profile",
+    feature_schema_version: MLFeatureSchemaVersion = ML_FEATURE_SCHEMA_VERSION,
 ) -> MLDatasetRow:
     """Construit une ligne exportable avec un label cohérent."""
     threshold = 0.02
@@ -59,7 +69,7 @@ def dataset_row(
         calculation_mode="canonical",
         source_algorithm_version="signal-evaluation-v3",
         source_dataset_version="binance-history-v1",
-        profile_id="inline",
+        profile_id=profile_id,
         profile_fingerprint=profile_fingerprint,
         horizon=6,
         entry_policy="signal_close",
@@ -74,6 +84,7 @@ def dataset_row(
             "price.close": 100.0 + observation_id,
             feature_name: float(observation_id),
         },
+        feature_schema_version=feature_schema_version,
     )
 
 
@@ -81,6 +92,7 @@ def build_result(
     rows: tuple[MLDatasetRow, ...],
     *,
     report_generated_rows: int | None = None,
+    feature_schema_version: MLFeatureSchemaVersion = ML_FEATURE_SCHEMA_VERSION,
 ) -> MLDatasetBuildResult:
     """Construit un résultat de service cohérent, sauf demande explicite."""
     generated_rows = len(rows) if report_generated_rows is None else report_generated_rows
@@ -104,6 +116,7 @@ def build_result(
         natr_multiplier=1.0,
         rows=rows,
         report=report,
+        feature_schema_version=feature_schema_version,
     )
 
 
@@ -376,3 +389,179 @@ def test_export_empty_dataset() -> None:
         assert exported.manifest.feature_names == []
         assert exported.manifest.stats.generated_rows == 0
         assert exported.manifest.stats.processed_rows == 0
+
+
+def test_export_propagates_v2_feature_schema() -> None:
+    row = dataset_row(
+        1,
+        decision_time=BASE_TIME,
+        future_return=0.03,
+        feature_name="feature.v2",
+        profile_id=ML_DATASET_PROFILE_V2_ID,
+        profile_fingerprint=PROFILE_FINGERPRINT_A,
+        feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+    )
+
+    result = build_result(
+        (row,),
+        feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+    )
+
+    with tempfile.TemporaryDirectory() as temporary:
+        exported = MLDatasetExporter().export(
+            result,
+            Path(temporary),
+            file_stem="dataset-v2",
+        )
+
+        assert exported.manifest.feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2
+
+        assert exported.manifest.profile_ids == [
+            ML_DATASET_PROFILE_V2_ID,
+        ]
+        assert exported.manifest.profile_fingerprints == [
+            PROFILE_FINGERPRINT_A,
+        ]
+
+        payload = json.loads(
+            exported.data_path.read_text(
+                encoding="utf-8",
+            )
+        )
+
+        assert payload["feature_schema_version"] == ML_FEATURE_SCHEMA_VERSION_V2
+
+
+def test_export_rejects_v2_with_noncanonical_profile_id() -> None:
+    row = dataset_row(
+        1,
+        decision_time=BASE_TIME,
+        future_return=0.03,
+        feature_name="feature.v2",
+        profile_id="inline",
+        profile_fingerprint=PROFILE_FINGERPRINT_A,
+        feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+    )
+
+    with tempfile.TemporaryDirectory() as temporary:
+        with pytest.raises(
+            ValueError,
+            match="profile_id",
+        ):
+            MLDatasetExporter().export(
+                build_result(
+                    (row,),
+                    feature_schema_version=(ML_FEATURE_SCHEMA_VERSION_V2),
+                ),
+                Path(temporary),
+            )
+
+
+@pytest.mark.parametrize(
+    "profile_fingerprint",
+    [
+        None,
+        "sha256:invalid",
+    ],
+)
+def test_export_rejects_v2_with_invalid_profile_fingerprint(
+    profile_fingerprint: str | None,
+) -> None:
+    row = dataset_row(
+        1,
+        decision_time=BASE_TIME,
+        future_return=0.03,
+        feature_name="feature.v2",
+        profile_id=ML_DATASET_PROFILE_V2_ID,
+        profile_fingerprint=profile_fingerprint,
+        feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+    )
+
+    with tempfile.TemporaryDirectory() as temporary:
+        with pytest.raises(
+            ValueError,
+            match="profile_fingerprint",
+        ):
+            MLDatasetExporter().export(
+                build_result(
+                    (row,),
+                    feature_schema_version=(ML_FEATURE_SCHEMA_VERSION_V2),
+                ),
+                Path(temporary),
+            )
+
+
+def test_export_rejects_v2_with_mixed_profile_fingerprints() -> None:
+    first = dataset_row(
+        1,
+        decision_time=BASE_TIME,
+        future_return=0.03,
+        feature_name="feature.v2",
+        profile_id=ML_DATASET_PROFILE_V2_ID,
+        profile_fingerprint=PROFILE_FINGERPRINT_A,
+        feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+    )
+    second = dataset_row(
+        2,
+        decision_time=BASE_TIME + timedelta(hours=1),
+        future_return=-0.03,
+        feature_name="feature.v2",
+        profile_id=ML_DATASET_PROFILE_V2_ID,
+        profile_fingerprint=PROFILE_FINGERPRINT_B,
+        feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+    )
+
+    with tempfile.TemporaryDirectory() as temporary:
+        with pytest.raises(
+            ValueError,
+            match="plusieurs profile_fingerprints",
+        ):
+            MLDatasetExporter().export(
+                build_result(
+                    (
+                        first,
+                        second,
+                    ),
+                    feature_schema_version=(ML_FEATURE_SCHEMA_VERSION_V2),
+                ),
+                Path(temporary),
+            )
+
+
+def test_export_rejects_empty_v2_dataset() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        with pytest.raises(
+            ValueError,
+            match="sans ligne ML",
+        ):
+            MLDatasetExporter().export(
+                build_result(
+                    (),
+                    feature_schema_version=(ML_FEATURE_SCHEMA_VERSION_V2),
+                ),
+                Path(temporary),
+            )
+
+
+def test_export_rejects_feature_schema_mismatch() -> None:
+    row = dataset_row(
+        1,
+        decision_time=BASE_TIME,
+        future_return=0.03,
+        feature_name="feature.v1",
+    )
+
+    result = build_result(
+        (row,),
+        feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+    )
+
+    with tempfile.TemporaryDirectory() as temporary:
+        with pytest.raises(
+            ValueError,
+            match="feature_schema_version",
+        ):
+            MLDatasetExporter().export(
+                result,
+                Path(temporary),
+            )

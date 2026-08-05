@@ -48,6 +48,11 @@ class BacktestConfig(BaseModel):
     start: datetime
     end: datetime
     signal_config: ScanConfig = Field(default_factory=ScanConfig)
+    signal_profile_id: str = Field(
+        default="inline",
+        min_length=1,
+        max_length=200,
+    )
     horizons: list[int] = Field(default_factory=lambda: [1, 3, 6, 12, 24])
     replay_mode: Literal["every_bar", "state_changes", "filtered_signals"] = "every_bar"
     entry_policy: Literal["signal_close", "next_open"] = "signal_close"
@@ -69,6 +74,17 @@ class BacktestConfig(BaseModel):
         normalized = [item.strip().upper() for item in value if item.strip()]
         if not normalized or len(normalized) != len(set(normalized)):
             raise ValueError("symbols doit contenir des symboles uniques non vides")
+        return normalized
+
+    @field_validator("signal_profile_id")
+    @classmethod
+    def normalize_signal_profile_id(cls, value: str) -> str:
+        """Normalise l'identifiant reproductible du profil de signaux."""
+        normalized = value.strip()
+
+        if not normalized:
+            raise ValueError("signal_profile_id doit être un identifiant non vide")
+
         return normalized
 
     @field_validator("start", "end")
@@ -251,6 +267,10 @@ class BacktestJob(BaseModel):
 
     def public_payload(self) -> dict[str, Any]:
         payload = self.model_dump(mode="json")
+
+        if self.config.signal_profile_id == "inline":
+            payload["config"].pop("signal_profile_id", None)
+
         if self.config.portfolio_simulation is None:
             payload["config"].pop("portfolio_simulation", None)
             payload.pop("config_fingerprint", None)

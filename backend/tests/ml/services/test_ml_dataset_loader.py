@@ -12,6 +12,9 @@ import pytest
 from app.ml.models.ml_dataset import (
     MLDatasetRow,
     MarketDirectionLabel,
+    ML_FEATURE_SCHEMA_VERSION,
+    ML_FEATURE_SCHEMA_VERSION_V2,
+    MLFeatureSchemaVersion,
 )
 from app.ml.services.ml_dataset_builder import (
     MLDatasetBuildReport,
@@ -40,6 +43,7 @@ def dataset_row(
     *,
     decision_time: datetime,
     feature_name: str = "feature.value",
+    feature_schema_version: MLFeatureSchemaVersion = ML_FEATURE_SCHEMA_VERSION,
 ) -> MLDatasetRow:
     """Construit une ligne ML neutre valide."""
     return MLDatasetRow(
@@ -68,11 +72,14 @@ def dataset_row(
             "price.close": (100.0 + observation_id),
             feature_name: float(observation_id),
         },
+        feature_schema_version=feature_schema_version,
     )
 
 
 def build_result(
     rows: tuple[MLDatasetRow, ...],
+    *,
+    feature_schema_version: MLFeatureSchemaVersion = ML_FEATURE_SCHEMA_VERSION,
 ) -> MLDatasetBuildResult:
     """Construit un résultat de génération cohérent."""
     row_count = len(rows)
@@ -96,6 +103,7 @@ def build_result(
         natr_multiplier=1.0,
         rows=rows,
         report=report,
+        feature_schema_version=feature_schema_version,
     )
 
 
@@ -480,5 +488,61 @@ def test_loader_rejects_row_count_mismatch() -> None:
         with pytest.raises(
             MLDatasetLoadError,
             match="row_count",
+        ):
+            MLDatasetLoader().load(manifest_path)
+
+
+def test_loader_accepts_v2_export() -> None:
+    rows = (
+        dataset_row(
+            1,
+            decision_time=BASE_TIME,
+            feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+        ),
+        dataset_row(
+            2,
+            decision_time=BASE_TIME + timedelta(hours=1),
+            feature_name="feature.other",
+            feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+        ),
+    )
+
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+
+        exported = MLDatasetExporter().export(
+            build_result(
+                rows,
+                feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+            ),
+            root,
+            file_stem="loader-v2",
+        )
+
+        result = MLDatasetLoader().load(
+            exported.manifest_path,
+        )
+
+        assert result.manifest.feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2
+        assert all(
+            row.feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2 for row in result.rows
+        )
+
+
+def test_loader_rejects_feature_schema_mismatch() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        manifest_path, _ = export_valid_dataset(root)
+
+        payload = manifest_payload(manifest_path)
+        payload["feature_schema_version"] = ML_FEATURE_SCHEMA_VERSION_V2
+        write_manifest(
+            manifest_path,
+            payload,
+        )
+
+        with pytest.raises(
+            MLDatasetLoadError,
+            match="feature_schema_version",
         ):
             MLDatasetLoader().load(manifest_path)

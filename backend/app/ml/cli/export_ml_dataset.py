@@ -9,7 +9,7 @@ import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, cast
 
 from app.core.config import BACKEND_ROOT, get_app_settings
 from app.core.logging import configure_logging
@@ -17,6 +17,11 @@ from app.database.connection import Database
 from app.repositories.backtest_repository import BacktestRepository
 from app.ml.services.ml_dataset_builder import MLDatasetBuilder
 from app.ml.services.ml_dataset_exporter import MLDatasetExporter
+from app.ml.models.ml_dataset import (
+    ML_FEATURE_SCHEMA_VERSION,
+    ML_FEATURE_SCHEMA_VERSIONS,
+    MLFeatureSchemaVersion,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +33,7 @@ class ExportMLDatasetOptions:
     output_directory: Path
     batch_size: int
     natr_multiplier: float
+    feature_schema_version: MLFeatureSchemaVersion
     file_stem: str | None
 
 
@@ -67,6 +73,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         help=("Multiplicateur appliqué au NATR pour définir " "la zone neutre."),
+    )
+    parser.add_argument(
+        "--feature-schema-version",
+        choices=ML_FEATURE_SCHEMA_VERSIONS,
+        default=ML_FEATURE_SCHEMA_VERSION,
+        help=("Version du contrat de caractéristiques. " "Par défaut : causal-features-v1."),
     )
     parser.add_argument(
         "--file-stem",
@@ -122,6 +134,16 @@ def options_from_args(
 
     natr_multiplier = float(args.natr_multiplier)
 
+    raw_feature_schema_version = str(args.feature_schema_version).strip()
+
+    if raw_feature_schema_version not in ML_FEATURE_SCHEMA_VERSIONS:
+        raise ValueError("--feature-schema-version doit être une version supportée")
+
+    feature_schema_version = cast(
+        MLFeatureSchemaVersion,
+        raw_feature_schema_version,
+    )
+
     if not math.isfinite(natr_multiplier) or natr_multiplier <= 0 or natr_multiplier > 10:
         raise ValueError(
             "--natr-multiplier doit être fini, supérieur à zéro " "et inférieur ou égal à 10"
@@ -134,6 +156,7 @@ def options_from_args(
         raise ValueError("--file-stem ne peut pas être vide")
 
     return ExportMLDatasetOptions(
+        feature_schema_version=feature_schema_version,
         job_id=job_id,
         database_path=database_path,
         output_directory=output_directory,
@@ -161,6 +184,7 @@ async def run_cli(
             options.job_id,
             batch_size=options.batch_size,
             natr_multiplier=options.natr_multiplier,
+            feature_schema_version=options.feature_schema_version,
         )
 
         export_result = MLDatasetExporter().export(
@@ -177,6 +201,7 @@ async def run_cli(
         "source_job_id": manifest.source_job_id,
         "horizon": manifest.horizon,
         "natr_multiplier": manifest.natr_multiplier,
+        "feature_schema_version": manifest.feature_schema_version,
         "data_path": str(export_result.data_path),
         "manifest_path": str(export_result.manifest_path),
         "data_sha256": manifest.data_sha256,

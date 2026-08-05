@@ -68,16 +68,104 @@ async def test_full_synthetic_replay_persists_and_survives_restart() -> None:
         assert len(observations) == 20
         assert len(outcomes) == 60
         assert all(item.snapshot_status == "confirmed" for item in observations)
-
+        assert {item.profile_id for item in observations} == {"inline"}
+        assert all(
+            item.profile_fingerprint is not None and item.profile_fingerprint.startswith("sha256:")
+            for item in observations
+        )
+        assert len({item.profile_fingerprint for item in observations}) == 1
         assert restored.algorithm_version == "signal-evaluation-v3"
         assert restored.checkpoint is not None
         assert restored.checkpoint["algorithm_version"] == "signal-evaluation-v3"
-        assert all(
-            item.algorithm_version == "signal-evaluation-v3"
-            for item in observations
-        )
+        assert all(item.algorithm_version == "signal-evaluation-v3" for item in observations)
 
         assert not restored.summary.trade_simulation_included
+        await database.close()
+
+
+@pytest.mark.asyncio
+async def test_replay_propagates_profile_id_and_keeps_profile_fingerprint_separate() -> None:
+    rows = candles()
+
+    with tempfile.TemporaryDirectory() as temporary:
+        database = Database(Path(temporary) / "signal-profile.sqlite3")
+        await database.initialize()
+        repository = BacktestRepository(database)
+
+        standard_config = BacktestConfig(
+            symbols=["SYN/USDC"],
+            start=datetime.fromtimestamp(
+                rows[80].open_time / 1_000,
+                tz=timezone.utc,
+            ),
+            end=datetime.fromtimestamp(
+                rows[85].open_time / 1_000,
+                tz=timezone.utc,
+            ),
+            signal_config=signal_config(),
+            signal_profile_id="ml-dataset-v2",
+            horizons=[1],
+        )
+
+        standard_job = BacktestJob(
+            id="profile-standard",
+            config=standard_config,
+        )
+        await repository.save_job(standard_job)
+
+        portfolio_config = BacktestConfig.model_validate(
+            {
+                **standard_config.model_dump(mode="python"),
+                "portfolio_simulation": {
+                    "quote_asset": "USDC",
+                },
+            }
+        )
+
+        portfolio_job = BacktestJob(
+            id="profile-portfolio",
+            config=portfolio_config,
+        )
+        await repository.save_job(portfolio_job)
+        await repository.save_job(portfolio_job)
+
+        engine = BacktestEngine(
+            MemoryHistory(rows),
+            repository,
+        )
+
+        await engine.run(standard_job)
+        await engine.run(portfolio_job)
+
+        standard_observations = await repository.all_observations(standard_job.id)
+        portfolio_observations = await repository.all_observations(portfolio_job.id)
+
+        assert standard_observations
+        assert portfolio_observations
+
+        assert {item.profile_id for item in standard_observations} == {"ml-dataset-v2"}
+        assert {item.profile_id for item in portfolio_observations} == {"ml-dataset-v2"}
+
+        standard_fingerprints = {item.profile_fingerprint for item in standard_observations}
+        portfolio_fingerprints = {item.profile_fingerprint for item in portfolio_observations}
+
+        assert len(standard_fingerprints) == 1
+        assert standard_fingerprints == portfolio_fingerprints
+
+        profile_fingerprint = next(iter(standard_fingerprints))
+
+        assert profile_fingerprint is not None
+        assert profile_fingerprint.startswith("sha256:")
+
+        assert standard_job.config_fingerprint is None
+        assert portfolio_job.config_fingerprint is not None
+        assert portfolio_job.config_fingerprint != profile_fingerprint
+
+        restored = await repository.get_job(portfolio_job.id)
+
+        assert restored is not None
+        assert restored.config.signal_profile_id == "ml-dataset-v2"
+
         await database.close()
 
 

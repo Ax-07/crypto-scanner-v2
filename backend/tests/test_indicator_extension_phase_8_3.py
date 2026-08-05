@@ -68,14 +68,14 @@ def test_bollinger_width_reuses_bands_and_preserves_historical_verdict() -> None
         "raw_value": 15.0,
     }
     assert signal["state"] == detect_bollinger_signal(close, bands)
-    assert set(signal["components"] or {}) == {
+    assert {
         "middle_band",
         "upper_band",
         "lower_band",
         "band_width",
         "band_width_percent",
         "band_position",
-    }
+    } <= set(signal["components"] or {})
 
 
 def test_bollinger_width_constant_series_has_deterministic_center_position() -> None:
@@ -134,11 +134,105 @@ def test_donchian_down_breakout_warmup_constant_and_validation() -> None:
     flat = series([10, 10, 10])
     flat_signal = build_donchian_signal(calculate_donchian_channels(flat, flat, flat, 2), flat)
     assert flat_signal["status"] == "available"
-    assert flat_signal["components"]["channel_position"]["value"] == 0.5
+
+    flat_components = flat_signal.get("components")
+    assert flat_components is not None
+    assert flat_components["channel_position"]["value"] == 0.5
     with pytest.raises(ValueError):
         calculate_donchian_channels(high, low, close, 0)
     invalid = calculate_donchian_channels(series([12, 11, 8]), series([10, 9, 9]), close, 2)
     assert build_donchian_signal(invalid, close)["status"] == "invalid_data"
+
+
+def test_donchian_signal_exposes_continuous_normalized_components() -> None:
+    high = series(
+        [
+            10.0,
+            11.0,
+            14.0,
+        ]
+    )
+    low = series(
+        [
+            8.0,
+            9.0,
+            10.0,
+        ]
+    )
+    close = series(
+        [
+            9.0,
+            10.0,
+            13.0,
+        ]
+    )
+
+    signal = build_donchian_signal(
+        calculate_donchian_channels(
+            high,
+            low,
+            close,
+            period=2,
+        ),
+        close,
+    )
+    components = signal.get("components")
+
+    current_width_percent = 100.0 * 5.0 / 11.5
+    previous_width_percent = 100.0 * 3.0 / 9.5
+
+    assert signal["status"] == "available"
+    assert signal["signal"] == "breakout_up"
+    assert signal["direction"] == "bullish"
+    assert signal["state"] == "above_channel"
+    assert components is not None
+
+    assert components["upper_channel"]["value"] == pytest.approx(14.0)
+    assert components["upper_channel"]["normalized_value"] == pytest.approx(14 / 13)
+
+    assert components["middle_channel"]["value"] == pytest.approx(11.5)
+    assert components["lower_channel"]["value"] == pytest.approx(9.0)
+
+    assert components["previous_upper_channel"]["value"] == pytest.approx(11.0)
+    assert components["previous_middle_channel"]["value"] == pytest.approx(9.5)
+    assert components["previous_lower_channel"]["value"] == pytest.approx(8.0)
+
+    assert components["channel_width"]["value"] == pytest.approx(5.0)
+    assert components["channel_width"]["normalized_value"] == pytest.approx(5 / 13)
+    assert components["channel_width_percent"]["value"] == pytest.approx(current_width_percent)
+    assert components["channel_position"]["value"] == pytest.approx(0.8)
+
+    assert components["previous_channel_width"]["value"] == pytest.approx(3.0)
+    assert components["previous_channel_width_percent"]["value"] == pytest.approx(
+        previous_width_percent
+    )
+    assert components["previous_channel_position"]["value"] == pytest.approx(2 / 3)
+
+    assert components["price_to_upper_distance"]["value"] == pytest.approx(-1.0)
+    assert components["price_to_upper_distance"]["normalized_value"] == pytest.approx(-1 / 13)
+
+    assert components["price_to_middle_distance"]["value"] == pytest.approx(1.5)
+    assert components["price_to_lower_distance"]["value"] == pytest.approx(4.0)
+    assert components["price_to_previous_upper_distance"]["value"] == pytest.approx(2.0)
+    assert components["price_to_previous_lower_distance"]["value"] == pytest.approx(5.0)
+
+    assert components["upper_channel_change"]["value"] == pytest.approx(3.0)
+    assert components["upper_channel_change"]["normalized_value"] == pytest.approx(3 / 25)
+
+    assert components["middle_channel_change"]["value"] == pytest.approx(2.0)
+    assert components["middle_channel_change"]["normalized_value"] == pytest.approx(2 / 21)
+
+    assert components["lower_channel_change"]["value"] == pytest.approx(1.0)
+    assert components["lower_channel_change"]["normalized_value"] == pytest.approx(1 / 17)
+
+    assert components["channel_width_percent_change"]["value"] == pytest.approx(
+        current_width_percent - previous_width_percent
+    )
+    assert components["channel_width_percent_change"]["normalized_value"] == pytest.approx(
+        (current_width_percent - previous_width_percent) / 100.0
+    )
+
+    assert components["channel_position_change"]["value"] == pytest.approx(0.8 - (2 / 3))
 
 
 def test_keltner_reuses_ema_atr_and_calculates_components() -> None:
@@ -190,6 +284,162 @@ def test_keltner_breakout_is_causal_and_not_repeated() -> None:
     assert build_keltner_signal(invalid, close)["status"] == "invalid_data"
 
 
+def test_keltner_signal_exposes_continuous_normalized_components() -> None:
+    close = series(
+        [
+            10.0,
+            12.0,
+        ]
+    )
+    data = {
+        "middle_line": series(
+            [
+                10.0,
+                10.5,
+            ]
+        ),
+        "upper_channel": series(
+            [
+                11.0,
+                11.5,
+            ]
+        ),
+        "lower_channel": series(
+            [
+                9.0,
+                9.5,
+            ]
+        ),
+        "atr": series(
+            [
+                1.0,
+                1.0,
+            ]
+        ),
+        "channel_width": series(
+            [
+                2.0,
+                2.0,
+            ]
+        ),
+        "channel_width_percent": series(
+            [
+                20.0,
+                100.0 * 2.0 / 10.5,
+            ]
+        ),
+        "channel_position": series(
+            [
+                0.5,
+                1.25,
+            ]
+        ),
+        "_invalid_ohlc": series(
+            [
+                0.0,
+                0.0,
+            ]
+        ),
+    }
+
+    signal = build_keltner_signal(
+        data,
+        close,
+    )
+    components = signal.get("components")
+
+    assert signal["status"] == "available"
+    assert signal["signal"] == "breakout_up"
+    assert signal["direction"] == "bullish"
+    assert signal["state"] == "above_channel"
+    assert signal["strength"] == pytest.approx(1.0)
+    assert components is not None
+
+    assert components["middle_line"]["value"] == pytest.approx(10.5)
+    assert components["middle_line"]["normalized_value"] == pytest.approx(10.5 / 12)
+
+    assert components["upper_channel"]["value"] == pytest.approx(11.5)
+    assert components["lower_channel"]["value"] == pytest.approx(9.5)
+
+    assert components["atr"]["value"] == pytest.approx(1.0)
+    assert components["atr"]["normalized_value"] == pytest.approx(1 / 12)
+
+    assert components["channel_width"]["value"] == pytest.approx(2.0)
+    assert components["channel_width"]["normalized_value"] == pytest.approx(2 / 12)
+
+    assert components["channel_width_percent"]["normalized_value"] == pytest.approx(2 / 10.5)
+    assert components["channel_position"]["value"] == pytest.approx(1.25)
+
+    assert components["price_to_middle_distance"]["value"] == pytest.approx(1.5)
+    assert components["price_to_upper_distance"]["value"] == pytest.approx(0.5)
+    assert components["price_to_lower_distance"]["value"] == pytest.approx(2.5)
+
+    assert components["price_to_previous_upper_distance"]["value"] == pytest.approx(1.0)
+    assert components["price_to_previous_lower_distance"]["value"] == pytest.approx(3.0)
+
+    assert components["price_to_middle_atr"]["value"] == pytest.approx(1.5)
+    assert components["price_to_previous_upper_atr"]["value"] == pytest.approx(1.0)
+
+    assert components["previous_middle_line"]["value"] == pytest.approx(10.0)
+    assert components["previous_upper_channel"]["value"] == pytest.approx(11.0)
+    assert components["previous_lower_channel"]["value"] == pytest.approx(9.0)
+    assert components["previous_channel_position"]["value"] == pytest.approx(0.5)
+
+    assert components["middle_line_change"]["value"] == pytest.approx(0.5)
+    assert components["middle_line_change"]["normalized_value"] == pytest.approx(0.5 / 20.5)
+
+    assert components["upper_channel_change"]["value"] == pytest.approx(0.5)
+    assert components["lower_channel_change"]["value"] == pytest.approx(0.5)
+    assert components["atr_change"]["value"] == pytest.approx(0.0)
+    assert components["channel_width_change"]["value"] == pytest.approx(0.0)
+
+    assert components["channel_width_percent_change"]["value"] == pytest.approx(
+        (100.0 * 2.0 / 10.5) - 20.0
+    )
+    assert components["channel_position_change"]["value"] == pytest.approx(0.75)
+
+
+def test_keltner_components_accept_missing_previous_values() -> None:
+    signal = build_keltner_signal(
+        {
+            "middle_line": series([10.0]),
+            "upper_channel": series([11.0]),
+            "lower_channel": series([9.0]),
+            "atr": series([1.0]),
+            "channel_width": series([2.0]),
+            "channel_width_percent": series([20.0]),
+            "channel_position": series([0.5]),
+            "_invalid_ohlc": series([0.0]),
+        },
+        series([10.0]),
+    )
+
+    components = signal.get("components")
+
+    assert signal["status"] == "available"
+    assert signal["signal"] is None
+    assert components is not None
+
+    assert components["previous_middle_line"]["value"] is None
+    assert components["previous_upper_channel"]["value"] is None
+    assert components["previous_lower_channel"]["value"] is None
+    assert components["previous_atr"]["value"] is None
+    assert components["previous_channel_width"]["value"] is None
+    assert components["previous_channel_width_percent"]["value"] is None
+    assert components["previous_channel_position"]["value"] is None
+
+    assert components["middle_line_change"]["value"] is None
+    assert components["upper_channel_change"]["value"] is None
+    assert components["lower_channel_change"]["value"] is None
+    assert components["atr_change"]["value"] is None
+    assert components["channel_width_change"]["value"] is None
+    assert components["channel_width_percent_change"]["value"] is None
+    assert components["channel_position_change"]["value"] is None
+
+    assert components["price_to_previous_upper_distance"]["value"] is None
+    assert components["price_to_previous_lower_distance"]["value"] is None
+
+
 def test_phase_8_3_calculations_ignore_future_candles() -> None:
     close = series([10, 11, 12, 13, 14, 15])
     high, low = close + 1, close - 1
@@ -239,16 +489,27 @@ def test_phase_8_3_live_replay_parity_and_business_neutrality() -> None:
         use_stochastic=False,
         use_confluence_score=False,
     )
-    observed_config = ScanConfig(
-        **base_config.model_dump(exclude={"donchian", "keltner"}),
-        donchian={"version": 1, "enabled": True, "period": 20},
-        keltner={
-            "version": 1,
-            "enabled": True,
-            "ema_period": 20,
-            "atr_period": 10,
-            "multiplier": 2,
-        },
+    observed_config = ScanConfig.model_validate(
+        {
+            **base_config.model_dump(
+                exclude={
+                    "donchian",
+                    "keltner",
+                }
+            ),
+            "donchian": {
+                "version": 1,
+                "enabled": True,
+                "period": 20,
+            },
+            "keltner": {
+                "version": 1,
+                "enabled": True,
+                "ema_period": 20,
+                "atr_period": 10,
+                "multiplier": 2,
+            },
+        }
     )
     base = evaluate_information_set(
         job_id="base",
@@ -344,9 +605,10 @@ def test_phase_8_3_config_defaults_validation_and_mutualization() -> None:
     assert legacy.donchian is None
     assert legacy.keltner is None
     with pytest.raises(ValueError):
-        ScanConfig(donchian={"version": 1, "period": 0})
+        ScanConfig.model_validate({"donchian": {"version": 1, "period": 0}})
+
     with pytest.raises(ValueError):
-        ScanConfig(keltner={"version": 1, "multiplier": math.inf})
+        ScanConfig.model_validate({"keltner": {"version": 1, "multiplier": math.inf}})
 
     prices = series([100 + index for index in range(50)])
     data, signals = calculate_extended_indicator_bundle(
@@ -374,15 +636,27 @@ def test_phase_8_3_openapi_and_historical_payload_compatibility() -> None:
     assert reparsed.donchian is None
     assert reparsed.keltner is None
     with pytest.raises(ValueError):
-        ScanConfig(donchian={"version": 1, "enabled": True, "period": 20, "unknown": 1})
+        ScanConfig.model_validate(
+            {
+                "donchian": {
+                    "version": 1,
+                    "enabled": True,
+                    "period": 20,
+                    "unknown": 1,
+                }
+            }
+        )
+
     with pytest.raises(ValueError):
-        ScanConfig(
-            keltner={
-                "version": 1,
-                "enabled": True,
-                "ema_period": 20,
-                "atr_period": 10,
-                "multiplier": 2,
-                "unknown": 1,
+        ScanConfig.model_validate(
+            {
+                "keltner": {
+                    "version": 1,
+                    "enabled": True,
+                    "ema_period": 20,
+                    "atr_period": 10,
+                    "multiplier": 2,
+                    "unknown": 1,
+                }
             }
         )

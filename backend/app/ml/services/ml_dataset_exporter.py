@@ -4,16 +4,26 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
-from app.ml.models.ml_dataset import MLDatasetRow
+from app.ml.domain.ml_dataset_profile import (
+    ML_DATASET_PROFILE_V2_ID,
+)
+from app.ml.models.ml_dataset import (
+    ML_FEATURE_SCHEMA_VERSION_V2,
+    MLDatasetRow,
+    MLFeatureSchemaVersion,
+)
 from app.ml.models.ml_dataset_export import (
     MLDatasetExportManifest,
     MLDatasetExportStats,
 )
 from app.ml.services.ml_dataset_builder import MLDatasetBuildResult
+
+ML_PROFILE_FINGERPRINT_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +92,43 @@ def _ordered_rows(
     return ordered
 
 
+def _validate_v2_provenance(
+    rows: tuple[MLDatasetRow, ...],
+    feature_schema_version: MLFeatureSchemaVersion,
+) -> None:
+    """Verrouille la provenance canonique des exports v2."""
+    if feature_schema_version != ML_FEATURE_SCHEMA_VERSION_V2:
+        return
+
+    if not rows:
+        raise ValueError("causal-features-v2 ne peut pas être exporté " "sans ligne ML")
+
+    expected_fingerprint: str | None = None
+
+    for row in rows:
+        if row.profile_id != ML_DATASET_PROFILE_V2_ID:
+            raise ValueError(
+                "une ligne causal-features-v2 possède " "un profile_id différent de ml-dataset-v2"
+            )
+
+        profile_fingerprint = row.profile_fingerprint
+
+        if (
+            profile_fingerprint is None
+            or ML_PROFILE_FINGERPRINT_PATTERN.fullmatch(profile_fingerprint) is None
+        ):
+            raise ValueError(
+                "une ligne causal-features-v2 possède " "un profile_fingerprint absent ou invalide"
+            )
+
+        if expected_fingerprint is None:
+            expected_fingerprint = profile_fingerprint
+        elif profile_fingerprint != expected_fingerprint:
+            raise ValueError(
+                "les lignes causal-features-v2 possèdent " "plusieurs profile_fingerprints"
+            )
+
+
 def _export_stats(
     result: MLDatasetBuildResult,
 ) -> MLDatasetExportStats:
@@ -121,6 +168,16 @@ class MLDatasetExporter:
 
         if len(ordered_rows) != result.report.generated_rows:
             raise ValueError("le nombre de lignes ne correspond pas " "à report.generated_rows")
+
+        if any(row.feature_schema_version != result.feature_schema_version for row in ordered_rows):
+            raise ValueError(
+                "feature_schema_version des lignes ne correspond pas " "au résultat de construction"
+            )
+
+        _validate_v2_provenance(
+            ordered_rows,
+            result.feature_schema_version,
+        )
 
         destination = Path(output_directory)
         destination.mkdir(
@@ -174,6 +231,7 @@ class MLDatasetExporter:
             last_decision_time = ordered_rows[-1].decision_time if ordered_rows else None
 
             manifest = MLDatasetExportManifest(
+                feature_schema_version=result.feature_schema_version,
                 source_job_id=result.job_id,
                 horizon=result.horizon,
                 natr_multiplier=result.natr_multiplier,

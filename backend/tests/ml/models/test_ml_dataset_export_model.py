@@ -9,6 +9,9 @@ from app.ml.models.ml_dataset_export import (
     MLDatasetExportManifest,
     MLDatasetExportStats,
 )
+from app.ml.models.ml_dataset import (
+    ML_FEATURE_SCHEMA_VERSION_V2,
+)
 
 FIRST_TIME = datetime(
     2026,
@@ -89,6 +92,14 @@ def test_valid_manifest_exposes_versioned_contract() -> None:
     assert manifest.feature_schema_version == "causal-features-v1"
     assert manifest.label_schema_version == "direction-natr-h6-v1"
     assert manifest.horizon == 6
+
+
+def test_manifest_accepts_explicit_v2_feature_contract() -> None:
+    manifest = valid_manifest(
+        feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+    )
+
+    assert manifest.feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2
 
 
 def test_manifest_normalizes_required_strings() -> None:

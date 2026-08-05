@@ -19,6 +19,7 @@ from app.ml.domain.ml_evaluation import (
     evaluate_classification,
 )
 from app.ml.domain.ml_feature_policy import (
+    ML_FEATURE_POLICIES_V1,
     MLFeaturePolicy,
     apply_ml_feature_policy,
     normalize_feature_policy,
@@ -605,7 +606,7 @@ def _candidate_ranking_key(
 def evaluate_logistic_walk_forward(
     plan: MLWalkForwardPlan,
     *,
-    policies: Sequence[MLFeaturePolicy | str] = tuple(MLFeaturePolicy),
+    policies: Sequence[MLFeaturePolicy | str] = ML_FEATURE_POLICIES_V1,
     c_values: Sequence[float] = (
         1.0,
         0.3,

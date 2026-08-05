@@ -196,8 +196,30 @@ def detect_supertrend_events(
     return events
 
 
-def _price_component(value: float) -> IndicatorComponent:
-    return IndicatorComponent(value=value, normalized_value=None, unit="price")
+def _price_component(
+    value: float | None,
+    *,
+    normalized_value: float | None = None,
+) -> IndicatorComponent:
+    """Construit une composante exprimée en prix."""
+    return IndicatorComponent(
+        value=value,
+        normalized_value=(normalized_value if value is not None else None),
+        unit="price",
+    )
+
+
+def _relative_distance(
+    first: float,
+    second: float,
+) -> float:
+    """Normalise une distance signée entre deux valeurs."""
+    denominator = abs(first) + abs(second)
+
+    if denominator <= 1e-12:
+        return 0.0
+
+    return (first - second) / denominator
 
 
 def build_supertrend_signal(
@@ -225,31 +247,298 @@ def build_supertrend_signal(
     bullish = current["trend"] > 0
     direction: SignalDirection = "bullish" if bullish else "bearish"
     state = "uptrend" if bullish else "downtrend"
+
+    previous_close: float | None = None
+    previous_supertrend: float | None = None
+    previous_upper: float | None = None
+    previous_lower: float | None = None
+    previous_atr: float | None = None
+    previous_trend: float | None = None
+
+    previous_input_valid = True
+
+    if input_valid is not None and len(input_valid) >= 2:
+        previous_input_valid = bool(input_valid.iloc[-2])
+
+    if len(close) >= 2 and previous_input_valid:
+        candidate_previous = {
+            "close": float(close.iloc[-2]),
+            "supertrend": float(data["supertrend"].iloc[-2]),
+            "upper_band": float(data["upper_band"].iloc[-2]),
+            "lower_band": float(data["lower_band"].iloc[-2]),
+            "atr": float(data["atr"].iloc[-2]),
+            "trend": float(data["trend"].iloc[-2]),
+        }
+
+        if (
+            all(math.isfinite(value) for value in candidate_previous.values())
+            and candidate_previous["close"] > 0
+            and candidate_previous["atr"] >= 0
+        ):
+            previous_close = candidate_previous["close"]
+            previous_supertrend = candidate_previous["supertrend"]
+            previous_upper = candidate_previous["upper_band"]
+            previous_lower = candidate_previous["lower_band"]
+            previous_atr = candidate_previous["atr"]
+            previous_trend = candidate_previous["trend"]
+
     event: str | None = None
-    previous_trends = data["trend"]
-    if len(previous_trends) >= 2 and math.isfinite(float(previous_trends.iloc[-2])):
-        previous_bullish = float(previous_trends.iloc[-2]) > 0
+
+    if previous_trend is not None:
+        previous_bullish = previous_trend > 0
+
         if previous_bullish != bullish:
             event = "bullish_flip" if bullish else "bearish_flip"
-    distance_ratio = (current_close - current["supertrend"]) / current_close
-    distance_atr = abs(current_close - current["supertrend"]) / max(current["atr"], 1e-12)
+
+    price_to_supertrend = current_close - current["supertrend"]
+    distance_ratio = price_to_supertrend / current_close
+    distance_atr = price_to_supertrend / max(
+        current["atr"],
+        1e-12,
+    )
+
+    band_width = current["upper_band"] - current["lower_band"]
+    band_position = (
+        0.5 if abs(band_width) <= 1e-12 else (current_close - current["lower_band"]) / band_width
+    )
+
+    previous_distance_ratio: float | None = None
+    previous_distance_atr: float | None = None
+    previous_band_width: float | None = None
+    previous_band_position: float | None = None
+
+    if (
+        previous_close is not None
+        and previous_supertrend is not None
+        and previous_upper is not None
+        and previous_lower is not None
+        and previous_atr is not None
+    ):
+        previous_price_to_supertrend = previous_close - previous_supertrend
+        previous_distance_ratio = previous_price_to_supertrend / previous_close
+        previous_distance_atr = previous_price_to_supertrend / max(
+            previous_atr,
+            1e-12,
+        )
+
+        previous_band_width = previous_upper - previous_lower
+        previous_band_position = (
+            0.5
+            if abs(previous_band_width) <= 1e-12
+            else (previous_close - previous_lower) / previous_band_width
+        )
+
+    supertrend_change = (
+        current["supertrend"] - previous_supertrend if previous_supertrend is not None else None
+    )
+    upper_band_change = (
+        current["upper_band"] - previous_upper if previous_upper is not None else None
+    )
+    lower_band_change = (
+        current["lower_band"] - previous_lower if previous_lower is not None else None
+    )
+    atr_change = current["atr"] - previous_atr if previous_atr is not None else None
+    band_width_change = (
+        band_width - previous_band_width if previous_band_width is not None else None
+    )
+    distance_ratio_change = (
+        distance_ratio - previous_distance_ratio if previous_distance_ratio is not None else None
+    )
+    distance_atr_change = (
+        distance_atr - previous_distance_atr if previous_distance_atr is not None else None
+    )
+    band_position_change = (
+        band_position - previous_band_position if previous_band_position is not None else None
+    )
+
+    components = {
+        "supertrend": _price_component(
+            current["supertrend"],
+            normalized_value=(current["supertrend"] / current_close),
+        ),
+        "upper_band": _price_component(
+            current["upper_band"],
+            normalized_value=(current["upper_band"] / current_close),
+        ),
+        "lower_band": _price_component(
+            current["lower_band"],
+            normalized_value=(current["lower_band"] / current_close),
+        ),
+        "atr": _price_component(
+            current["atr"],
+            normalized_value=(current["atr"] / current_close),
+        ),
+        "price_to_supertrend_distance": _price_component(
+            price_to_supertrend,
+            normalized_value=distance_ratio,
+        ),
+        "price_to_upper_distance": _price_component(
+            current_close - current["upper_band"],
+            normalized_value=_relative_distance(
+                current_close,
+                current["upper_band"],
+            ),
+        ),
+        "price_to_lower_distance": _price_component(
+            current_close - current["lower_band"],
+            normalized_value=_relative_distance(
+                current_close,
+                current["lower_band"],
+            ),
+        ),
+        "distance_ratio": IndicatorComponent(
+            value=distance_ratio,
+            normalized_value=distance_ratio,
+            unit="ratio",
+        ),
+        "distance_atr": IndicatorComponent(
+            value=distance_atr,
+            normalized_value=distance_atr,
+            unit="ratio",
+        ),
+        "band_width": _price_component(
+            band_width,
+            normalized_value=(band_width / current_close),
+        ),
+        "band_position": IndicatorComponent(
+            value=band_position,
+            normalized_value=band_position,
+            unit="ratio",
+        ),
+        "previous_supertrend": _price_component(
+            previous_supertrend,
+            normalized_value=(
+                previous_supertrend / previous_close
+                if (previous_supertrend is not None and previous_close is not None)
+                else None
+            ),
+        ),
+        "previous_upper_band": _price_component(
+            previous_upper,
+            normalized_value=(
+                previous_upper / previous_close
+                if (previous_upper is not None and previous_close is not None)
+                else None
+            ),
+        ),
+        "previous_lower_band": _price_component(
+            previous_lower,
+            normalized_value=(
+                previous_lower / previous_close
+                if (previous_lower is not None and previous_close is not None)
+                else None
+            ),
+        ),
+        "previous_atr": _price_component(
+            previous_atr,
+            normalized_value=(
+                previous_atr / previous_close
+                if (previous_atr is not None and previous_close is not None)
+                else None
+            ),
+        ),
+        "previous_distance_ratio": IndicatorComponent(
+            value=previous_distance_ratio,
+            normalized_value=previous_distance_ratio,
+            unit="ratio",
+        ),
+        "previous_distance_atr": IndicatorComponent(
+            value=previous_distance_atr,
+            normalized_value=previous_distance_atr,
+            unit="ratio",
+        ),
+        "previous_band_width": _price_component(
+            previous_band_width,
+            normalized_value=(
+                previous_band_width / previous_close
+                if (previous_band_width is not None and previous_close is not None)
+                else None
+            ),
+        ),
+        "previous_band_position": IndicatorComponent(
+            value=previous_band_position,
+            normalized_value=previous_band_position,
+            unit="ratio",
+        ),
+        "supertrend_change": _price_component(
+            supertrend_change,
+            normalized_value=(
+                _relative_distance(
+                    current["supertrend"],
+                    previous_supertrend,
+                )
+                if previous_supertrend is not None
+                else None
+            ),
+        ),
+        "upper_band_change": _price_component(
+            upper_band_change,
+            normalized_value=(
+                _relative_distance(
+                    current["upper_band"],
+                    previous_upper,
+                )
+                if previous_upper is not None
+                else None
+            ),
+        ),
+        "lower_band_change": _price_component(
+            lower_band_change,
+            normalized_value=(
+                _relative_distance(
+                    current["lower_band"],
+                    previous_lower,
+                )
+                if previous_lower is not None
+                else None
+            ),
+        ),
+        "atr_change": _price_component(
+            atr_change,
+            normalized_value=(
+                _relative_distance(
+                    current["atr"],
+                    previous_atr,
+                )
+                if previous_atr is not None
+                else None
+            ),
+        ),
+        "band_width_change": _price_component(
+            band_width_change,
+            normalized_value=(
+                _relative_distance(
+                    band_width,
+                    previous_band_width,
+                )
+                if previous_band_width is not None
+                else None
+            ),
+        ),
+        "distance_ratio_change": IndicatorComponent(
+            value=distance_ratio_change,
+            normalized_value=distance_ratio_change,
+            unit="ratio",
+        ),
+        "distance_atr_change": IndicatorComponent(
+            value=distance_atr_change,
+            normalized_value=distance_atr_change,
+            unit="ratio",
+        ),
+        "band_position_change": IndicatorComponent(
+            value=band_position_change,
+            normalized_value=band_position_change,
+            unit="ratio",
+        ),
+    }
+
     return IndicatorSignal(
         status="available",
         direction=direction,
         signal=event,
         state=state,
-        strength=_clamp_strength(distance_atr),
+        strength=_clamp_strength(abs(distance_atr)),
         reason=f"Supertrend {state}",
         raw_value=current["supertrend"],
-        components={
-            "supertrend": _price_component(current["supertrend"]),
-            "upper_band": _price_component(current["upper_band"]),
-            "lower_band": _price_component(current["lower_band"]),
-            "atr": _price_component(current["atr"]),
-            "distance_ratio": IndicatorComponent(
-                value=distance_ratio,
-                normalized_value=distance_ratio,
-                unit="ratio",
-            ),
-        },
+        components=components,
     )

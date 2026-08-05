@@ -6,6 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from app.ml.models.ml_dataset import (
+    ML_FEATURE_SCHEMA_VERSION,
+    ML_FEATURE_SCHEMA_VERSION_V2,
     MLDatasetRow,
     MarketDirectionLabel,
 )
@@ -43,6 +45,23 @@ def valid_row(**changes: object) -> MLDatasetRow:
     }
     values.update(changes)
     return MLDatasetRow.model_validate(values)
+
+
+def test_feature_schema_defaults_to_v1_and_accepts_v2() -> None:
+    v1_row = valid_row()
+    v2_row = valid_row(
+        feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2,
+    )
+
+    assert v1_row.feature_schema_version == ML_FEATURE_SCHEMA_VERSION
+    assert v2_row.feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2
+
+
+def test_unknown_feature_schema_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        valid_row(
+            feature_schema_version="causal-features-v999",
+        )
 
 
 def test_up_label_is_valid_above_positive_threshold() -> None:

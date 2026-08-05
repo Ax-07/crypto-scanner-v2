@@ -7,7 +7,7 @@ et les nouvelles fonctions ``detect_*_signal``/``build_*_signal``.
 """
 
 from __future__ import annotations
-
+from typing import Literal
 import math
 
 import numpy as np
@@ -36,7 +36,7 @@ def series(values: list[float]) -> pd.Series:
 
 def assert_valid_contract(result: IndicatorSignal) -> None:
     """Vérifie que le résultat respecte le contrat commun IndicatorSignal."""
-    assert set(result.keys()) == {
+    required_keys = {
         "status",
         "direction",
         "signal",
@@ -45,6 +45,10 @@ def assert_valid_contract(result: IndicatorSignal) -> None:
         "reason",
         "raw_value",
     }
+    optional_keys = {"components"}
+
+    assert required_keys <= set(result.keys())
+    assert set(result.keys()) <= required_keys | optional_keys
     assert result["status"] in {"available", "insufficient_data", "invalid_data", "disabled"}
     assert result["direction"] in {"bullish", "bearish", "neutral"}
     assert 0.0 <= result["strength"] <= 1.0
@@ -52,6 +56,26 @@ def assert_valid_contract(result: IndicatorSignal) -> None:
     assert result["state"] is None or isinstance(result["state"], str)
     assert result["reason"] is None or isinstance(result["reason"], str)
     assert result["raw_value"] is None or isinstance(result["raw_value"], (int, float))
+
+    components = result.get("components")
+
+    if components is not None:
+        assert isinstance(components, dict)
+
+        for component in components.values():
+            assert set(component) == {
+                "value",
+                "normalized_value",
+                "unit",
+            }
+            assert component["value"] is None or isinstance(
+                component["value"],
+                (int, float),
+            )
+            assert component["normalized_value"] is None or isinstance(
+                component["normalized_value"],
+                (int, float),
+            )
 
 
 # --------------------------------------------------------------------------
@@ -114,6 +138,62 @@ def test_rsi_signal_neutral_zone() -> None:
     assert result["strength"] == pytest.approx(0.0)
 
 
+def test_rsi_signal_exposes_normalized_components() -> None:
+    result = detect_rsi_signal(60.0)
+
+    components = result.get("components")
+
+    assert components is not None
+
+    assert components["rsi"]["value"] == pytest.approx(60.0)
+    assert components["rsi"]["normalized_value"] == pytest.approx(0.6)
+    assert components["rsi"]["unit"] == "index"
+
+    assert components["previous_value"]["value"] is None
+    assert components["previous_value"]["normalized_value"] is None
+
+    assert components["change"]["value"] is None
+    assert components["change"]["normalized_value"] is None
+
+    assert components["distance_from_midpoint"]["value"] == pytest.approx(10.0)
+    assert components["distance_from_midpoint"]["normalized_value"] == pytest.approx(0.1)
+
+    assert components["distance_from_oversold"]["value"] == pytest.approx(30.0)
+    assert components["distance_from_oversold"]["normalized_value"] == pytest.approx(0.3)
+
+    assert components["distance_from_overbought"]["value"] == pytest.approx(-10.0)
+    assert components["distance_from_overbought"]["normalized_value"] == pytest.approx(-0.1)
+
+
+def test_rsi_signal_exposes_previous_value_and_change() -> None:
+    result = detect_rsi_signal(series([25.0, 35.0]))
+
+    components = result.get("components")
+
+    assert components is not None
+    assert result["signal"] == "exit_oversold"
+
+    assert components["previous_value"]["value"] == pytest.approx(25.0)
+    assert components["previous_value"]["normalized_value"] == pytest.approx(0.25)
+
+    assert components["change"]["value"] == pytest.approx(10.0)
+    assert components["change"]["normalized_value"] == pytest.approx(0.1)
+
+    assert components["rsi"]["value"] == pytest.approx(35.0)
+    assert components["rsi"]["normalized_value"] == pytest.approx(0.35)
+
+
+def test_rsi_signal_ignores_non_finite_previous_component() -> None:
+    result = detect_rsi_signal(series([math.inf, 50.0]))
+
+    components = result.get("components")
+
+    assert result["status"] == "available"
+    assert components is not None
+    assert components["previous_value"]["value"] is None
+    assert components["change"]["value"] is None
+
+
 def test_rsi_signal_exit_events_are_prioritized_over_state() -> None:
     exit_oversold = detect_rsi_signal(series([25.0, 35.0]))
     assert exit_oversold["signal"] == "exit_oversold"
@@ -137,7 +217,9 @@ def test_rsi_signal_nan_is_insufficient() -> None:
 
 
 @pytest.mark.parametrize("family", ["sma", "ema"])
-def test_moving_average_bullish_and_bearish_cross(family: str) -> None:
+def test_moving_average_bullish_and_bearish_cross(
+    family: Literal["sma", "ema"],
+) -> None:
     close = series([10, 11])
     bullish = detect_moving_average_signal(
         close, series([9.0, 11.0]), series([10.0, 10.0]), family=family
@@ -153,7 +235,9 @@ def test_moving_average_bullish_and_bearish_cross(family: str) -> None:
 
 
 @pytest.mark.parametrize("family", ["sma", "ema"])
-def test_moving_average_alignment_bullish_bearish_and_contradictory(family: str) -> None:
+def test_moving_average_alignment_bullish_bearish_and_contradictory(
+    family: Literal["sma", "ema"],
+) -> None:
     bullish = detect_moving_average_signal(
         series([12.0]), series([11.0]), series([10.0]), family=family
     )
@@ -231,6 +315,67 @@ def test_macd_signal_zero_position_encoded_in_state() -> None:
     assert below_zero["state"] is not None and "below_zero" in below_zero["state"]
 
 
+def test_macd_signal_exposes_continuous_components() -> None:
+    result = build_macd_signal(
+        {
+            "macd": series([1.0, 2.0]),
+            "signal": series([0.5, 1.0]),
+        }
+    )
+
+    components = result.get("components")
+
+    assert components is not None
+
+    assert components["macd"]["value"] == pytest.approx(2.0)
+    assert components["macd"]["normalized_value"] == pytest.approx(2 / 3)
+    assert components["macd"]["unit"] == "price"
+
+    assert components["signal_line"]["value"] == pytest.approx(1.0)
+    assert components["signal_line"]["normalized_value"] == pytest.approx(1 / 3)
+
+    assert components["histogram"]["value"] == pytest.approx(1.0)
+    assert components["histogram"]["normalized_value"] == pytest.approx(1 / 3)
+
+    assert components["relative_distance"]["value"] == pytest.approx(1 / 3)
+    assert components["relative_distance"]["normalized_value"] == pytest.approx(1 / 3)
+
+    assert components["previous_macd"]["value"] == pytest.approx(1.0)
+    assert components["previous_signal_line"]["value"] == pytest.approx(0.5)
+    assert components["previous_histogram"]["value"] == pytest.approx(0.5)
+
+    assert components["macd_change"]["value"] == pytest.approx(1.0)
+    assert components["macd_change"]["normalized_value"] == pytest.approx(1 / 3)
+
+    assert components["signal_change"]["value"] == pytest.approx(0.5)
+    assert components["signal_change"]["normalized_value"] == pytest.approx(1 / 3)
+
+    assert components["histogram_change"]["value"] == pytest.approx(0.5)
+    assert components["histogram_change"]["normalized_value"] == pytest.approx(1 / 3)
+
+
+def test_macd_signal_components_accept_missing_previous_values() -> None:
+    result = build_macd_signal(
+        {
+            "macd": series([2.0]),
+            "signal": series([1.0]),
+        }
+    )
+
+    components = result.get("components")
+
+    assert result["status"] == "available"
+    assert components is not None
+
+    assert components["previous_macd"]["value"] is None
+    assert components["previous_signal_line"]["value"] is None
+    assert components["previous_histogram"]["value"] is None
+
+    assert components["macd_change"]["value"] is None
+    assert components["signal_change"]["value"] is None
+    assert components["histogram_change"]["value"] is None
+
+
 def test_detect_macd_signal_backward_compatibility() -> None:
     data = calculate_macd(series([1, 2, 3, 4, 5, 6]), 2, 3, 2)
     assert detect_macd_signal(data) in {"bullish", "bearish", "neutral"}
@@ -279,6 +424,81 @@ def test_bollinger_signal_neutral_position() -> None:
     )
     assert result["state"] == "neutral"
     assert result["direction"] == "neutral"
+
+
+def test_bollinger_signal_exposes_continuous_components() -> None:
+    result = build_bollinger_signal(
+        series([100.0, 110.0]),
+        {
+            "upper": series([110.0, 120.0]),
+            "middle": series([100.0, 105.0]),
+            "lower": series([90.0, 90.0]),
+        },
+    )
+
+    components = result.get("components")
+
+    assert result["status"] == "available"
+    assert result["signal"] == "neutral"
+    assert components is not None
+
+    assert components["middle_band"]["value"] == pytest.approx(105.0)
+    assert components["middle_band"]["normalized_value"] == pytest.approx(105 / 110)
+
+    assert components["upper_band"]["value"] == pytest.approx(120.0)
+    assert components["upper_band"]["normalized_value"] == pytest.approx(120 / 110)
+
+    assert components["lower_band"]["value"] == pytest.approx(90.0)
+    assert components["lower_band"]["normalized_value"] == pytest.approx(90 / 110)
+
+    assert components["band_width"]["value"] == pytest.approx(30.0)
+    assert components["band_width"]["normalized_value"] == pytest.approx(30 / 110)
+
+    assert components["band_width_percent"]["value"] == pytest.approx(100 * 30 / 105)
+    assert components["band_width_percent"]["normalized_value"] == pytest.approx(30 / 105)
+
+    assert components["band_position"]["value"] == pytest.approx(20 / 30)
+    assert components["band_position"]["normalized_value"] == pytest.approx(20 / 30)
+
+    assert components["price_to_middle_distance"]["value"] == pytest.approx(5.0)
+    assert components["price_to_middle_distance"]["normalized_value"] == pytest.approx(5 / 215)
+
+    assert components["price_to_upper_distance"]["value"] == pytest.approx(-10.0)
+    assert components["price_to_upper_distance"]["normalized_value"] == pytest.approx(-10 / 230)
+
+    assert components["price_to_lower_distance"]["value"] == pytest.approx(20.0)
+    assert components["price_to_lower_distance"]["normalized_value"] == pytest.approx(20 / 200)
+
+    assert components["previous_band_width_percent"]["value"] == pytest.approx(20.0)
+    assert components["previous_band_position"]["value"] == pytest.approx(0.5)
+
+    assert components["band_width_percent_change"]["value"] == pytest.approx((100 * 30 / 105) - 20)
+    assert components["band_position_change"]["value"] == pytest.approx((20 / 30) - 0.5)
+
+    assert components["middle_band_change"]["value"] == pytest.approx(5.0)
+    assert components["middle_band_change"]["normalized_value"] == pytest.approx(5 / 205)
+
+
+def test_bollinger_components_accept_missing_previous_values() -> None:
+    result = build_bollinger_signal(
+        series([100.0]),
+        {
+            "upper": series([110.0]),
+            "middle": series([100.0]),
+            "lower": series([90.0]),
+        },
+    )
+
+    components = result.get("components")
+
+    assert result["status"] == "available"
+    assert components is not None
+
+    assert components["previous_band_width_percent"]["value"] is None
+    assert components["previous_band_position"]["value"] is None
+    assert components["band_width_percent_change"]["value"] is None
+    assert components["band_position_change"]["value"] is None
+    assert components["middle_band_change"]["value"] is None
 
 
 def test_bollinger_signal_degenerate_band_is_invalid_data_and_zero_strength() -> None:
@@ -370,3 +590,71 @@ def test_detect_stochastic_signal_backward_compatibility() -> None:
         "bearish_cross",
         "overbought",
     }
+
+
+def test_stochastic_signal_exposes_continuous_components() -> None:
+    result = build_stochastic_signal(
+        {
+            "k": series([10.0, 30.0]),
+            "d": series([20.0, 25.0]),
+        }
+    )
+
+    components = result.get("components")
+
+    assert components is not None
+    assert result["signal"] == "bullish_cross"
+
+    assert components["k"]["value"] == pytest.approx(30.0)
+    assert components["k"]["normalized_value"] == pytest.approx(0.3)
+    assert components["k"]["unit"] == "index"
+
+    assert components["d"]["value"] == pytest.approx(25.0)
+    assert components["d"]["normalized_value"] == pytest.approx(0.25)
+
+    assert components["spread"]["value"] == pytest.approx(5.0)
+    assert components["spread"]["normalized_value"] == pytest.approx(0.05)
+
+    assert components["previous_k"]["value"] == pytest.approx(10.0)
+    assert components["previous_k"]["normalized_value"] == pytest.approx(0.1)
+
+    assert components["previous_d"]["value"] == pytest.approx(20.0)
+    assert components["previous_d"]["normalized_value"] == pytest.approx(0.2)
+
+    assert components["previous_spread"]["value"] == pytest.approx(-10.0)
+    assert components["previous_spread"]["normalized_value"] == pytest.approx(-0.1)
+
+    assert components["k_change"]["value"] == pytest.approx(20.0)
+    assert components["k_change"]["normalized_value"] == pytest.approx(0.2)
+
+    assert components["d_change"]["value"] == pytest.approx(5.0)
+    assert components["d_change"]["normalized_value"] == pytest.approx(0.05)
+
+    assert components["spread_change"]["value"] == pytest.approx(15.0)
+    assert components["spread_change"]["normalized_value"] == pytest.approx(0.15)
+
+
+def test_stochastic_signal_components_accept_missing_previous_values() -> None:
+    result = build_stochastic_signal(
+        {
+            "k": series([40.0]),
+            "d": series([45.0]),
+        }
+    )
+
+    components = result.get("components")
+
+    assert result["status"] == "available"
+    assert components is not None
+
+    assert components["k"]["value"] == pytest.approx(40.0)
+    assert components["d"]["value"] == pytest.approx(45.0)
+    assert components["spread"]["value"] == pytest.approx(-5.0)
+
+    assert components["previous_k"]["value"] is None
+    assert components["previous_d"]["value"] is None
+    assert components["previous_spread"]["value"] is None
+
+    assert components["k_change"]["value"] is None
+    assert components["d_change"]["value"] is None
+    assert components["spread_change"]["value"] is None

@@ -15,6 +15,7 @@ from app.ml.domain.ml_walk_forward import (
 from app.ml.models.ml_dataset import (
     MLDatasetRow,
     MarketDirectionLabel,
+    ML_FEATURE_SCHEMA_VERSION_V2,
 )
 from app.ml.services.ml_benchmark_builder import (
     MLBenchmarkBuildError,
@@ -460,6 +461,80 @@ def test_rejects_empty_loaded_dataset(
             loaded=empty_loaded,
             walk_forward_result=(walk_forward_result),
             final_result=final_result,
+            benchmark_name="benchmark",
+            created_at=datetime.now(timezone.utc),
+            status="rejected",
+            decision_reasons=("raison",),
+        )
+
+
+def test_rejects_v2_feature_schema(
+    benchmark_artifacts: BenchmarkArtifacts,
+) -> None:
+    (
+        loaded,
+        walk_forward_result,
+        final_result,
+    ) = benchmark_artifacts
+
+    v2_manifest = loaded.manifest.model_copy(
+        update={
+            "feature_schema_version": (ML_FEATURE_SCHEMA_VERSION_V2),
+        },
+    )
+
+    v2_loaded = replace(
+        loaded,
+        manifest=v2_manifest,
+    )
+
+    with pytest.raises(
+        MLBenchmarkBuildError,
+        match="causal-features-v1",
+    ):
+        build_ml_benchmark_report(
+            loaded=v2_loaded,
+            walk_forward_result=walk_forward_result,
+            final_result=final_result,
+            benchmark_name="benchmark",
+            created_at=datetime.now(timezone.utc),
+            status="rejected",
+            decision_reasons=("raison",),
+        )
+
+
+def test_rejects_v2_feature_policy(
+    benchmark_artifacts: BenchmarkArtifacts,
+) -> None:
+    (
+        loaded,
+        walk_forward_result,
+        final_result,
+    ) = benchmark_artifacts
+
+    v2_candidate = replace(
+        walk_forward_result.best_candidate,
+        policy=(MLFeaturePolicy.NORMALIZED_DEDUPLICATED_V2),
+    )
+
+    v2_walk_forward_result = replace(
+        walk_forward_result,
+        candidates=(v2_candidate,),
+    )
+
+    v2_final_result = replace(
+        final_result,
+        policy=(MLFeaturePolicy.NORMALIZED_DEDUPLICATED_V2),
+    )
+
+    with pytest.raises(
+        MLBenchmarkBuildError,
+        match="politiques ML v1",
+    ):
+        build_ml_benchmark_report(
+            loaded=loaded,
+            walk_forward_result=v2_walk_forward_result,
+            final_result=v2_final_result,
             benchmark_name="benchmark",
             created_at=datetime.now(timezone.utc),
             status="rejected",

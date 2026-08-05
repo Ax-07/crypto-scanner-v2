@@ -69,6 +69,30 @@ def _component(
     )
 
 
+def _finite_series_value(
+    series: pd.Series,
+    position: int,
+) -> float | None:
+    """Retourne une valeur finie d'une série, si elle existe."""
+    try:
+        value = float(series.iloc[position])
+    except IndexError:
+        return None
+
+    return value if math.isfinite(value) else None
+
+
+def _price_normalized_value(
+    value: float | None,
+    close_value: float | None,
+) -> float | None:
+    """Normalise une valeur exprimée en prix par la clôture correspondante."""
+    if value is None or close_value is None or not math.isfinite(close_value) or close_value <= 0:
+        return None
+
+    return value / close_value
+
+
 def build_atr_signal(
     data: dict[str, pd.Series],
     close: pd.Series,
@@ -103,22 +127,123 @@ def build_atr_signal(
     previous_natr = float(valid_natr.iloc[-2])
     current_natr = float(valid_natr.iloc[-1])
     change = current_natr - previous_natr
-    state = _volatility_state(previous_natr, current_natr)
+
+    state = _volatility_state(
+        previous_natr,
+        current_natr,
+    )
+
     event: str | None = None
+
     if len(valid_natr) >= 3:
-        previous_state = _volatility_state(float(valid_natr.iloc[-3]), previous_natr)
+        previous_state = _volatility_state(
+            float(valid_natr.iloc[-3]),
+            previous_natr,
+        )
+
         if state != previous_state:
             event = {
                 "expanding": "volatility_expansion",
                 "contracting": "volatility_contraction",
                 "stable": "volatility_stable",
             }[state]
-    relative_change = abs(change) / max(abs(previous_natr), 1e-12)
+
+    signed_relative_change = change / max(
+        abs(previous_natr),
+        1e-12,
+    )
+    relative_change = abs(signed_relative_change)
+
+    current_true_range = current_values[0]
+    current_atr = current_values[1]
+
+    previous_close = _finite_series_value(
+        close,
+        -2,
+    )
+    previous_true_range = _finite_series_value(
+        tr,
+        -2,
+    )
+    previous_atr = _finite_series_value(
+        atr,
+        -2,
+    )
+
+    true_range_change = (
+        current_true_range - previous_true_range if previous_true_range is not None else None
+    )
+    atr_change = current_atr - previous_atr if previous_atr is not None else None
+
     components = {
-        "true_range": _component(current_values[0], "price"),
-        "atr": _component(current_values[1], "price"),
-        "natr": _component(current_natr, "percent", normalized_value=current_natr / 100.0),
-        "natr_change": _component(change, "percent"),
+        "true_range": _component(
+            current_true_range,
+            "price",
+            normalized_value=_price_normalized_value(
+                current_true_range,
+                current_close,
+            ),
+        ),
+        "atr": _component(
+            current_atr,
+            "price",
+            normalized_value=_price_normalized_value(
+                current_atr,
+                current_close,
+            ),
+        ),
+        "natr": _component(
+            current_natr,
+            "percent",
+            normalized_value=current_natr / 100.0,
+        ),
+        "previous_true_range": _component(
+            previous_true_range,
+            "price",
+            normalized_value=_price_normalized_value(
+                previous_true_range,
+                previous_close,
+            ),
+        ),
+        "previous_atr": _component(
+            previous_atr,
+            "price",
+            normalized_value=_price_normalized_value(
+                previous_atr,
+                previous_close,
+            ),
+        ),
+        "previous_natr": _component(
+            previous_natr,
+            "percent",
+            normalized_value=previous_natr / 100.0,
+        ),
+        "true_range_change": _component(
+            true_range_change,
+            "price",
+            normalized_value=_price_normalized_value(
+                true_range_change,
+                current_close,
+            ),
+        ),
+        "atr_change": _component(
+            atr_change,
+            "price",
+            normalized_value=_price_normalized_value(
+                atr_change,
+                current_close,
+            ),
+        ),
+        "natr_change": _component(
+            change,
+            "percent",
+            normalized_value=change / 100.0,
+        ),
+        "relative_natr_change": _component(
+            signed_relative_change,
+            "ratio",
+            normalized_value=signed_relative_change,
+        ),
     }
     return IndicatorSignal(
         status="available",

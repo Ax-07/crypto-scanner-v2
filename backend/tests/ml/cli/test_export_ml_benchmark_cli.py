@@ -12,6 +12,7 @@ from app.ml.cli.export_ml_benchmark import (
     _validate_selected_candidate,
 )
 from app.ml.domain.ml_feature_policy import (
+    ML_FEATURE_POLICIES_V1,
     MLFeaturePolicy,
 )
 
@@ -114,6 +115,18 @@ def test_parser_accepts_minimum_valid_arguments() -> None:
 
     assert arguments.status == "rejected"
     assert arguments.decision_reason == []
+
+
+def test_parser_exposes_only_v1_feature_policies() -> None:
+    parser = _build_parser()
+
+    selected_policy_action = next(
+        action for action in parser._actions if action.dest == "selected_policy"
+    )
+
+    assert tuple(selected_policy_action.choices or ()) == tuple(
+        policy.value for policy in ML_FEATURE_POLICIES_V1
+    )
 
 
 def test_parser_accepts_repeated_decision_reasons() -> None:

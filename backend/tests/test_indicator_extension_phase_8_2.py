@@ -9,7 +9,13 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.settings import MarketIndicatorConfig, ScanConfig
+from app.core.settings import (
+    AdxIndicatorConfig,
+    AtrIndicatorConfig,
+    MarketIndicatorConfig,
+    ScanConfig,
+    SupertrendIndicatorConfig,
+)
 from app.domain.backtesting import evaluate_information_set
 from app.domain.indicator_bundle import calculate_extended_indicator_bundle
 from app.domain.indicators import (
@@ -97,6 +103,339 @@ def test_atr_is_neutral_and_events_only_describe_state_transitions() -> None:
     assert signal["signal"] == "volatility_contraction"
 
 
+def test_atr_signal_exposes_continuous_normalized_components() -> None:
+    close = series(
+        [
+            10.0,
+            10.0,
+            10.0,
+            10.0,
+        ]
+    )
+    data = {
+        "true_range": series(
+            [
+                1.0,
+                1.2,
+                1.5,
+                2.0,
+            ]
+        ),
+        "atr": series(
+            [
+                math.nan,
+                1.0,
+                1.1,
+                1.3,
+            ]
+        ),
+        "natr": series(
+            [
+                math.nan,
+                10.0,
+                11.0,
+                13.0,
+            ]
+        ),
+    }
+
+    signal = build_atr_signal(
+        data,
+        close,
+    )
+    components = signal.get("components")
+
+    assert signal["status"] == "available"
+    assert signal["state"] == "expanding"
+    assert signal["direction"] == "neutral"
+    assert components is not None
+
+    assert components["true_range"]["value"] == pytest.approx(2.0)
+    assert components["true_range"]["normalized_value"] == pytest.approx(0.2)
+
+    assert components["atr"]["value"] == pytest.approx(1.3)
+    assert components["atr"]["normalized_value"] == pytest.approx(0.13)
+
+    assert components["natr"]["value"] == pytest.approx(13.0)
+    assert components["natr"]["normalized_value"] == pytest.approx(0.13)
+
+    assert components["previous_true_range"]["value"] == pytest.approx(1.5)
+    assert components["previous_true_range"]["normalized_value"] == pytest.approx(0.15)
+
+    assert components["previous_atr"]["value"] == pytest.approx(1.1)
+    assert components["previous_atr"]["normalized_value"] == pytest.approx(0.11)
+
+    assert components["previous_natr"]["value"] == pytest.approx(11.0)
+    assert components["previous_natr"]["normalized_value"] == pytest.approx(0.11)
+
+    assert components["true_range_change"]["value"] == pytest.approx(0.5)
+    assert components["true_range_change"]["normalized_value"] == pytest.approx(0.05)
+
+    assert components["atr_change"]["value"] == pytest.approx(0.2)
+    assert components["atr_change"]["normalized_value"] == pytest.approx(0.02)
+
+    assert components["natr_change"]["value"] == pytest.approx(2.0)
+    assert components["natr_change"]["normalized_value"] == pytest.approx(0.02)
+
+    assert components["relative_natr_change"]["value"] == pytest.approx(2 / 11)
+    assert components["relative_natr_change"]["normalized_value"] == pytest.approx(2 / 11)
+
+
+def test_adx_signal_exposes_continuous_normalized_components() -> None:
+    data = {
+        "adx": series(
+            [
+                18.0,
+                30.0,
+            ]
+        ),
+        "plus_di": series(
+            [
+                20.0,
+                40.0,
+            ]
+        ),
+        "minus_di": series(
+            [
+                30.0,
+                20.0,
+            ]
+        ),
+        "dx": series(
+            [
+                10.0,
+                35.0,
+            ]
+        ),
+        "true_range": series(
+            [
+                2.0,
+                2.0,
+            ]
+        ),
+    }
+
+    signal = build_adx_signal(
+        data,
+        weak_threshold=20,
+        strong_threshold=25,
+    )
+    components = signal.get("components")
+
+    assert signal["status"] == "available"
+    assert signal["signal"] == "bullish_cross"
+    assert signal["direction"] == "bullish"
+    assert signal["state"] == "strong_trend"
+    assert components is not None
+
+    assert components["adx"]["value"] == pytest.approx(30.0)
+    assert components["adx"]["normalized_value"] == pytest.approx(0.3)
+
+    assert components["plus_di"]["value"] == pytest.approx(40.0)
+    assert components["plus_di"]["normalized_value"] == pytest.approx(0.4)
+
+    assert components["minus_di"]["value"] == pytest.approx(20.0)
+    assert components["minus_di"]["normalized_value"] == pytest.approx(0.2)
+
+    assert components["dx"]["value"] == pytest.approx(35.0)
+    assert components["dx"]["normalized_value"] == pytest.approx(0.35)
+
+    assert components["di_spread"]["value"] == pytest.approx(20.0)
+    assert components["di_spread"]["normalized_value"] == pytest.approx(0.2)
+
+    assert components["di_balance"]["value"] == pytest.approx(20 / 60)
+    assert components["di_balance"]["normalized_value"] == pytest.approx(20 / 60)
+
+    assert components["previous_adx"]["value"] == pytest.approx(18.0)
+    assert components["previous_plus_di"]["value"] == pytest.approx(20.0)
+    assert components["previous_minus_di"]["value"] == pytest.approx(30.0)
+    assert components["previous_dx"]["value"] == pytest.approx(10.0)
+
+    assert components["previous_di_spread"]["value"] == pytest.approx(-10.0)
+    assert components["previous_di_balance"]["value"] == pytest.approx(-10 / 50)
+
+    assert components["adx_change"]["value"] == pytest.approx(12.0)
+    assert components["plus_di_change"]["value"] == pytest.approx(20.0)
+    assert components["minus_di_change"]["value"] == pytest.approx(-10.0)
+    assert components["dx_change"]["value"] == pytest.approx(25.0)
+
+    assert components["di_spread_change"]["value"] == pytest.approx(30.0)
+
+    assert components["distance_from_weak_threshold"]["value"] == pytest.approx(10.0)
+    assert components["distance_from_weak_threshold"]["normalized_value"] == pytest.approx(0.1)
+
+    assert components["distance_from_strong_threshold"]["value"] == pytest.approx(5.0)
+    assert components["distance_from_strong_threshold"]["normalized_value"] == pytest.approx(0.05)
+
+
+def test_adx_components_accept_missing_previous_values() -> None:
+    signal = build_adx_signal(
+        {
+            "adx": series([30.0]),
+            "plus_di": series([40.0]),
+            "minus_di": series([20.0]),
+            "dx": series([35.0]),
+            "true_range": series([2.0]),
+        }
+    )
+
+    components = signal.get("components")
+
+    assert signal["status"] == "available"
+    assert signal["signal"] is None
+    assert components is not None
+
+    assert components["previous_adx"]["value"] is None
+    assert components["previous_plus_di"]["value"] is None
+    assert components["previous_minus_di"]["value"] is None
+    assert components["previous_dx"]["value"] is None
+    assert components["previous_di_spread"]["value"] is None
+    assert components["previous_di_balance"]["value"] is None
+
+    assert components["adx_change"]["value"] is None
+    assert components["plus_di_change"]["value"] is None
+    assert components["minus_di_change"]["value"] is None
+    assert components["dx_change"]["value"] is None
+    assert components["di_spread_change"]["value"] is None
+
+
+def test_supertrend_signal_exposes_continuous_normalized_components() -> None:
+    close = series(
+        [
+            98.0,
+            110.0,
+        ]
+    )
+    data = {
+        "supertrend": series(
+            [
+                95.0,
+                100.0,
+            ]
+        ),
+        "upper_band": series(
+            [
+                110.0,
+                115.0,
+            ]
+        ),
+        "lower_band": series(
+            [
+                90.0,
+                95.0,
+            ]
+        ),
+        "atr": series(
+            [
+                4.0,
+                5.0,
+            ]
+        ),
+        "trend": series(
+            [
+                -1.0,
+                1.0,
+            ]
+        ),
+        "input_valid": pd.Series(
+            [
+                True,
+                True,
+            ],
+            dtype=bool,
+        ),
+    }
+
+    signal = build_supertrend_signal(
+        data,
+        close,
+    )
+    components = signal.get("components")
+
+    assert signal["status"] == "available"
+    assert signal["signal"] == "bullish_flip"
+    assert signal["direction"] == "bullish"
+    assert signal["state"] == "uptrend"
+    assert signal["strength"] == pytest.approx(1.0)
+    assert components is not None
+
+    assert components["supertrend"]["value"] == pytest.approx(100.0)
+    assert components["supertrend"]["normalized_value"] == pytest.approx(100 / 110)
+
+    assert components["upper_band"]["value"] == pytest.approx(115.0)
+    assert components["lower_band"]["value"] == pytest.approx(95.0)
+
+    assert components["atr"]["value"] == pytest.approx(5.0)
+    assert components["atr"]["normalized_value"] == pytest.approx(5 / 110)
+
+    assert components["price_to_supertrend_distance"]["value"] == pytest.approx(10.0)
+    assert components["price_to_supertrend_distance"]["normalized_value"] == pytest.approx(10 / 110)
+
+    assert components["distance_ratio"]["value"] == pytest.approx(10 / 110)
+    assert components["distance_atr"]["value"] == pytest.approx(2.0)
+
+    assert components["band_width"]["value"] == pytest.approx(20.0)
+    assert components["band_width"]["normalized_value"] == pytest.approx(20 / 110)
+
+    assert components["band_position"]["value"] == pytest.approx(15 / 20)
+
+    assert components["previous_supertrend"]["value"] == pytest.approx(95.0)
+    assert components["previous_distance_ratio"]["value"] == pytest.approx(3 / 98)
+    assert components["previous_distance_atr"]["value"] == pytest.approx(3 / 4)
+    assert components["previous_band_position"]["value"] == pytest.approx(8 / 20)
+
+    assert components["supertrend_change"]["value"] == pytest.approx(5.0)
+    assert components["supertrend_change"]["normalized_value"] == pytest.approx(5 / 195)
+
+    assert components["atr_change"]["value"] == pytest.approx(1.0)
+    assert components["atr_change"]["normalized_value"] == pytest.approx(1 / 9)
+
+    assert components["distance_ratio_change"]["value"] == pytest.approx((10 / 110) - (3 / 98))
+    assert components["distance_atr_change"]["value"] == pytest.approx(2 - (3 / 4))
+    assert components["band_position_change"]["value"] == pytest.approx((15 / 20) - (8 / 20))
+
+
+def test_supertrend_components_accept_missing_previous_values() -> None:
+    signal = build_supertrend_signal(
+        {
+            "supertrend": series([100.0]),
+            "upper_band": series([115.0]),
+            "lower_band": series([95.0]),
+            "atr": series([5.0]),
+            "trend": series([1.0]),
+            "input_valid": pd.Series(
+                [True],
+                dtype=bool,
+            ),
+        },
+        series([110.0]),
+    )
+
+    components = signal.get("components")
+
+    assert signal["status"] == "available"
+    assert signal["signal"] is None
+    assert components is not None
+
+    assert components["previous_supertrend"]["value"] is None
+    assert components["previous_upper_band"]["value"] is None
+    assert components["previous_lower_band"]["value"] is None
+    assert components["previous_atr"]["value"] is None
+    assert components["previous_distance_ratio"]["value"] is None
+    assert components["previous_distance_atr"]["value"] is None
+    assert components["previous_band_width"]["value"] is None
+    assert components["previous_band_position"]["value"] is None
+
+    assert components["supertrend_change"]["value"] is None
+    assert components["upper_band_change"]["value"] is None
+    assert components["lower_band_change"]["value"] is None
+    assert components["atr_change"]["value"] is None
+    assert components["band_width_change"]["value"] is None
+    assert components["distance_ratio_change"]["value"] is None
+    assert components["distance_atr_change"]["value"] is None
+    assert components["band_position_change"]["value"] is None
+
+
 def test_supertrend_is_causal_and_flips_only_on_regime_changes() -> None:
     high = series([11, 12, 13, 12, 9, 8, 11])
     low = series([9, 10, 11, 9, 6, 5, 8])
@@ -163,20 +502,24 @@ def test_extensions_are_observable_but_business_neutral() -> None:
     )
     extended = ScanConfig(
         **legacy.model_dump(exclude={"atr", "adx", "supertrend"}),
-        atr={"version": 1, "enabled": True, "period": 14},
-        adx={
-            "version": 1,
-            "enabled": True,
-            "period": 14,
-            "weak_threshold": 20,
-            "strong_threshold": 25,
-        },
-        supertrend={
-            "version": 1,
-            "enabled": True,
-            "atr_period": 10,
-            "multiplier": 3,
-        },
+        atr=AtrIndicatorConfig(
+            version=1,
+            enabled=True,
+            period=14,
+        ),
+        adx=AdxIndicatorConfig(
+            version=1,
+            enabled=True,
+            period=14,
+            weak_threshold=20,
+            strong_threshold=25,
+        ),
+        supertrend=SupertrendIndicatorConfig(
+            version=1,
+            enabled=True,
+            atr_period=10,
+            multiplier=3,
+        ),
     )
     base = evaluate_information_set(
         job_id="base",
@@ -256,15 +599,24 @@ def test_market_and_backtest_use_identical_extension_signals() -> None:
         use_bollinger=False,
         use_stochastic=False,
         use_confluence_score=False,
-        atr={"version": 1, "enabled": True, "period": 14},
-        adx={
-            "version": 1,
-            "enabled": True,
-            "period": 14,
-            "weak_threshold": 20,
-            "strong_threshold": 25,
-        },
-        supertrend={"version": 1, "enabled": True, "atr_period": 10, "multiplier": 3},
+        atr=AtrIndicatorConfig(
+            version=1,
+            enabled=True,
+            period=14,
+        ),
+        adx=AdxIndicatorConfig(
+            version=1,
+            enabled=True,
+            period=14,
+            weak_threshold=20,
+            strong_threshold=25,
+        ),
+        supertrend=SupertrendIndicatorConfig(
+            version=1,
+            enabled=True,
+            atr_period=10,
+            multiplier=3,
+        ),
     )
     decision = rows[-1].close_time
     assert decision is not None
@@ -305,8 +657,15 @@ def test_extension_bundle_records_a_non_fragile_timing() -> None:
 def test_config_and_openapi_expose_versioned_optional_blocks_and_components() -> None:
     legacy = ScanConfig()
     assert legacy.atr is legacy.adx is legacy.supertrend is None
+
     with pytest.raises(ValueError):
-        ScanConfig(adx={"version": 1, "weak_threshold": 25, "strong_threshold": 20})
+        ScanConfig(
+            adx=AdxIndicatorConfig(
+                version=1,
+                weak_threshold=25,
+                strong_threshold=20,
+            )
+        )
 
     schema = TestClient(app).get("/openapi.json").json()
     scan_properties = schema["components"]["schemas"]["ScanConfig"]["properties"]

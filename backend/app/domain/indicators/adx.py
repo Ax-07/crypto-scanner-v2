@@ -9,6 +9,7 @@ import pandas as pd
 
 from app.domain.indicators.types import (
     IndicatorComponent,
+    IndicatorComponentUnit,
     IndicatorEvent,
     IndicatorSignal,
     SignalDirection,
@@ -84,12 +85,44 @@ def _adx_state(value: float, weak_threshold: float, strong_threshold: float) -> 
     return "strong_trend"
 
 
-def _component(value: float) -> IndicatorComponent:
+def _component(
+    value: float | None,
+    unit: IndicatorComponentUnit = "index",
+    *,
+    normalized_value: float | None = None,
+) -> IndicatorComponent:
+    """Construit une composante ADX éventuellement indisponible."""
+    if value is None:
+        return IndicatorComponent(
+            value=None,
+            normalized_value=None,
+            unit=unit,
+        )
+
+    normalized = normalized_value
+
+    if normalized is None:
+        if unit == "index":
+            normalized = value / 100.0
+        elif unit == "ratio":
+            normalized = value
+
     return IndicatorComponent(
         value=value,
-        normalized_value=value / 100.0,
-        unit="index",
+        normalized_value=normalized,
+        unit=unit,
     )
+
+
+def _change(
+    current: float,
+    previous: float | None,
+) -> float | None:
+    """Retourne une variation causale lorsque la valeur précédente existe."""
+    if previous is None:
+        return None
+
+    return current - previous
 
 
 def build_adx_signal(
@@ -131,12 +164,52 @@ def build_adx_signal(
     )
     state = _adx_state(adx, weak_threshold, strong_threshold)
 
-    event: str | None = None
-    if len(frame) >= 2 and frame.iloc[-2].notna().all():
+    di_spread = plus_di - minus_di
+    di_total = plus_di + minus_di
+    di_balance = 0.0 if abs(di_total) <= 1e-12 else di_spread / di_total
+
+    previous_adx: float | None = None
+    previous_plus: float | None = None
+    previous_minus: float | None = None
+    previous_dx: float | None = None
+
+    if len(frame) >= 2:
         previous = frame.iloc[-2]
-        previous_plus = float(previous["plus_di"])
-        previous_minus = float(previous["minus_di"])
-        previous_state = _adx_state(float(previous["adx"]), weak_threshold, strong_threshold)
+        candidate_values = (
+            float(previous["adx"]),
+            float(previous["plus_di"]),
+            float(previous["minus_di"]),
+            float(previous["dx"]),
+        )
+
+        if all(math.isfinite(value) for value in candidate_values):
+            (
+                previous_adx,
+                previous_plus,
+                previous_minus,
+                previous_dx,
+            ) = candidate_values
+
+    previous_di_spread: float | None = None
+    previous_di_balance: float | None = None
+
+    if previous_plus is not None and previous_minus is not None:
+        previous_di_spread = previous_plus - previous_minus
+        previous_di_total = previous_plus + previous_minus
+
+        previous_di_balance = (
+            0.0 if abs(previous_di_total) <= 1e-12 else previous_di_spread / previous_di_total
+        )
+
+    event: str | None = None
+
+    if previous_adx is not None and previous_plus is not None and previous_minus is not None:
+        previous_state = _adx_state(
+            previous_adx,
+            weak_threshold,
+            strong_threshold,
+        )
+
         if previous_plus <= previous_minus and plus_di > minus_di:
             event = "bullish_cross"
         elif previous_plus >= previous_minus and minus_di > plus_di:
@@ -146,6 +219,63 @@ def build_adx_signal(
         elif previous_state == "strong_trend" and state != "strong_trend":
             event = "trend_weakening"
 
+    adx_change = _change(
+        adx,
+        previous_adx,
+    )
+    plus_di_change = _change(
+        plus_di,
+        previous_plus,
+    )
+    minus_di_change = _change(
+        minus_di,
+        previous_minus,
+    )
+    dx_change = _change(
+        dx,
+        previous_dx,
+    )
+    di_spread_change = _change(
+        di_spread,
+        previous_di_spread,
+    )
+
+    components = {
+        "adx": _component(adx),
+        "plus_di": _component(plus_di),
+        "minus_di": _component(minus_di),
+        "dx": _component(dx),
+        "di_spread": _component(di_spread),
+        "di_balance": _component(
+            di_balance,
+            "ratio",
+            normalized_value=di_balance,
+        ),
+        "previous_adx": _component(previous_adx),
+        "previous_plus_di": _component(previous_plus),
+        "previous_minus_di": _component(previous_minus),
+        "previous_dx": _component(previous_dx),
+        "previous_di_spread": _component(
+            previous_di_spread,
+        ),
+        "previous_di_balance": _component(
+            previous_di_balance,
+            "ratio",
+            normalized_value=previous_di_balance,
+        ),
+        "adx_change": _component(adx_change),
+        "plus_di_change": _component(plus_di_change),
+        "minus_di_change": _component(minus_di_change),
+        "dx_change": _component(dx_change),
+        "di_spread_change": _component(di_spread_change),
+        "distance_from_weak_threshold": _component(
+            adx - weak_threshold,
+        ),
+        "distance_from_strong_threshold": _component(
+            adx - strong_threshold,
+        ),
+    }
+
     return IndicatorSignal(
         status="available",
         direction=direction,
@@ -154,12 +284,7 @@ def build_adx_signal(
         strength=_clamp_strength(adx / 50.0),
         reason=f"ADX {state}, +DI {plus_di:.2f}, -DI {minus_di:.2f}",
         raw_value=adx,
-        components={
-            "adx": _component(adx),
-            "plus_di": _component(plus_di),
-            "minus_di": _component(minus_di),
-            "dx": _component(dx),
-        },
+        components=components,
     )
 
 
@@ -202,9 +327,7 @@ def detect_adx_events(
 
     true_range = data.get("true_range")
     if true_range is not None:
-        frame_columns.append(
-            true_range.astype(float).rename("true_range")
-        )
+        frame_columns.append(true_range.astype(float).rename("true_range"))
 
     frame = pd.concat(
         frame_columns,
@@ -262,14 +385,8 @@ def detect_adx_events(
         if current_adx < weak_threshold:
             continue
 
-        bullish_cross = (
-            previous_plus <= previous_minus
-            and current_plus > current_minus
-        )
-        bearish_cross = (
-            previous_plus >= previous_minus
-            and current_minus > current_plus
-        )
+        bullish_cross = previous_plus <= previous_minus and current_plus > current_minus
+        bearish_cross = previous_plus >= previous_minus and current_minus > current_plus
 
         strength = _clamp_strength(current_adx / 50.0)
 

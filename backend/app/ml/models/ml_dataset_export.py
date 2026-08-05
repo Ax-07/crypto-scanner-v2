@@ -17,6 +17,7 @@ from app.ml.models.ml_dataset import (
     ML_DATASET_SCHEMA_VERSION,
     ML_FEATURE_SCHEMA_VERSION,
     ML_LABEL_SCHEMA_VERSION,
+    MLFeatureSchemaVersion,
 )
 
 ML_EXPORT_MANIFEST_SCHEMA_VERSION: Final[Literal[1]] = 1
@@ -109,7 +110,7 @@ class MLDatasetExportManifest(BaseModel):
 
     dataset_schema_version: Literal[1] = ML_DATASET_SCHEMA_VERSION
 
-    feature_schema_version: Literal["causal-features-v1"] = ML_FEATURE_SCHEMA_VERSION
+    feature_schema_version: MLFeatureSchemaVersion = ML_FEATURE_SCHEMA_VERSION
 
     label_schema_version: Literal["direction-natr-h6-v1"] = ML_LABEL_SCHEMA_VERSION
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Sequence, cast
 
 from app.ml.domain.ml_feature_policy import (
+    ML_FEATURE_POLICIES_V1,
     MLFeaturePolicy,
 )
 from app.ml.domain.ml_temporal_split import (
@@ -112,7 +113,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--selected-policy",
-        choices=[policy.value for policy in MLFeaturePolicy],
+        choices=[policy.value for policy in ML_FEATURE_POLICIES_V1],
         required=True,
         help=("Politique sélectionnée avant " "l'ouverture du test."),
     )
@@ -263,7 +264,7 @@ def run(
 
     walk_forward_result = evaluate_logistic_walk_forward(
         walk_forward_plan,
-        policies=tuple(MLFeaturePolicy),
+        policies=ML_FEATURE_POLICIES_V1,
         c_values=candidate_c_values,
     )
 
