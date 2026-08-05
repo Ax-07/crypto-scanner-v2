@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.models.backtest import BacktestConfig, BacktestJob, BacktestStatus
+from app.domain.ohlcv_fingerprint import BacktestInputFingerprint
 from app.repositories.backtest_repository import BacktestRepository
 from app.repositories.candle_repository import CandleRepository
 from app.repositories.portfolio_repository import PortfolioRepository
@@ -50,6 +51,7 @@ class BacktestManager:
         config: BacktestConfig,
         source_identity: str,
         *,
+        input_fingerprint: BacktestInputFingerprint | None = None,
         replace_job_id: str | None = None,
     ) -> tuple[BacktestJob, bool]:
         """Crée et démarre un source revendiqué, sans course inter-processus."""
@@ -58,6 +60,7 @@ class BacktestManager:
             source_identity,
             job,
             algorithm_version=job.algorithm_version,
+            input_fingerprint=input_fingerprint,
             replace_job_id=replace_job_id,
         )
         if not created:

@@ -471,11 +471,19 @@ La base temporaire a été supprimée ; la base locale réelle n'a pas été mod
 
 ### Phase 2 — Fingerprint fort et manifeste de reproduction
 
-Objectif : hacher le contenu OHLCV ordonné et enregistrer config complet, versions et identité de
-source. Fichiers : moteur, modèles ML manifest, repository/migration éventuelle, loader/exporter.
-Dépendance : Phase 1. Tests : mutation d'un OHLCV change le hash ; ordre stable ; anciens manifests
-v1 restent lisibles. Acceptation : un manifest v2 suffit à vérifier le source exact. Risque : coût
-I/O et contrat public ; version de manifest ou migration probable.
+Implémentée dans le worktree : le chargeur partagé calcule les hashes de chaque flux effectivement
+consommé et leur agrégat ; le moteur confirme l'attendu avant de produire des résultats. La
+migration 10 conserve le plan et la confirmation par job sans rétroattribuer de hash aux sources
+Phase 1. Le service recrée une génération stale sans détruire l'ancienne et les claims restent
+atomiques. Le manifeste de schéma 2 contient le config complet, le profil, les flux et les versions
+du pipeline. `app.ml.cli.verify_ml_v2_source` vérifie une base candidate sans écriture ni réseau.
+Les manifests v1 restent lisibles. La génération réelle, l'entraînement et le benchmark v2 restent
+hors périmètre et appartiennent à la Phase 3.
+
+Validation contrôlée : 1118 tests backend passés, 1 ignoré, 27 subtests, 2 warnings historiques ;
+311 tests frontend ; compileall, Black, Flake8, mypy, TypeScript, ESLint, Vite et diff-check verts.
+La preuve temporaire a obtenu `created → reused → stale → created`, a conservé l'ancien job,
+ignoré une mutation hors plan et réduit deux appels concurrents à un seul nouveau job.
 
 ### Phase 3 — Dataset v2 réel et audit causal
 

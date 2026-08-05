@@ -360,10 +360,26 @@ Pour v2, préparer d'abord le source avec la commande dédiée, puis exporter le
   les deux sont acceptés par `MLDatasetLoader`.
 - La base et les exports de preuve étaient temporaires et ont été supprimés après contrôle.
 
+## Résultats de validation du 5 août 2026 après Phase 2
+
+- Backend : 1118 passés, 0 échec, 1 ignoré, 27 subtests et les 2 warnings pandas historiques.
+- Frontend inchangé : 311 tests dans 48 fichiers ; TypeScript, ESLint et build Vite (2066
+  modules) réussis.
+- compileall, Black (204 fichiers), Flake8, mypy (120 fichiers) et `git diff --check` réussis.
+- Preuve SQLite temporaire : `created`, `reused`, ancien manifeste `stale`, nouveau manifeste
+  `reproducible`, mutation hors périmètre `reused`, concurrence `created + reused`, ancien job
+  conservé et un seul nouveau job par mutation.
+- Fingerprints agrégés de la preuve : ancien
+  `sha256:edd7424e0c2ba13229597e6f5f231afe3fd44e953cbd0eedd142738f282a9838`, nouveau
+  `sha256:8477a62307b9e0d98b691f012dbe75496a3ed82b5f392b891e325caa3decaf75`.
+- Deux exports inchangés étaient byte-identiques. La base et les artefacts étaient dans un
+  répertoire temporaire automatiquement supprimé ; la base locale réelle n'a pas été modifiée.
+
 ## Problèmes connus
 
 1. Pas d'artefact v2 persistant publié ni de modèle/benchmark v2.
-2. Fingerprint OHLCV insuffisamment fort pour une reproduction indépendante.
+2. Aucun dataset, entraînement ou benchmark ML v2 réel n'a encore été lancé ; la Phase 2 fournit
+   seulement la provenance forte et sa vérification locale.
 3. Deux warnings pandas de perte de nanosecondes dans `market_data.py`.
 4. Contrats Python/TS/Zod partiellement dupliqués ; marché sans modèle Pydantic public.
 
@@ -403,15 +419,14 @@ builder, service, contrat frontend et flux réel.
 ## Comment poursuivre le pipeline ML v2
 
 1. Phases 0 et 1 terminées : conserver la baseline et le service source canonique.
-2. Renforcer l'identité du dataset en hachant le contenu OHLCV ordonné, pas seulement
-   ses bornes et son nombre de bougies.
-3. Étendre/versionner le manifest v2 pour inclure le config canonique et les métadonnées permettant
-   la vérification/reconstruction.
-4. Générer ensuite un artefact v2 réel sur une fenêtre suffisamment longue et l'auditer.
-5. Auditer features, données manquantes, distributions, régimes et causalité avant l'entraînement.
-6. Définir une policy v2 séparée ; ne pas modifier `ML_FEATURE_POLICIES_V1`.
-7. Réserver avant sélection une nouvelle période terminale postérieure au test consommé v1.
-8. Figer candidats/critères, sélectionner seulement sur développement, ouvrir le test une fois et
+2. Phase 2 terminée dans le worktree : fingerprint `ohlcv-content-sha256-v1`, agrégat
+   `ohlcv-input-aggregate-sha256-v1`, migration 10, manifeste de schéma 2 et CLI
+   `app.ml.cli.verify_ml_v2_source`.
+3. Générer ensuite un artefact v2 réel sur une fenêtre suffisamment longue et l'auditer.
+4. Auditer features, données manquantes, distributions, régimes et causalité avant l'entraînement.
+5. Définir une policy v2 séparée ; ne pas modifier `ML_FEATURE_POLICIES_V1`.
+6. Réserver avant sélection une nouvelle période terminale postérieure au test consommé v1.
+7. Figer candidats/critères, sélectionner seulement sur développement, ouvrir le test une fois et
    exporter un benchmark v2 immuable avec décision acceptée/rejetée.
 
 ## Ce qui n'a pas été vérifié

@@ -13,6 +13,7 @@ from typing import Any, Literal, cast
 from app.core.settings import Timeframe
 from app.domain.backtesting import signal_profile_fingerprint
 from app.domain.candles import timeframe_milliseconds
+from app.domain.ohlcv_fingerprint import BacktestInputFingerprint
 from app.domain.limits import ma_ohlcv_limit, primary_ohlcv_limit
 from app.ml.domain.ml_dataset_profile import (
     ML_DATASET_PROFILE_V2_ID,
@@ -29,6 +30,11 @@ from app.models.backtest import (
 from app.repositories.backtest_repository import BacktestRepository
 from app.repositories.candle_repository import CandleRepository
 from app.services.backtest_manager import BacktestManager
+from app.services.backtest_engine import SQLiteHistoricalRepository
+from app.services.backtest_input_data import (
+    BacktestInputSnapshot,
+    load_backtest_input_snapshot,
+)
 
 ML_V2_SOURCE_IDENTITY_VERSION = "ml-v2-source-identity-v1"
 SourceAction = Literal[
@@ -163,6 +169,8 @@ class MLV2SourceResult:
     profile_fingerprint: str
     job: BacktestJob | None
     coverage: tuple[MLV2CoverageDiagnostic, ...]
+    input_fingerprint: BacktestInputFingerprint | None = None
+    stale_job_id: str | None = None
     dry_run: bool = False
 
     @property
@@ -189,10 +197,26 @@ class MLV2SourceResult:
             "fingerprints": {
                 "source_identity": self.source_identity,
                 "profile_fingerprint": self.profile_fingerprint,
+                "input_data_fingerprint": (
+                    self.input_fingerprint.input_data_fingerprint
+                    if self.input_fingerprint is not None
+                    else None
+                ),
+                "input_data_fingerprint_version": (
+                    self.input_fingerprint.fingerprint_version
+                    if self.input_fingerprint is not None
+                    else None
+                ),
                 "dataset_version": job.dataset_version if job else None,
                 "config_fingerprint": job.config_fingerprint if job else None,
             },
             "can_export": self.can_export,
+            "stale_job_id": self.stale_job_id,
+            "input_streams": (
+                [stream.model_dump(mode="json") for stream in self.input_fingerprint.streams]
+                if self.input_fingerprint is not None
+                else []
+            ),
             "coverage": [item.as_dict() for item in self.coverage],
             "canonical_config": self.config.model_dump(mode="json"),
         }
@@ -218,114 +242,120 @@ class MLV2SourceService:
         key = (str(self.backtests.database.path.resolve()), identity)
         return _SOURCE_LOCKS.setdefault(key, asyncio.Lock())
 
-    async def validate_coverage(self, config: BacktestConfig) -> tuple[MLV2CoverageDiagnostic, ...]:
+    def _coverage_from_snapshot(
+        self, config: BacktestConfig, snapshot: BacktestInputSnapshot
+    ) -> tuple[MLV2CoverageDiagnostic, ...]:
         signal = config.signal_config
-        symbol = config.symbols[0]
         start_ms = int(config.start.timestamp() * 1_000)
         end_ms = int(config.end.timestamp() * 1_000)
         interval = timeframe_milliseconds(signal.timeframe)
-        warmup = primary_ohlcv_limit(signal)
-        future = max(config.horizons) + int(config.entry_policy == "next_open") + 1
-        windows = (
-            ("primary-warmup", signal.timeframe, start_ms - warmup * interval, start_ms),
-            ("decision-window", signal.timeframe, start_ms, end_ms),
-            ("outcome-future", signal.timeframe, end_ms, end_ms + future * interval),
-        )
         diagnostics: list[MLV2CoverageDiagnostic] = []
-        for name, timeframe, window_start, window_end in windows:
-            report = await self.candles.validate_backtest_coverage(
-                exchange_id=signal.exchange_id,
-                market_type=signal.market_type,
-                symbol=symbol,
-                timeframe=timeframe,
-                start_time=window_start,
-                end_time=window_end,
-                closed_only=True,
+        for symbol, series in snapshot.primary.items():
+            del symbol
+            partitions = (
+                (
+                    "primary-warmup",
+                    series.candles[: series.first_decision_index],
+                    primary_ohlcv_limit(signal),
+                ),
+                (
+                    "decision-window",
+                    series.candles[series.first_decision_index : series.last_decision_index + 1],
+                    (end_ms - start_ms) // interval,
+                ),
+                (
+                    "outcome-future",
+                    series.candles[series.last_decision_index + 1 :],
+                    max(config.horizons) + int(config.entry_policy == "next_open") + 1,
+                ),
             )
-            diagnostics.append(
-                MLV2CoverageDiagnostic(
-                    name=name,
-                    timeframe=timeframe,
-                    requested_start_ms=window_start,
-                    requested_end_ms=window_end,
-                    available_start_ms=report.available_start,
-                    available_end_ms=report.available_end,
-                    expected_count=report.expected_count,
-                    candle_count=report.candle_count,
-                    missing_ranges=tuple(report.missing_ranges),
-                    complete=report.is_complete,
-                )
-            )
-
-        if signal.use_ma:
-            higher_warmup = ma_ohlcv_limit(signal)
-            primary_end_with_future = end_ms + future * interval
-            for higher_timeframe in signal.ma_timeframes:
-                if higher_timeframe == signal.timeframe:
-                    continue
-                higher_interval = timeframe_milliseconds(higher_timeframe)
-                before = await self.candles.get_candles_before(
-                    exchange_id=signal.exchange_id,
-                    market_type=signal.market_type,
-                    symbol=symbol,
-                    timeframe=higher_timeframe,
-                    before_open_time=start_ms,
-                    limit=higher_warmup,
-                    closed_only=True,
-                )
+            for name, candles, expected in partitions:
                 gaps = tuple(
-                    (left.open_time + higher_interval, right.open_time)
-                    for left, right in zip(before, before[1:])
-                    if right.open_time - left.open_time != higher_interval
+                    (left.open_time + interval, right.open_time)
+                    for left, right in zip(candles, candles[1:])
+                    if right.open_time - left.open_time != interval
                 )
                 diagnostics.append(
                     MLV2CoverageDiagnostic(
-                        name="trend-warmup",
-                        timeframe=higher_timeframe,
-                        requested_start_ms=start_ms - higher_warmup * higher_interval,
-                        requested_end_ms=start_ms,
-                        available_start_ms=before[0].open_time if before else None,
-                        available_end_ms=before[-1].open_time if before else None,
-                        expected_count=higher_warmup,
-                        candle_count=len(before),
+                        name=name,
+                        timeframe=signal.timeframe,
+                        requested_start_ms=(candles[0].open_time if candles else start_ms),
+                        requested_end_ms=(candles[-1].open_time + interval if candles else end_ms),
+                        available_start_ms=candles[0].open_time if candles else None,
+                        available_end_ms=candles[-1].open_time if candles else None,
+                        expected_count=expected,
+                        candle_count=len(candles),
                         missing_ranges=gaps,
-                        complete=len(before) == higher_warmup and not gaps,
+                        complete=len(candles) == expected and not gaps,
                     )
                 )
-                current = await self.candles.get_range(
-                    signal.exchange_id,
-                    signal.market_type,
-                    symbol,
-                    higher_timeframe,
-                    from_time=start_ms,
-                    to_time=primary_end_with_future,
-                    limit=2_000_000,
-                    closed_only=True,
-                )
-                current_gaps = tuple(
-                    (left.open_time + higher_interval, right.open_time)
-                    for left, right in zip(current, current[1:])
-                    if right.open_time - left.open_time != higher_interval
-                )
-                diagnostics.append(
-                    MLV2CoverageDiagnostic(
-                        name="trend-window",
-                        timeframe=higher_timeframe,
-                        requested_start_ms=start_ms,
-                        requested_end_ms=primary_end_with_future,
-                        available_start_ms=current[0].open_time if current else None,
-                        available_end_ms=current[-1].open_time if current else None,
-                        expected_count=len(current),
-                        candle_count=len(current),
-                        missing_ranges=current_gaps,
-                        complete=not current_gaps,
+        higher_warmup = ma_ohlcv_limit(signal)
+        for symbol_trends in snapshot.trends.values():
+            for timeframe, candles in symbol_trends.items():
+                higher_interval = timeframe_milliseconds(timeframe)
+                before = [item for item in candles if item.open_time < start_ms]
+                current = [item for item in candles if item.open_time >= start_ms]
+                for name, items, expected in (
+                    ("trend-warmup", before, higher_warmup),
+                    ("trend-window", current, len(current)),
+                ):
+                    gaps = tuple(
+                        (left.open_time + higher_interval, right.open_time)
+                        for left, right in zip(items, items[1:])
+                        if right.open_time - left.open_time != higher_interval
                     )
-                )
-
+                    diagnostics.append(
+                        MLV2CoverageDiagnostic(
+                            name=name,
+                            timeframe=timeframe,
+                            requested_start_ms=(items[0].open_time if items else start_ms),
+                            requested_end_ms=(
+                                items[-1].open_time + higher_interval if items else end_ms
+                            ),
+                            available_start_ms=items[0].open_time if items else None,
+                            available_end_ms=items[-1].open_time if items else None,
+                            expected_count=expected,
+                            candle_count=len(items),
+                            missing_ranges=gaps,
+                            complete=len(items) == expected and not gaps,
+                        )
+                    )
         result = tuple(diagnostics)
         if any(not item.complete for item in result):
             raise MLV2SourceCoverageError(result)
         return result
+
+    async def _current_inputs(
+        self, config: BacktestConfig, identity: str
+    ) -> tuple[BacktestInputFingerprint, tuple[MLV2CoverageDiagnostic, ...]]:
+        preview_job = BacktestJob(id="ml-v2-input-preview", config=config)
+        try:
+            snapshot = await load_backtest_input_snapshot(
+                SQLiteHistoricalRepository(self.candles), preview_job
+            )
+        except ValueError as exc:
+            start_ms = int(config.start.timestamp() * 1_000)
+            interval = timeframe_milliseconds(config.signal_config.timeframe)
+            expected = primary_ohlcv_limit(config.signal_config)
+            diagnostic = MLV2CoverageDiagnostic(
+                name="primary-warmup",
+                timeframe=config.signal_config.timeframe,
+                requested_start_ms=start_ms - expected * interval,
+                requested_end_ms=start_ms,
+                available_start_ms=None,
+                available_end_ms=None,
+                expected_count=expected,
+                candle_count=0,
+                missing_ranges=(),
+                complete=False,
+            )
+            raise MLV2SourceCoverageError((diagnostic,)) from exc
+        coverage = self._coverage_from_snapshot(config, snapshot)
+        return snapshot.fingerprint(identity), coverage
+
+    async def validate_coverage(self, config: BacktestConfig) -> tuple[MLV2CoverageDiagnostic, ...]:
+        _, coverage = await self._current_inputs(config, ml_v2_source_identity(config))
+        return coverage
 
     async def _matching_historical_job(
         self, config: BacktestConfig, identity: str
@@ -376,7 +406,17 @@ class MLV2SourceService:
         identity = ml_v2_source_identity(config)
         profile_fingerprint = signal_profile_fingerprint(config.signal_config)
         async with self._lock(identity):
+            current_input, coverage = await self._current_inputs(config, identity)
             selected = await self._select(config, identity)
+            selected_input = (
+                await self.backtests.get_ml_v2_source_input(selected.id)
+                if selected is not None
+                else None
+            )
+            input_matches = bool(
+                selected_input is not None and selected_input.fingerprint == current_input
+            )
+            stale_job_id: str | None = None
 
             if selected is not None and (
                 selected.algorithm_version != SIGNAL_EVALUATION_VERSION
@@ -385,49 +425,59 @@ class MLV2SourceService:
                 replace_job_id = selected.id
                 reason = "revendication incompatible avec le contrat courant; nouveau job créé"
             elif selected is not None and selected.status == BacktestStatus.COMPLETED:
-                if await self._completed_is_usable(selected):
-                    if not dry_run:
-                        claimed_id, _ = await self.backtests.adopt_ml_v2_source(
-                            identity,
-                            selected.id,
-                            algorithm_version=SIGNAL_EVALUATION_VERSION,
-                        )
-                        selected = await self.backtests.get_job(claimed_id) or selected
+                if (
+                    input_matches
+                    and selected_input is not None
+                    and selected_input.confirmed_at_ms is not None
+                    and await self._completed_is_usable(selected)
+                ):
                     return MLV2SourceResult(
                         action=cast(SourceAction, "would-reuse" if dry_run else "reused"),
-                        reason="source terminé, canonique et exportable",
+                        reason="source terminé, canonique, exportable et OHLCV identique",
                         config=config,
                         source_identity=identity,
                         profile_fingerprint=profile_fingerprint,
                         job=selected,
-                        coverage=(),
+                        coverage=coverage,
+                        input_fingerprint=current_input,
                         dry_run=dry_run,
                     )
                 replace_job_id = selected.id
-                reason = "source terminé mais inexploitable; création d'un remplacement"
+                stale_job_id = selected.id
+                reason = (
+                    "source terminé sans fingerprint fort confirmé; nouveau calcul requis"
+                    if selected_input is None or selected_input.confirmed_at_ms is None
+                    else "source stale: contenu OHLCV divergent; nouveau job créé"
+                )
             elif selected is not None and selected.status in {
                 BacktestStatus.PENDING,
                 BacktestStatus.RUNNING,
             }:
-                if wait_for_running and not dry_run:
-                    selected = await self.manager.wait_until_terminal(selected.id)
-                return MLV2SourceResult(
-                    action="already-running",
-                    reason="un source compatible est déjà en cours",
-                    config=config,
-                    source_identity=identity,
-                    profile_fingerprint=profile_fingerprint,
-                    job=selected,
-                    coverage=(),
-                    dry_run=dry_run,
-                )
+                if input_matches:
+                    if wait_for_running and not dry_run:
+                        selected = await self.manager.wait_until_terminal(selected.id)
+                    return MLV2SourceResult(
+                        action="already-running",
+                        reason="un source compatible fingerprinté est déjà en cours",
+                        config=config,
+                        source_identity=identity,
+                        profile_fingerprint=profile_fingerprint,
+                        job=selected,
+                        coverage=coverage,
+                        input_fingerprint=current_input,
+                        dry_run=dry_run,
+                    )
+                replace_job_id = selected.id
+                stale_job_id = selected.id
+                reason = "source en cours basé sur d'autres données; nouvelle génération requise"
             elif selected is not None and selected.status == BacktestStatus.INTERRUPTED:
                 checkpoint = selected.checkpoint
                 resumable = bool(
-                    checkpoint and checkpoint.get("algorithm_version") == SIGNAL_EVALUATION_VERSION
+                    checkpoint
+                    and checkpoint.get("algorithm_version") == SIGNAL_EVALUATION_VERSION
+                    and input_matches
                 )
                 if resumable:
-                    coverage = await self.validate_coverage(config)
                     if dry_run:
                         return MLV2SourceResult(
                             action="would-resume",
@@ -437,6 +487,7 @@ class MLV2SourceService:
                             profile_fingerprint=profile_fingerprint,
                             job=selected,
                             coverage=coverage,
+                            input_fingerprint=current_input,
                             dry_run=True,
                         )
                     resumed = await self.manager.resume(selected.id)
@@ -451,9 +502,11 @@ class MLV2SourceService:
                         profile_fingerprint=profile_fingerprint,
                         job=terminal,
                         coverage=coverage,
+                        input_fingerprint=current_input,
                     )
                 replace_job_id = selected.id
-                reason = "source interrompu sans checkpoint compatible; nouveau job créé"
+                stale_job_id = selected.id
+                reason = "source interrompu sans checkpoint/fingerprint compatible; nouveau job"
             elif selected is not None:
                 replace_job_id = selected.id
                 reason = f"source {selected.status.value} non réutilisable; nouveau job créé"
@@ -461,7 +514,6 @@ class MLV2SourceService:
                 replace_job_id = None
                 reason = "aucun source compatible existant"
 
-            coverage = await self.validate_coverage(config)
             if dry_run:
                 return MLV2SourceResult(
                     action="would-create",
@@ -471,12 +523,15 @@ class MLV2SourceService:
                     profile_fingerprint=profile_fingerprint,
                     job=selected,
                     coverage=coverage,
+                    input_fingerprint=current_input,
+                    stale_job_id=stale_job_id,
                     dry_run=True,
                 )
 
             job, created = await self.manager.create_ml_v2_source_job(
                 config,
                 identity,
+                input_fingerprint=current_input,
                 replace_job_id=replace_job_id,
             )
             if not created:
@@ -491,6 +546,8 @@ class MLV2SourceService:
                     profile_fingerprint=profile_fingerprint,
                     job=job,
                     coverage=coverage,
+                    input_fingerprint=current_input,
+                    stale_job_id=stale_job_id,
                 )
             terminal = await self.manager.wait_until_terminal(job.id)
             return MLV2SourceResult(
@@ -501,4 +558,6 @@ class MLV2SourceService:
                 profile_fingerprint=profile_fingerprint,
                 job=terminal,
                 coverage=coverage,
+                input_fingerprint=current_input,
+                stale_job_id=stale_job_id,
             )

@@ -7,6 +7,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.database.connection import Database
+from app.domain.ohlcv_fingerprint import (
+    BacktestInputFingerprint,
+    PersistedBacktestInputFingerprint,
+)
 from app.models.backtest import (
     BacktestJob,
     BacktestStatus,
@@ -78,6 +82,7 @@ class BacktestRepository:
         job: BacktestJob,
         *,
         algorithm_version: str,
+        input_fingerprint: BacktestInputFingerprint | None = None,
         replace_job_id: str | None = None,
     ) -> tuple[str, bool]:
         """Réserve atomiquement une identité ML v2 et persiste son nouveau job.
@@ -127,22 +132,39 @@ class BacktestRepository:
                         """
                         INSERT INTO ml_v2_source_claims (
                             source_identity, job_id, algorithm_version,
-                            created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?)
+                            created_at, updated_at, input_data_fingerprint
+                        ) VALUES (?, ?, ?, ?, ?, ?)
                         """,
-                        (source_identity, job.id, algorithm_version, now, now),
+                        (
+                            source_identity,
+                            job.id,
+                            algorithm_version,
+                            now,
+                            now,
+                            (
+                                input_fingerprint.input_data_fingerprint
+                                if input_fingerprint is not None
+                                else None
+                            ),
+                        ),
                     )
                 else:
                     cursor = await connection.execute(
                         """
                         UPDATE ml_v2_source_claims
-                        SET job_id=?, algorithm_version=?, updated_at=?
+                        SET job_id=?, algorithm_version=?, updated_at=?,
+                            input_data_fingerprint=?
                         WHERE source_identity=? AND job_id=?
                         """,
                         (
                             job.id,
                             algorithm_version,
                             now,
+                            (
+                                input_fingerprint.input_data_fingerprint
+                                if input_fingerprint is not None
+                                else None
+                            ),
                             source_identity,
                             current_job_id,
                         ),
@@ -150,6 +172,24 @@ class BacktestRepository:
                     if cursor.rowcount != 1:
                         await connection.rollback()
                         return current_job_id, False
+                if input_fingerprint is not None:
+                    await connection.execute(
+                        """
+                        INSERT INTO ml_v2_source_inputs (
+                            job_id, source_identity, fingerprint_version,
+                            input_data_fingerprint, input_plan_json,
+                            confirmed_at, created_at
+                        ) VALUES (?, ?, ?, ?, ?, NULL, ?)
+                        """,
+                        (
+                            job.id,
+                            source_identity,
+                            input_fingerprint.fingerprint_version,
+                            input_fingerprint.input_data_fingerprint,
+                            input_fingerprint.model_dump_json(),
+                            now,
+                        ),
+                    )
                 await connection.commit()
                 return job.id, True
             except BaseException:
@@ -172,11 +212,11 @@ class BacktestRepository:
                     """
                     INSERT INTO ml_v2_source_claims (
                         source_identity, job_id, algorithm_version,
-                        created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?)
+                        created_at, updated_at, input_data_fingerprint
+                    ) VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT(source_identity) DO NOTHING
                     """,
-                    (source_identity, job_id, algorithm_version, now, now),
+                    (source_identity, job_id, algorithm_version, now, now, None),
                 )
                 created = cursor.rowcount == 1
                 selected = await connection.execute(
@@ -189,6 +229,41 @@ class BacktestRepository:
             except BaseException:
                 await connection.rollback()
                 raise
+
+    async def get_ml_v2_source_input(self, job_id: str) -> PersistedBacktestInputFingerprint | None:
+        """Charge la provenance forte attendue et sa confirmation moteur."""
+        async with self.database.connection() as connection:
+            cursor = await connection.execute(
+                """
+                SELECT input_plan_json, confirmed_at
+                FROM ml_v2_source_inputs WHERE job_id=?
+                """,
+                (job_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return PersistedBacktestInputFingerprint(
+            job_id=job_id,
+            fingerprint=BacktestInputFingerprint.model_validate_json(row[0]),
+            confirmed_at_ms=int(row[1]) if row[1] is not None else None,
+        )
+
+    async def confirm_ml_v2_source_input(self, job_id: str, input_data_fingerprint: str) -> None:
+        """Confirme uniquement une identité prévalidée strictement identique."""
+        now = int(datetime.now(timezone.utc).timestamp() * 1_000)
+        async with self.database.connection() as connection:
+            cursor = await connection.execute(
+                """
+                UPDATE ml_v2_source_inputs SET confirmed_at=?
+                WHERE job_id=? AND input_data_fingerprint=?
+                """,
+                (now, job_id, input_data_fingerprint),
+            )
+            if cursor.rowcount != 1:
+                await connection.rollback()
+                raise ValueError("fingerprint OHLCV attendu absent ou divergent")
+            await connection.commit()
 
     async def get_ml_v2_source_claim(self, source_identity: str) -> BacktestJob | None:
         """Retourne le job actuellement revendiqué pour une identité ML v2."""

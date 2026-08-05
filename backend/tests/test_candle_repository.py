@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import aiosqlite
@@ -10,6 +11,9 @@ import aiosqlite
 from app.database.connection import Database
 from app.database.schema import MIGRATION_1, MIGRATION_2, MIGRATION_3, MIGRATIONS, SCHEMA_VERSION
 from app.domain.candles import Candle, find_missing_ranges
+from app.domain.ohlcv_fingerprint import InputDataStreamFingerprint, aggregate_input_fingerprints
+from app.models.backtest import BacktestConfig, BacktestJob
+from app.repositories.backtest_repository import BacktestRepository
 from app.repositories.candle_repository import CandleRepository
 
 
@@ -77,7 +81,7 @@ class DatabaseAndRepositoryTests(unittest.IsolatedAsyncioTestCase):
             ).fetchone()
         self.assertEqual(versions[0], SCHEMA_VERSION)
 
-    async def test_migration_9_preserves_an_existing_version_8_database(self) -> None:
+    async def test_migrations_9_and_10_preserve_an_existing_version_8_database(self) -> None:
         legacy_path = Path(self.temporary.name) / "legacy-v8.sqlite3"
         async with aiosqlite.connect(legacy_path) as connection:
             await connection.execute("""
@@ -115,10 +119,119 @@ class DatabaseAndRepositoryTests(unittest.IsolatedAsyncioTestCase):
                     SELECT name FROM sqlite_master
                     WHERE type='table' AND name='ml_v2_source_claims'
                     """)).fetchone()
-        self.assertEqual(version[0], 9)
+        self.assertEqual(version[0], 10)
         self.assertEqual(tuple(legacy_job), ("legacy-job", "pending"))
         self.assertEqual(claims_table[0], "ml_v2_source_claims")
         await legacy.close()
+
+    async def test_migration_10_preserves_true_schema_9_history_and_null_provenance(
+        self,
+    ) -> None:
+        legacy_path = Path(self.temporary.name) / "legacy-v9.sqlite3"
+        async with aiosqlite.connect(legacy_path) as connection:
+            await connection.execute("PRAGMA foreign_keys = ON")
+            await connection.execute(
+                "CREATE TABLE schema_migrations "
+                "(version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)"
+            )
+            for version in range(1, 10):
+                await connection.executescript(MIGRATIONS[version])
+                await connection.execute(
+                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, 0)",
+                    (version,),
+                )
+            for job_id in ("inline-history", "phase1-v2"):
+                await connection.execute(
+                    """
+                    INSERT INTO backtest_jobs (
+                        id, status, config_json, progress_json, warnings_json,
+                        created_at, updated_at
+                    ) VALUES (?, 'completed', '{}', '{}', '[]', 0, 0)
+                    """,
+                    (job_id,),
+                )
+            observation = await connection.execute("""
+                INSERT INTO backtest_observations (
+                    job_id, symbol, decision_time, snapshot_status, accepted,
+                    payload_json
+                ) VALUES ('phase1-v2', 'BTC/USDC', 1, 'confirmed', 1, '{}')
+                """)
+            await connection.execute(
+                """
+                INSERT INTO backtest_outcomes (
+                    job_id, observation_id, horizon, payload_json
+                ) VALUES ('phase1-v2', ?, 6, '{}')
+                """,
+                (observation.lastrowid,),
+            )
+            await connection.execute("""
+                INSERT INTO ml_v2_source_claims (
+                    source_identity, job_id, algorithm_version, created_at, updated_at
+                ) VALUES ('phase1-identity', 'phase1-v2', 'signal-evaluation-v3', 0, 0)
+                """)
+            await connection.commit()
+
+        migrated = Database(legacy_path)
+        await migrated.initialize()
+        await migrated.initialize()
+        async with migrated.connection() as connection:
+            jobs = await (
+                await connection.execute("SELECT id FROM backtest_jobs ORDER BY id")
+            ).fetchall()
+            counts = []
+            for table in ("backtest_observations", "backtest_outcomes"):
+                row = await (await connection.execute(f"SELECT COUNT(*) FROM {table}")).fetchone()
+                counts.append(row[0])
+            claim = await (
+                await connection.execute(
+                    "SELECT job_id, input_data_fingerprint FROM ml_v2_source_claims"
+                )
+            ).fetchone()
+            strong_count = await (
+                await connection.execute("SELECT COUNT(*) FROM ml_v2_source_inputs")
+            ).fetchone()
+            integrity = await (await connection.execute("PRAGMA integrity_check")).fetchone()
+        self.assertEqual([row[0] for row in jobs], ["inline-history", "phase1-v2"])
+        self.assertEqual(counts, [1, 1])
+        self.assertEqual(tuple(claim), ("phase1-v2", None))
+        self.assertEqual(strong_count[0], 0)
+        self.assertEqual(integrity[0], "ok")
+
+        repository = BacktestRepository(migrated)
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        new_job = BacktestJob(
+            id="fingerprinted-v2",
+            config=BacktestConfig(
+                symbols=["BTC/USDC"], start=start, end=start + timedelta(hours=1)
+            ),
+        )
+        stream = InputDataStreamFingerprint(
+            role="primary",
+            exchange_id="binance",
+            market_type="spot",
+            symbol="BTC/USDC",
+            timeframe="1h",
+            requested_start_ms=1,
+            requested_end_ms=2,
+            effective_first_open_time_ms=1,
+            effective_last_open_time_ms=1,
+            candle_count=1,
+            warmup_bars=0,
+            future_bars=0,
+            gaps_validated=True,
+            fingerprint="sha256:" + "1" * 64,
+        )
+        fingerprint = aggregate_input_fingerprints("new-identity", (stream,))
+        selected, created = await repository.claim_ml_v2_source(
+            "new-identity",
+            new_job,
+            algorithm_version=new_job.algorithm_version,
+            input_fingerprint=fingerprint,
+        )
+        self.assertTrue(created)
+        self.assertEqual(selected, new_job.id)
+        self.assertIsNotNone(await repository.get_ml_v2_source_input(new_job.id))
+        await migrated.close()
 
     async def test_upsert_latest_range_filters_bounds_and_no_duplicate(self) -> None:
         self.assertEqual(await self.repository.upsert_many([]), 0)

@@ -18,10 +18,15 @@ from app.ml.models.ml_dataset import (
     MLFeatureSchemaVersion,
 )
 from app.ml.models.ml_dataset_export import (
+    ML_EXPORT_MANIFEST_SCHEMA_VERSION_V2,
     MLDatasetExportManifest,
     MLDatasetExportStats,
 )
 from app.ml.services.ml_dataset_builder import MLDatasetBuildResult
+from app.ml.services.ml_dataset_builder import ML_DATASET_BUILDER_VERSION
+
+ML_DATASET_EXPORTER_VERSION = "ml-dataset-exporter-v2"
+ML_DATASET_LOADER_CONTRACT_VERSION = "ml-dataset-loader-v2"
 
 ML_PROFILE_FINGERPRINT_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -230,22 +235,62 @@ class MLDatasetExporter:
             first_decision_time = ordered_rows[0].decision_time if ordered_rows else None
             last_decision_time = ordered_rows[-1].decision_time if ordered_rows else None
 
-            manifest = MLDatasetExportManifest(
-                feature_schema_version=result.feature_schema_version,
-                source_job_id=result.job_id,
-                horizon=result.horizon,
-                natr_multiplier=result.natr_multiplier,
-                data_file=data_path.name,
-                data_sha256=data_sha256,
-                row_count=len(ordered_rows),
-                first_decision_time=first_decision_time,
-                last_decision_time=last_decision_time,
-                feature_names=feature_names,
-                source_algorithm_versions=(source_algorithm_versions),
-                source_dataset_versions=(source_dataset_versions),
-                profile_ids=profile_ids,
-                profile_fingerprints=(profile_fingerprints),
-                stats=_export_stats(result),
+            v2_fields: dict[str, object] = {}
+            if result.feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2:
+                if result.source_job is None or result.source_input is None:
+                    raise ValueError(
+                        "l'export v2 exige la configuration et le fingerprint fort du source"
+                    )
+                source_job = result.source_job
+                if len(profile_fingerprints) != 1:
+                    raise ValueError("l'export v2 exige un unique profile_fingerprint")
+                v2_fields = {
+                    "manifest_schema_version": ML_EXPORT_MANIFEST_SCHEMA_VERSION_V2,
+                    "source_identity": result.source_input.source_identity,
+                    "signal_profile_id": source_job.config.signal_profile_id,
+                    "profile_fingerprint": profile_fingerprints[0],
+                    "source_signal_algorithm_version": source_job.algorithm_version,
+                    "source_status": source_job.status.value,
+                    "input_data_fingerprint": (result.source_input.input_data_fingerprint),
+                    "input_data_fingerprint_version": (result.source_input.fingerprint_version),
+                    "backtest_config": source_job.config,
+                    "input_streams": list(result.source_input.streams),
+                    "pipeline_versions": {
+                        "backtest_algorithm": source_job.algorithm_version,
+                        "builder": ML_DATASET_BUILDER_VERSION,
+                        "exporter": ML_DATASET_EXPORTER_VERSION,
+                        "feature_schema": result.feature_schema_version,
+                        "label_schema": "direction-natr-h6-v1",
+                        "loader_contract": ML_DATASET_LOADER_CONTRACT_VERSION,
+                    },
+                    "row_order": "decision_time,observation_id",
+                    "exclusion_rules": [
+                        "censored_outcome",
+                        "contract_rejection",
+                        "invalid_outcome",
+                        "missing_natr",
+                    ],
+                }
+
+            manifest = MLDatasetExportManifest.model_validate(
+                {
+                    "feature_schema_version": result.feature_schema_version,
+                    "source_job_id": result.job_id,
+                    "horizon": result.horizon,
+                    "natr_multiplier": result.natr_multiplier,
+                    "data_file": data_path.name,
+                    "data_sha256": data_sha256,
+                    "row_count": len(ordered_rows),
+                    "first_decision_time": first_decision_time,
+                    "last_decision_time": last_decision_time,
+                    "feature_names": feature_names,
+                    "source_algorithm_versions": source_algorithm_versions,
+                    "source_dataset_versions": source_dataset_versions,
+                    "profile_ids": profile_ids,
+                    "profile_fingerprints": profile_fingerprints,
+                    "stats": _export_stats(result),
+                    **v2_fields,
+                }
             )
 
             manifest_bytes = _canonical_json_bytes(

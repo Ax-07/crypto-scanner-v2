@@ -8,9 +8,13 @@ from pathlib import Path
 
 import pytest
 
+from app.domain.ohlcv_fingerprint import InputDataStreamFingerprint, aggregate_input_fingerprints
+from app.models.backtest import BacktestConfig, BacktestJob, BacktestStatus
 from app.ml.domain.ml_dataset_profile import (
     ML_DATASET_PROFILE_V2_ID,
+    build_ml_dataset_profile_v2,
 )
+from app.ml.services.ml_v2_source import ml_v2_source_identity
 from app.ml.models.ml_dataset import (
     ML_FEATURE_SCHEMA_VERSION,
     ML_FEATURE_SCHEMA_VERSION_V2,
@@ -110,6 +114,41 @@ def build_result(
         rejection_reasons={},
     )
 
+    source_job = None
+    source_input = None
+    if feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2:
+        source_job = BacktestJob(
+            id="export-test",
+            status=BacktestStatus.COMPLETED,
+            config=BacktestConfig(
+                symbols=["BTC/USDC"],
+                start=BASE_TIME - timedelta(days=2),
+                end=BASE_TIME + timedelta(days=2),
+                signal_config=build_ml_dataset_profile_v2(timeframe="1h"),
+                signal_profile_id=ML_DATASET_PROFILE_V2_ID,
+                horizons=[6],
+            ),
+        )
+        stream = InputDataStreamFingerprint(
+            role="primary",
+            exchange_id="binance",
+            market_type="spot",
+            symbol="BTC/USDC",
+            timeframe="1h",
+            requested_start_ms=1,
+            requested_end_ms=2,
+            effective_first_open_time_ms=1,
+            effective_last_open_time_ms=1,
+            candle_count=1,
+            warmup_bars=0,
+            future_bars=0,
+            gaps_validated=True,
+            fingerprint="sha256:" + "1" * 64,
+        )
+        source_input = aggregate_input_fingerprints(
+            ml_v2_source_identity(source_job.config), (stream,)
+        )
+
     return MLDatasetBuildResult(
         job_id="export-test",
         horizon=6,
@@ -117,6 +156,8 @@ def build_result(
         rows=rows,
         report=report,
         feature_schema_version=feature_schema_version,
+        source_job=source_job,
+        source_input=source_input,
     )
 
 
@@ -415,6 +456,26 @@ def test_export_propagates_v2_feature_schema() -> None:
         )
 
         assert exported.manifest.feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2
+        assert result.source_job is not None
+        assert result.source_input is not None
+        assert exported.manifest.manifest_schema_version == 2
+        assert exported.manifest.backtest_config == result.source_job.config
+        assert exported.manifest.source_identity == result.source_input.source_identity
+        assert exported.manifest.input_data_fingerprint == (
+            result.source_input.input_data_fingerprint
+        )
+        assert exported.manifest.input_streams == list(result.source_input.streams)
+        assert set(exported.manifest.pipeline_versions) == {
+            "backtest_algorithm",
+            "builder",
+            "exporter",
+            "feature_schema",
+            "label_schema",
+            "loader_contract",
+        }
+        assert not any(
+            Path(value).is_absolute() for value in exported.manifest.pipeline_versions.values()
+        )
 
         assert exported.manifest.profile_ids == [
             ML_DATASET_PROFILE_V2_ID,

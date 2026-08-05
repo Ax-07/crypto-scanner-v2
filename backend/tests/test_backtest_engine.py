@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from app.database.connection import Database
 from app.models.backtest import BacktestConfig, BacktestJob, BacktestStatus
 from app.repositories.backtest_repository import BacktestRepository
 from app.services.backtest_engine import BacktestEngine
+from app.services.backtest_input_data import load_backtest_input_snapshot
 from app.services.portfolio_replay import PortfolioReplayError
 from tests.fixtures.synthetic_backtest_v1 import candles
 from tests.test_backtesting_domain import signal_config
@@ -40,6 +42,41 @@ class CountingMemoryHistory(MemoryHistory):
     async def range(self, symbol, timeframe, start_ms, end_ms, job):
         self.range_calls += 1
         return await super().range(symbol, timeframe, start_ms, end_ms, job)
+
+
+@pytest.mark.asyncio
+async def test_engine_refuses_data_changed_after_source_prevalidation() -> None:
+    rows = candles()
+    history = MemoryHistory(rows)
+    with tempfile.TemporaryDirectory() as temporary:
+        database = Database(Path(temporary) / "fingerprint-race.sqlite3")
+        await database.initialize()
+        repository = BacktestRepository(database)
+        config = BacktestConfig(
+            symbols=["SYN/USDC"],
+            start=datetime.fromtimestamp(rows[80].open_time / 1_000, tz=timezone.utc),
+            end=datetime.fromtimestamp(rows[100].open_time / 1_000, tz=timezone.utc),
+            signal_config=signal_config(),
+            horizons=[6],
+        )
+        job = BacktestJob(id="fingerprint-race", config=config)
+        source_identity = "sha256:" + "a" * 64
+        expected = (await load_backtest_input_snapshot(history, job)).fingerprint(source_identity)
+        await repository.claim_ml_v2_source(
+            source_identity,
+            job,
+            algorithm_version=job.algorithm_version,
+            input_fingerprint=expected,
+        )
+        rows[90] = replace(rows[90], close=rows[90].close + 0.25)
+
+        with pytest.raises(ValueError, match="fingerprint prévalidé"):
+            await BacktestEngine(history, repository).run(job)
+
+        persisted = await repository.get_ml_v2_source_input(job.id)
+        assert persisted is not None and persisted.confirmed_at_ms is None
+        assert await repository.all_observations(job.id) == []
+        await database.close()
 
 
 @pytest.mark.asyncio

@@ -2,10 +2,9 @@
 
 ## Périmètre
 
-La Phase 1 fournit le chemin officiel qui prépare le backtest nécessaire à un export
-`causal-features-v2`. Elle ne lance ni entraînement, ni benchmark v2, ni téléchargement réseau.
-Elle ne transforme pas non plus le faible `dataset_version` du moteur en hash du contenu OHLCV :
-ce renforcement reste réservé à la Phase 2.
+Les Phases 1 et 2 fournissent le chemin officiel qui prépare puis prouve le backtest nécessaire à
+un export `causal-features-v2`. Elles ne lancent ni entraînement, ni benchmark v2, ni
+téléchargement réseau.
 
 Trois objets restent distincts :
 
@@ -151,16 +150,85 @@ un manifeste avec SHA-256 ; le loader revérifie octets, ordre et métadonnées.
 - `profile_fingerprint` est le SHA-256 du `ScanConfig` canonique et reste porté par chaque
   observation ;
 - `source_identity` identifie le contrat complet du source et la version moteur ;
+- `input_data_fingerprint` prouve le contenu exact de tous les flux OHLCV consommés ;
 - `config_fingerprint` reste réservé au portefeuille et vaut `null` pour le source v2 ;
-- `dataset_version` actuel ne hash que symbole, bornes et nombre de bougies chargées.
+- `dataset_version` reste le marqueur historique faible (symbole, bornes et compte), uniquement
+  pour compatibilité. Il n'est jamais utilisé comme preuve ML v2.
 
 Le replay ne voit que les bougies closes disponibles au temps de décision. Les features v2 sont
 extraites de l'observation causale ; le futur h6 sert uniquement au label. Pour les mêmes bougies,
 configurations et versions, deux exports ont les mêmes lignes et le même SHA-256 de données.
 
-## Limites reportées à la Phase 2
+## Encodage OHLCV fort
 
-L'identité logique ne prouve pas que deux contenus OHLCV ayant les mêmes bornes et le même nombre
-de lignes sont identiques. La Phase 2 devra définir un fingerprint fort du contenu OHLCV et sa
-politique d'invalidation. Aucun modèle, benchmark v2 ou nouvelle période terminale n'est défini
-par la Phase 1.
+`ohlcv-content-sha256-v1` alimente SHA-256 incrémentalement, sans grande sérialisation
+intermédiaire. Le domaine est préfixé par `scanner-binance:ohlcv-stream\0`. Les textes UTF-8 sont
+précédés de leur longueur `uint32` big-endian ; timestamps, comptes et bornes sont des `int64`
+big-endian en millisecondes Unix ; les nombres OHLCV sont des IEEE-754 binary64 big-endian.
+`-0.0` est normalisé en `+0.0`, NaN et les infinis sont refusés. Les bougies doivent être
+strictement croissantes et uniques.
+
+Le hash d'un flux couvre version, rôle, exchange, marché, symbole, timeframe, `closed_only`,
+fenêtre demandée, warmup, futur, compte, bornes effectives, puis pour chaque bougie :
+`open_time`, OHLCV, `close_time` optionnel et `is_closed`. Le flux principal couvre le warmup,
+la fenêtre de décision et les sept bougies actuellement chargées pour l'outcome h6. Les flux
+`trend:<timeframe>` couvrent leur warmup MA et toutes les bougies effectivement remises au moteur.
+
+`ohlcv-input-aggregate-sha256-v1` trie les flux par
+`(role, exchange, market, symbol, timeframe)` et hache son domaine, sa version, le
+`source_identity`, chaque hash de flux et toutes ses métadonnées de plan. La fenêtre demandée
+exprime le besoin canonique ; les bornes effectives décrivent les premières et dernières bougies
+réellement obtenues.
+
+Le service calcule le fingerprint attendu avec le même chargeur que le moteur. Le moteur recharge
+une seule fois ces objets, recalcule le fingerprint avant tout résultat, le compare strictement,
+puis confirme la provenance persistée. Une modification entre ces deux lectures fait échouer le
+job explicitement. Une modification postérieure au chargement ne change pas les objets immuables
+déjà consommés.
+
+## Persistance, réutilisation et migration 10
+
+La migration 10 ajoute la colonne nullable `ml_v2_source_claims.input_data_fingerprint` et la
+table `ml_v2_source_inputs`. Cette table conserve par job l'identité logique, les versions, le
+fingerprint agrégé, l'inventaire JSON complet, la création et la confirmation moteur. Les jobs et
+claims issus du schéma 9 restent intacts avec une provenance forte absente ; aucun hash ne leur est
+attribué rétroactivement.
+
+Un job terminé n'est réutilisé que si sa provenance est reconnue, confirmée, égale aux données
+candidates et si le builder v2 le juge exportable. Sans fingerprint fort, ou après divergence, il
+devient historique non réutilisable : un nouveau job est créé, le claim est remplacé sous
+`BEGIN IMMEDIATE`, et l'ancien job, ses observations et outcomes sont conservés. Une bougie hors
+du plan n'affecte pas le hash. La transaction conditionnelle et le verrou par
+`(base, source_identity)` empêchent deux générations pour une même mutation.
+
+## Manifeste reproductible et vérification
+
+Le manifeste reproductible porte `manifest_schema_version=2`, le `BacktestConfig` complet,
+`source_identity`, profil et fingerprint, version du moteur, statut source, fingerprint agrégé,
+inventaire de chaque flux, versions builder/exporter/loader/features/labels, ordre des lignes et
+règles d'exclusion. Le JSONL et le manifeste utilisent un JSON canonique trié, compact et terminé
+par une nouvelle ligne. À options et nom de fichier identiques, deux exports sont byte-identiques.
+Les manifests de schéma 1 restent chargeables ; un ancien export `causal-features-v2` sous ce
+contrat est lisible mais explicitement non vérifiable comme manifeste reproductible de Phase 2.
+
+Depuis `backend/`, la vérification locale sans écriture ni réseau est :
+
+```powershell
+.\venv\Scripts\python.exe -m app.ml.cli.verify_ml_v2_source `
+  artifacts/ml-v2/source.manifest.json `
+  --database-path data/scanner_crypto.sqlite3 `
+  --json
+```
+
+Le résultat est `reproducible`, `absent`, `incompatible`, `stale` ou `incomplete`. Les divergences
+indiquent hashes agrégés attendu/calculé, rôle, timeframe, hashes de flux, comptes, bornes et type
+(`contenu`, `plage_ou_nombre`, `gap`, `metadonnees`, `flux_absent`). Code 0 : reproductible ; 2 :
+entrée invalide ou divergence ; 1 : erreur inattendue ; 130 : interruption. Le manifeste ne
+contient pas les bougies brutes : il reconstruit la demande et vérifie une base candidate, mais ne
+constitue pas une archive autonome.
+
+## Limites reportées à la Phase 3
+
+Aucun dataset v2 réel n'est généré ou publié, aucun modèle n'est entraîné, aucun benchmark ou
+nouvelle période terminale n'est défini. La vérification exige une base SQLite candidate contenant
+les bougies et, pour l'état `reproducible`, le job source confirmé référencé par le manifeste.

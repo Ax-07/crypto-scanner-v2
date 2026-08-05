@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
-from typing import Protocol
 
 from app.domain.backtesting import (
     build_analytics,
@@ -25,6 +23,10 @@ from app.models.backtest import (
 from app.repositories.backtest_repository import BacktestRepository
 from app.repositories.candle_repository import CandleRepository
 from app.repositories.portfolio_repository import PortfolioRepository
+from app.services.backtest_input_data import (
+    HistoricalRepository,
+    load_backtest_input_snapshot,
+)
 from app.services.portfolio_replay import (
     backtest_config_fingerprint,
     build_portfolio_simulation_steps,
@@ -33,16 +35,6 @@ from app.services.portfolio_replay import (
 )
 
 ProgressCallback = Callable[[BacktestProgress], Awaitable[None]]
-
-
-class HistoricalRepository(Protocol):
-    async def before(
-        self, symbol: str, timeframe: str, before_ms: int, limit: int, job: BacktestJob
-    ) -> list[Candle]: ...
-
-    async def range(
-        self, symbol: str, timeframe: str, start_ms: int, end_ms: int, job: BacktestJob
-    ) -> list[Candle]: ...
 
 
 class SQLiteHistoricalRepository:
@@ -81,14 +73,6 @@ class SQLiteHistoricalRepository:
         )
 
 
-@dataclass(slots=True)
-class LoadedSeries:
-    candles: list[Candle]
-    first_decision_index: int
-    last_decision_index: int
-    gap_after: set[int]
-
-
 class BacktestEngine:
     def __init__(
         self,
@@ -103,61 +87,6 @@ class BacktestEngine:
         self.portfolios = portfolios or PortfolioRepository(results.database)
         self.yield_every = yield_every
 
-    async def _load_primary(self, job: BacktestJob, symbol: str) -> LoadedSeries:
-        config = job.config
-        signal = config.signal_config
-        start_ms = int(config.start.timestamp() * 1_000)
-        end_ms = int(config.end.timestamp() * 1_000)
-        interval = timeframe_milliseconds(signal.timeframe)
-        warmup = primary_ohlcv_limit(signal)
-        future = max(config.horizons) + int(config.entry_policy == "next_open") + 1
-        before = await self.history.before(symbol, signal.timeframe, start_ms, warmup, job)
-        after = await self.history.range(
-            symbol,
-            signal.timeframe,
-            start_ms,
-            end_ms + future * interval,
-            job,
-        )
-        candles = [*before, *after]
-        decision_indices = [
-            index for index, candle in enumerate(candles) if start_ms <= candle.open_time < end_ms
-        ]
-        if not decision_indices:
-            raise ValueError(f"Aucune bougie fermée pour {symbol} sur la plage")
-        gaps = {
-            index
-            for index in range(len(candles) - 1)
-            if candles[index + 1].open_time - candles[index].open_time != interval
-        }
-        range_gaps = {
-            index for index in gaps if decision_indices[0] - 1 <= index < decision_indices[-1]
-        }
-        if range_gaps and config.gap_policy == "reject_range":
-            raise ValueError(f"Couverture discontinue pour {symbol}: {len(range_gaps)} trou(s)")
-        if range_gaps:
-            job.warnings.append(
-                f"{symbol}: {len(range_gaps)} trou(s), politique {config.gap_policy}"
-            )
-        return LoadedSeries(candles, decision_indices[0], decision_indices[-1], gaps)
-
-    async def _load_trends(
-        self, job: BacktestJob, symbol: str, end_ms: int
-    ) -> dict[str, list[Candle]]:
-        signal = job.config.signal_config
-        if not signal.use_ma:
-            return {}
-        result: dict[str, list[Candle]] = {}
-        start_ms = int(job.config.start.timestamp() * 1_000)
-        limit = ma_ohlcv_limit(signal)
-        for timeframe in signal.ma_timeframes:
-            if timeframe == signal.timeframe:
-                continue
-            before = await self.history.before(symbol, timeframe, start_ms, limit, job)
-            current = await self.history.range(symbol, timeframe, start_ms, end_ms, job)
-            result[timeframe] = [*before, *current]
-        return result
-
     async def run(self, job: BacktestJob, on_progress: ProgressCallback | None = None) -> None:
         config = job.config
         if config.snapshot_status == "provisional":
@@ -165,9 +94,21 @@ class BacktestEngine:
                 "Les OHLCV historiques ne conservent pas les révisions intrabar; "
                 "un rejeu provisional causal est indisponible."
             )
-        loaded: dict[str, LoadedSeries] = {}
-        for symbol in config.symbols:
-            loaded[symbol] = await self._load_primary(job, symbol)
+        expected_input = await self.results.get_ml_v2_source_input(job.id)
+        input_snapshot = await load_backtest_input_snapshot(self.history, job)
+        loaded = input_snapshot.primary
+        input_data_fingerprint: str | None = None
+        if expected_input is not None:
+            actual_input = input_snapshot.fingerprint(expected_input.fingerprint.source_identity)
+            if actual_input != expected_input.fingerprint:
+                raise ValueError(
+                    "Les données OHLCV chargées par le moteur diffèrent du fingerprint "
+                    "prévalidé; le source doit être recréé."
+                )
+            await self.results.confirm_ml_v2_source_input(
+                job.id, actual_input.input_data_fingerprint
+            )
+            input_data_fingerprint = actual_input.input_data_fingerprint
         fingerprint_payload = "|".join(
             f"{symbol}:{series.candles[0].open_time}:{series.candles[-1].open_time}:"
             f"{len(series.candles)}"
@@ -218,8 +159,7 @@ class BacktestEngine:
                 continue
             job.progress.current_symbol = symbol
             series = loaded[symbol]
-            end_with_future = series.candles[-1].close_time or series.candles[-1].open_time
-            higher = await self._load_trends(job, symbol, end_with_future)
+            higher = input_snapshot.trends[symbol]
             signal = config.signal_config
             primary_limit = primary_ohlcv_limit(signal)
             trend_limit = ma_ohlcv_limit(signal)
@@ -307,6 +247,8 @@ class BacktestEngine:
                     }
                     if job.config_fingerprint is not None:
                         checkpoint["config_fingerprint"] = job.config_fingerprint
+                    if input_data_fingerprint is not None:
+                        checkpoint["input_data_fingerprint"] = input_data_fingerprint
                     job.checkpoint = checkpoint
                     await self.results.save_checkpoint(job.id, checkpoint)
                     if on_progress:
@@ -376,6 +318,8 @@ class BacktestEngine:
         }
         if job.config_fingerprint is not None:
             final_checkpoint["config_fingerprint"] = job.config_fingerprint
+        if input_data_fingerprint is not None:
+            final_checkpoint["input_data_fingerprint"] = input_data_fingerprint
         job.checkpoint = final_checkpoint
         await self.results.save_checkpoint(job.id, final_checkpoint)
         job.progress.phase = "completed"

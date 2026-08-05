@@ -22,11 +22,13 @@ from app.ml.models.ml_dataset import (
     MLDatasetRow,
     MLFeatureSchemaVersion,
 )
-from app.models.backtest import BacktestStatus
+from app.domain.ohlcv_fingerprint import BacktestInputFingerprint
+from app.models.backtest import BacktestJob, BacktestStatus
 from app.repositories.backtest_repository import BacktestRepository
 
 ML_DATASET_HORIZON: Final[Literal[6]] = 6
 ML_PROFILE_FINGERPRINT_PATTERN: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
+ML_DATASET_BUILDER_VERSION: Final = "ml-dataset-builder-v2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +57,8 @@ class MLDatasetBuildResult:
     rows: tuple[MLDatasetRow, ...]
     report: MLDatasetBuildReport
     feature_schema_version: MLFeatureSchemaVersion = ML_FEATURE_SCHEMA_VERSION
+    source_job: BacktestJob | None = None
+    source_input: BacktestInputFingerprint | None = None
 
 
 class MLDatasetBuilder:
@@ -108,6 +112,7 @@ class MLDatasetBuilder:
             raise ValueError("le backtest source doit exister et être terminé")
 
         is_feature_schema_v2 = feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2
+        source_input: BacktestInputFingerprint | None = None
 
         if is_feature_schema_v2:
             if source_job.config.signal_profile_id != ML_DATASET_PROFILE_V2_ID:
@@ -132,6 +137,12 @@ class MLDatasetBuilder:
 
             if ML_DATASET_HORIZON not in source_job.config.horizons:
                 raise ValueError("le backtest source ml-dataset-v2 doit inclure " "l'horizon 6")
+            persisted_input = await self.backtests.get_ml_v2_source_input(normalized_job_id)
+            if persisted_input is None or persisted_input.confirmed_at_ms is None:
+                raise ValueError(
+                    "causal-features-v2 exige un fingerprint OHLCV fort confirmé par le moteur"
+                )
+            source_input = persisted_input.fingerprint
 
         generated_rows: list[MLDatasetRow] = []
         rejection_reasons: Counter[str] = Counter()
@@ -258,4 +269,6 @@ class MLDatasetBuilder:
             rows=tuple(generated_rows),
             report=report,
             feature_schema_version=feature_schema_version,
+            source_job=source_job,
+            source_input=source_input,
         )

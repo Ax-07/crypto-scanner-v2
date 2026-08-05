@@ -1183,6 +1183,11 @@ Le pipeline technique v1 est validé.
 
 Le premier modèle ne l’est pas.
 
+La provenance forte ajoutée au pipeline ML v2 est additive. Les manifests v1, leurs hashes,
+leurs règles de labels/features et le benchmark figé ne changent pas. `dataset_version` conserve
+sa signification historique ; un manifest v1 peut toujours être chargé, mais ne peut pas être
+présenté comme une preuve `ohlcv-content-sha256-v1`.
+
 Depuis le gel du benchmark, les signaux structurés ont été enrichis pour préparer un futur dataset. Ces enrichissements ne modifient pas le verdict v1 et ne constituent pas encore une expérimentation v2 complète.
 
 ```text

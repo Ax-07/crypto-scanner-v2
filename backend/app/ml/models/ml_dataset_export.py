@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Final, Literal
+from typing import Final, Literal, Any
 
 from pydantic import (
     BaseModel,
@@ -19,8 +19,14 @@ from app.ml.models.ml_dataset import (
     ML_LABEL_SCHEMA_VERSION,
     MLFeatureSchemaVersion,
 )
+from app.domain.ohlcv_fingerprint import (
+    InputDataStreamFingerprint,
+    aggregate_input_fingerprints,
+)
+from app.models.backtest import BacktestConfig
 
 ML_EXPORT_MANIFEST_SCHEMA_VERSION: Final[Literal[1]] = 1
+ML_EXPORT_MANIFEST_SCHEMA_VERSION_V2: Final[Literal[2]] = 2
 ML_EXPORT_FORMAT: Final[Literal["jsonl"]] = "jsonl"
 
 
@@ -104,7 +110,7 @@ class MLDatasetExportManifest(BaseModel):
         allow_inf_nan=False,
     )
 
-    manifest_schema_version: Literal[1] = ML_EXPORT_MANIFEST_SCHEMA_VERSION
+    manifest_schema_version: Literal[1, 2] = ML_EXPORT_MANIFEST_SCHEMA_VERSION
 
     export_format: Literal["jsonl"] = ML_EXPORT_FORMAT
 
@@ -131,6 +137,19 @@ class MLDatasetExportManifest(BaseModel):
     profile_ids: list[str] = Field(default_factory=list)
     profile_fingerprints: list[str] = Field(default_factory=list)
 
+    source_identity: str | None = None
+    signal_profile_id: str | None = None
+    profile_fingerprint: str | None = None
+    source_signal_algorithm_version: str | None = None
+    source_status: str | None = None
+    input_data_fingerprint: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    input_data_fingerprint_version: str | None = None
+    backtest_config: BacktestConfig | None = None
+    input_streams: list[InputDataStreamFingerprint] = Field(default_factory=list)
+    pipeline_versions: dict[str, str] = Field(default_factory=dict)
+    row_order: str | None = None
+    exclusion_rules: list[str] = Field(default_factory=list)
+
     stats: MLDatasetExportStats
 
     @field_validator("source_job_id", "data_file")
@@ -152,6 +171,7 @@ class MLDatasetExportManifest(BaseModel):
         "source_dataset_versions",
         "profile_ids",
         "profile_fingerprints",
+        "exclusion_rules",
     )
     @classmethod
     def normalize_sorted_unique_strings(
@@ -162,6 +182,16 @@ class MLDatasetExportManifest(BaseModel):
         normalized = [item.strip() for item in value if item.strip()]
 
         return sorted(set(normalized))
+
+    @field_validator("pipeline_versions")
+    @classmethod
+    def normalize_pipeline_versions(cls, value: dict[str, str]) -> dict[str, str]:
+        normalized = {
+            key.strip(): item.strip() for key, item in value.items() if key.strip() and item.strip()
+        }
+        if len(normalized) != len(value):
+            raise ValueError("pipeline_versions contient une clé ou valeur vide")
+        return dict(sorted(normalized.items()))
 
     @field_validator(
         "first_decision_time",
@@ -199,5 +229,39 @@ class MLDatasetExportManifest(BaseModel):
                 raise ValueError(
                     "first_decision_time ne peut pas être " "postérieur à last_decision_time"
                 )
+
+        if self.manifest_schema_version == 2:
+            if self.feature_schema_version != "causal-features-v2":
+                raise ValueError("le manifeste v2 exige causal-features-v2")
+            required: dict[str, Any] = {
+                "source_identity": self.source_identity,
+                "signal_profile_id": self.signal_profile_id,
+                "profile_fingerprint": self.profile_fingerprint,
+                "source_signal_algorithm_version": self.source_signal_algorithm_version,
+                "source_status": self.source_status,
+                "input_data_fingerprint": self.input_data_fingerprint,
+                "input_data_fingerprint_version": self.input_data_fingerprint_version,
+                "backtest_config": self.backtest_config,
+                "row_order": self.row_order,
+            }
+            missing = sorted(name for name, value in required.items() if value is None)
+            if missing or not self.input_streams or not self.pipeline_versions:
+                raise ValueError(
+                    "le manifeste v2 reproductible est incomplet: " + ", ".join(missing)
+                )
+            if self.signal_profile_id != "ml-dataset-v2":
+                raise ValueError("le manifeste v2 exige signal_profile_id=ml-dataset-v2")
+            assert self.backtest_config is not None
+            if self.backtest_config.signal_profile_id != self.signal_profile_id:
+                raise ValueError("backtest_config et signal_profile_id divergent")
+            if self.profile_fingerprints != [self.profile_fingerprint]:
+                raise ValueError("profile_fingerprint diverge de profile_fingerprints")
+            if self.input_data_fingerprint_version != "ohlcv-input-aggregate-sha256-v1":
+                raise ValueError("version de fingerprint OHLCV agrégé inconnue")
+            assert self.source_identity is not None
+            assert self.input_data_fingerprint is not None
+            aggregate = aggregate_input_fingerprints(self.source_identity, self.input_streams)
+            if aggregate.input_data_fingerprint != self.input_data_fingerprint:
+                raise ValueError("input_data_fingerprint diverge de l'inventaire des flux")
 
         return self

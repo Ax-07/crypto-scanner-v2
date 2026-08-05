@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import math
 import tempfile
+from argparse import Namespace
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +20,7 @@ from app.ml.domain.ml_dataset_profile import (
     build_ml_dataset_profile_v2,
 )
 from app.ml.models.ml_dataset import ML_FEATURE_SCHEMA_VERSION_V2
+from app.ml.cli.verify_ml_v2_source import run_cli as run_verify_cli
 from app.ml.services.ml_dataset_builder import MLDatasetBuilder
 from app.ml.services.ml_dataset_exporter import MLDatasetExporter
 from app.ml.services.ml_dataset_loader import MLDatasetLoader
@@ -25,6 +30,7 @@ from app.ml.services.ml_v2_source import (
     build_ml_v2_source_config,
     ml_v2_source_identity,
 )
+from app.ml.services.ml_v2_source_verifier import MLV2SourceVerifier
 from app.models.backtest import (
     SIGNAL_EVALUATION_VERSION,
     BacktestJob,
@@ -115,6 +121,66 @@ def test_source_identity_covers_every_observation_or_label_input() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("timeframe", "open_time", "index", "expected_role"),
+    [
+        ("1m", START_MS - 200 * MINUTE, 0, "primary"),
+        ("1m", START_MS, 200, "primary"),
+        ("1m", START_MS + 12 * MINUTE, 212, "primary"),
+        ("4h", START_MS - 40 * timeframe_milliseconds("4h"), 20, "trend:4h"),
+    ],
+)
+async def test_consumed_warmup_decision_future_and_trend_mutations_change_fingerprint(
+    timeframe: str, open_time: int, index: int, expected_role: str
+) -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        database = Database(Path(temporary) / "perimeter.sqlite3")
+        await database.initialize()
+        backtests = BacktestRepository(database)
+        candles = CandleRepository(database)
+        await seed_canonical_history(candles)
+        service = MLV2SourceService(backtests, candles, BacktestManager(backtests, candles))
+        config = source_config()
+        identity = ml_v2_source_identity(config)
+        before, _ = await service._current_inputs(config, identity)
+        original = candle(timeframe, open_time, index)
+        await candles.upsert_many([replace(original, close=original.close + 0.125)])
+        after, _ = await service._current_inputs(config, identity)
+
+        assert before.input_data_fingerprint != after.input_data_fingerprint
+        before_by_role = {item.role: item.fingerprint for item in before.streams}
+        after_by_role = {item.role: item.fingerprint for item in after.streams}
+        assert before_by_role[expected_role] != after_by_role[expected_role]
+        await database.close()
+
+
+@pytest.mark.asyncio
+async def test_mutations_outside_input_plan_do_not_change_fingerprint() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        database = Database(Path(temporary) / "outside-perimeter.sqlite3")
+        await database.initialize()
+        backtests = BacktestRepository(database)
+        candles = CandleRepository(database)
+        await seed_canonical_history(candles)
+        service = MLV2SourceService(backtests, candles, BacktestManager(backtests, candles))
+        config = source_config()
+        identity = ml_v2_source_identity(config)
+        expected, _ = await service._current_inputs(config, identity)
+
+        await candles.upsert_many(
+            [
+                candle("1m", START_MS - 201 * MINUTE, -1),
+                candle("1m", START_MS + 17 * MINUTE, 217),
+                replace(candle("1m", START_MS, 200), symbol="OTHER/USDC"),
+            ]
+        )
+        calculated, _ = await service._current_inputs(config, identity)
+
+        assert calculated == expected
+        await database.close()
+
+
+@pytest.mark.asyncio
 async def test_coverage_failure_is_structured_and_does_not_create_job() -> None:
     with tempfile.TemporaryDirectory() as temporary:
         database = Database(Path(temporary) / "missing.sqlite3")
@@ -141,16 +207,20 @@ async def test_active_source_is_not_duplicated(status: BacktestStatus) -> None:
         await database.initialize()
         backtests = BacktestRepository(database)
         candles = CandleRepository(database)
+        await seed_canonical_history(candles)
         manager = BacktestManager(backtests, candles)
         config = source_config()
+        service = MLV2SourceService(backtests, candles, manager)
+        current_input, _ = await service._current_inputs(config, ml_v2_source_identity(config))
         job = BacktestJob(id=f"{status.value}-source", config=config, status=status)
         await backtests.claim_ml_v2_source(
             ml_v2_source_identity(config),
             job,
             algorithm_version=SIGNAL_EVALUATION_VERSION,
+            input_fingerprint=current_input,
         )
 
-        result = await MLV2SourceService(backtests, candles, manager).prepare(config)
+        result = await service.prepare(config)
 
         assert result.action == "already-running"
         assert result.job is not None and result.job.id == job.id
@@ -169,11 +239,14 @@ async def test_interrupted_compatible_source_is_resumable_in_preview() -> None:
         await seed_canonical_history(candles)
         manager = BacktestManager(backtests, candles)
         config = source_config()
+        service = MLV2SourceService(backtests, candles, manager)
+        current_input, _ = await service._current_inputs(config, ml_v2_source_identity(config))
         job = BacktestJob(id="interrupted-source", config=config, status=BacktestStatus.INTERRUPTED)
         await backtests.claim_ml_v2_source(
             ml_v2_source_identity(config),
             job,
             algorithm_version=SIGNAL_EVALUATION_VERSION,
+            input_fingerprint=current_input,
         )
         await backtests.save_checkpoint(
             job.id,
@@ -184,7 +257,7 @@ async def test_interrupted_compatible_source_is_resumable_in_preview() -> None:
             },
         )
 
-        result = await MLV2SourceService(backtests, candles, manager).prepare(config, dry_run=True)
+        result = await service.prepare(config, dry_run=True)
 
         assert result.action == "would-resume"
         assert result.job is not None and result.job.id == job.id
@@ -254,7 +327,7 @@ async def test_incomplete_completed_source_is_not_reused(with_observation: bool)
         result = await MLV2SourceService(backtests, candles, manager).prepare(config, dry_run=True)
 
         assert result.action == "would-create"
-        assert "inexploitable" in result.reason
+        assert "fingerprint fort" in result.reason
         if with_observation:
             observations = await backtests.all_observations(job.id)
             assert observations
@@ -272,20 +345,21 @@ async def test_atomic_claim_allows_only_one_concurrent_source() -> None:
         candles = CandleRepository(database)
         await seed_canonical_history(candles)
         config = source_config()
-        identity = ml_v2_source_identity(config)
         manager_a = BacktestManager(repo_a, candles)
         manager_b = BacktestManager(repo_b, candles)
+        service_a = MLV2SourceService(repo_a, candles, manager_a)
+        service_b = MLV2SourceService(repo_b, candles, manager_b)
 
         first, second = await asyncio.gather(
-            manager_a.create_ml_v2_source_job(config, identity),
-            manager_b.create_ml_v2_source_job(config, identity),
+            service_a.prepare(config),
+            service_b.prepare(config),
         )
 
-        assert sum((first[1], second[1])) == 1
-        assert first[0].id == second[0].id
-        winner = manager_a if first[1] else manager_b
-        terminal = await winner.wait_until_terminal(first[0].id)
-        assert terminal.status == BacktestStatus.COMPLETED
+        assert {first.action, second.action} == {"created", "reused"}
+        assert first.job is not None and second.job is not None
+        assert first.job.id == second.job.id
+        persisted = await repo_a.get_ml_v2_source_input(first.job.id)
+        assert persisted is not None and persisted.confirmed_at_ms is not None
         _, count = await repo_a.list_jobs()
         assert count == 1
         await database.close()
@@ -330,15 +404,140 @@ async def test_end_to_end_source_reuse_export_and_loader() -> None:
         )
         assert built.rows
         exporter = MLDatasetExporter()
-        first_export = exporter.export(built, root / "exports", file_stem="first")
-        second_export = exporter.export(built, root / "exports", file_stem="second")
+        first_export = exporter.export(built, root / "exports", file_stem="stable")
+        first_data_bytes = first_export.data_path.read_bytes()
+        first_manifest_bytes = first_export.manifest_path.read_bytes()
+        second_export = exporter.export(built, root / "exports", file_stem="stable")
         first_loaded = MLDatasetLoader().load(first_export.manifest_path)
         second_loaded = MLDatasetLoader().load(second_export.manifest_path)
+        verifier = MLV2SourceVerifier(backtests, candles)
+        verified = await verifier.verify(first_loaded.manifest)
+        absent = await verifier.verify(
+            first_loaded.manifest.model_copy(update={"source_job_id": "missing-source"})
+        )
+        incompatible_profile = await verifier.verify(
+            first_loaded.manifest.model_copy(update={"profile_fingerprint": "sha256:" + "f" * 64})
+        )
+        legacy_contract = await verifier.verify(
+            first_loaded.manifest.model_copy(update={"manifest_schema_version": 1})
+        )
+        database_sha256_before = hashlib.sha256(database.path.read_bytes()).hexdigest()
+        cli_exit = await run_verify_cli(
+            Namespace(
+                manifest=first_export.manifest_path,
+                database_path=database.path,
+                json_output=True,
+            )
+        )
+        database_sha256_after = hashlib.sha256(database.path.read_bytes()).hexdigest()
 
         assert first_loaded.rows == second_loaded.rows
         assert first_export.manifest.data_sha256 == second_export.manifest.data_sha256
-        assert first_export.data_path.read_bytes() == second_export.data_path.read_bytes()
+        assert first_data_bytes == second_export.data_path.read_bytes()
+        assert first_manifest_bytes == second_export.manifest_path.read_bytes()
         assert first_export.manifest.data_sha256.startswith("sha256:")
+        assert first_export.manifest.model_dump_json() == second_export.manifest.model_dump_json()
+        assert verified.status == "reproducible"
+        assert absent.status == "absent"
+        assert incompatible_profile.status == "incompatible"
+        assert legacy_contract.status == "incompatible"
+        assert cli_exit == 0
+        assert database_sha256_after == database_sha256_before
+        original_job_id = created.job.id
+        original_input = await backtests.get_ml_v2_source_input(original_job_id)
+        assert original_input is not None and original_input.confirmed_at_ms is not None
+        assert len(original_input.fingerprint.streams) == 4
+
+        consumed = candle("1m", START_MS, 200)
+        await candles.upsert_many([replace(consumed, close=consumed.close + 0.5)])
+        stale_verification = await verifier.verify(first_loaded.manifest)
+        stale_cli_exit = await run_verify_cli(
+            Namespace(
+                manifest=first_export.manifest_path,
+                database_path=database.path,
+                json_output=True,
+            )
+        )
+        regenerated = await service.prepare(config)
+
+        assert stale_verification.status == "stale"
+        assert stale_cli_exit == 2
+        assert stale_verification.divergent_streams[0]["role"] == "primary"
+        assert regenerated.action == "created"
+        assert regenerated.stale_job_id == original_job_id
+        assert regenerated.job is not None and regenerated.job.id != original_job_id
+        assert await backtests.get_job(original_job_id) is not None
+        regenerated_input = await backtests.get_ml_v2_source_input(regenerated.job.id)
+        assert regenerated_input is not None and regenerated_input.confirmed_at_ms is not None
+        assert (
+            regenerated_input.fingerprint.input_data_fingerprint
+            != original_input.fingerprint.input_data_fingerprint
+        )
+        rebuilt = await MLDatasetBuilder(backtests).build(
+            regenerated.job.id, feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2
+        )
+        new_export = exporter.export(rebuilt, root / "exports", file_stem="regenerated")
+        assert new_export.manifest.input_data_fingerprint == (
+            regenerated_input.fingerprint.input_data_fingerprint
+        )
+        assert (await verifier.verify(new_export.manifest)).status == "reproducible"
+
+        outside = candle("1m", START_MS - 201 * MINUTE, -1)
+        await candles.upsert_many([outside])
+        after_outside = await service.prepare(config)
+        assert after_outside.action == "reused"
+        assert after_outside.job is not None and after_outside.job.id == regenerated.job.id
+
+        changed_again = replace(consumed, close=consumed.close + 1.0)
+        await candles.upsert_many([changed_again])
+        concurrent_a = MLV2SourceService(
+            BacktestRepository(database),
+            candles,
+            BacktestManager(BacktestRepository(database), candles),
+        )
+        concurrent_b = MLV2SourceService(
+            BacktestRepository(database),
+            candles,
+            BacktestManager(BacktestRepository(database), candles),
+        )
+        left, right = await asyncio.gather(
+            concurrent_a.prepare(config), concurrent_b.prepare(config)
+        )
+        assert {left.action, right.action} == {"created", "reused"}
+        assert left.job is not None and right.job is not None and left.job.id == right.job.id
+        claim = await backtests.get_ml_v2_source_claim(ml_v2_source_identity(config))
+        assert claim is not None and claim.id == left.job.id
         _, count = await backtests.list_jobs()
-        assert count == 1
+        assert count == 3
+        print(
+            "PHASE2_PROOF "
+            + json.dumps(
+                {
+                    "initial_actions": [created.action, reused.action],
+                    "old_input_data_fingerprint": (
+                        original_input.fingerprint.input_data_fingerprint
+                    ),
+                    "new_input_data_fingerprint": (
+                        regenerated_input.fingerprint.input_data_fingerprint
+                    ),
+                    "old_stream_fingerprints": {
+                        stream.role: stream.fingerprint
+                        for stream in original_input.fingerprint.streams
+                    },
+                    "old_jsonl_sha256": first_export.manifest.data_sha256,
+                    "new_jsonl_sha256": new_export.manifest.data_sha256,
+                    "identical_export_bytes": first_data_bytes
+                    == second_export.data_path.read_bytes(),
+                    "old_manifest_after_mutation": stale_verification.status,
+                    "new_manifest": "reproducible",
+                    "outside_mutation": after_outside.action,
+                    "concurrent_actions": sorted([left.action, right.action]),
+                    "historical_job_preserved": (
+                        await backtests.get_job(original_job_id) is not None
+                    ),
+                    "job_count": count,
+                },
+                sort_keys=True,
+            )
+        )
         await database.close()

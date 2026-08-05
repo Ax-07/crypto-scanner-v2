@@ -9,7 +9,10 @@ from typing import Any, cast
 
 import pytest
 
+from app.domain.ohlcv_fingerprint import InputDataStreamFingerprint, aggregate_input_fingerprints
+from app.models.backtest import BacktestConfig, BacktestJob, BacktestStatus
 from app.ml.domain.ml_dataset_profile import ML_DATASET_PROFILE_V2_ID
+from app.ml.domain.ml_dataset_profile import build_ml_dataset_profile_v2
 from app.ml.models.ml_dataset import (
     MLDatasetRow,
     MarketDirectionLabel,
@@ -28,6 +31,7 @@ from app.ml.services.ml_dataset_loader import (
     MLDatasetLoadError,
     MLDatasetLoader,
 )
+from app.ml.services.ml_v2_source import ml_v2_source_identity
 
 BASE_TIME = datetime(
     2026,
@@ -101,6 +105,41 @@ def build_result(
         rejection_reasons={},
     )
 
+    source_job = None
+    source_input = None
+    if feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2:
+        source_job = BacktestJob(
+            id="loader-test",
+            status=BacktestStatus.COMPLETED,
+            config=BacktestConfig(
+                symbols=["BTC/USDC"],
+                start=BASE_TIME - timedelta(days=2),
+                end=BASE_TIME + timedelta(days=2),
+                signal_config=build_ml_dataset_profile_v2(timeframe="1h"),
+                signal_profile_id=ML_DATASET_PROFILE_V2_ID,
+                horizons=[6],
+            ),
+        )
+        stream = InputDataStreamFingerprint(
+            role="primary",
+            exchange_id="binance",
+            market_type="spot",
+            symbol="BTC/USDC",
+            timeframe="1h",
+            requested_start_ms=1,
+            requested_end_ms=2,
+            effective_first_open_time_ms=1,
+            effective_last_open_time_ms=1,
+            candle_count=1,
+            warmup_bars=0,
+            future_bars=0,
+            gaps_validated=True,
+            fingerprint="sha256:" + "1" * 64,
+        )
+        source_input = aggregate_input_fingerprints(
+            ml_v2_source_identity(source_job.config), (stream,)
+        )
+
     return MLDatasetBuildResult(
         job_id="loader-test",
         horizon=6,
@@ -108,6 +147,8 @@ def build_result(
         rows=rows,
         report=report,
         feature_schema_version=feature_schema_version,
+        source_job=source_job,
+        source_input=source_input,
     )
 
 
@@ -539,6 +580,13 @@ def test_loader_accepts_v2_export() -> None:
         )
         assert all(row.profile_id == ML_DATASET_PROFILE_V2_ID for row in result.rows)
         assert all(row.profile_fingerprint == V2_PROFILE_FINGERPRINT for row in result.rows)
+
+        mutated = manifest_payload(exported.manifest_path)
+        streams = cast(list[dict[str, Any]], mutated["input_streams"])
+        streams[0]["fingerprint"] = "sha256:" + "f" * 64
+        write_manifest(exported.manifest_path, mutated)
+        with pytest.raises(MLDatasetLoadError, match="manifeste ML invalide"):
+            MLDatasetLoader().load(exported.manifest_path)
 
 
 def test_loader_rejects_feature_schema_mismatch() -> None:

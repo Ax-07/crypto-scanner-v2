@@ -5,6 +5,12 @@ from typing import cast
 
 import pytest
 
+from app.domain.ohlcv_fingerprint import (
+    BacktestInputFingerprint,
+    InputDataStreamFingerprint,
+    PersistedBacktestInputFingerprint,
+    aggregate_input_fingerprints,
+)
 from app.models.backtest import (
     BacktestConfig,
     BacktestJob,
@@ -40,11 +46,46 @@ class FakeBacktestRepository:
         self,
         job: BacktestJob | None,
         rows: list[tuple[SignalObservation, ForwardOutcome]],
+        *,
+        strong_input: bool = True,
     ) -> None:
         self.job = job
         self.rows = rows
         self.calls: list[tuple[int, int, int]] = []
         self.get_job_calls: list[str] = []
+        self.strong_input = strong_input
+
+    async def get_ml_v2_source_input(self, job_id: str) -> PersistedBacktestInputFingerprint | None:
+        if (
+            not self.strong_input
+            or self.job is None
+            or self.job.config.signal_profile_id != ML_DATASET_PROFILE_V2_ID
+        ):
+            return None
+        stream = InputDataStreamFingerprint(
+            role="primary",
+            exchange_id="binance",
+            market_type="spot",
+            symbol="BTC/USDC",
+            timeframe="1h",
+            requested_start_ms=1,
+            requested_end_ms=2,
+            effective_first_open_time_ms=1,
+            effective_last_open_time_ms=1,
+            candle_count=1,
+            warmup_bars=0,
+            future_bars=0,
+            gaps_validated=True,
+            fingerprint="sha256:" + "1" * 64,
+        )
+        fingerprint: BacktestInputFingerprint = aggregate_input_fingerprints(
+            "sha256:" + "2" * 64, (stream,)
+        )
+        return PersistedBacktestInputFingerprint(
+            job_id=job_id,
+            fingerprint=fingerprint,
+            confirmed_at_ms=1,
+        )
 
     async def get_job(
         self,
@@ -332,8 +373,27 @@ async def test_builder_service_propagates_v2_feature_schema() -> None:
     assert result.feature_schema_version == ML_FEATURE_SCHEMA_VERSION_V2
     assert len(result.rows) == 1
     assert result.rows[0].feature_schema_version == (ML_FEATURE_SCHEMA_VERSION_V2)
+    assert result.source_job is repository.job
+    assert result.source_input is not None
     assert result.rows[0].profile_id == ML_DATASET_PROFILE_V2_ID
     assert result.rows[0].profile_fingerprint == PROFILE_FINGERPRINT_A
+
+
+@pytest.mark.asyncio
+async def test_builder_service_rejects_v2_source_without_confirmed_strong_input() -> None:
+    repository = FakeBacktestRepository(
+        completed_job(
+            signal_profile_id=ML_DATASET_PROFILE_V2_ID,
+            signal_config=build_ml_dataset_profile_v2(timeframe="1h"),
+        ),
+        [],
+        strong_input=False,
+    )
+
+    with pytest.raises(ValueError, match="fingerprint OHLCV fort confirmé"):
+        await service_for(repository).build(
+            JOB_ID, feature_schema_version=ML_FEATURE_SCHEMA_VERSION_V2
+        )
 
 
 @pytest.mark.asyncio
