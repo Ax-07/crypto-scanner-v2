@@ -6,7 +6,7 @@ import hashlib
 import math
 import struct
 from collections.abc import Sequence
-from typing import Final
+from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -60,7 +60,7 @@ class InputDataStreamFingerprint(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    fingerprint_version: str = OHLCV_FINGERPRINT_VERSION
+    fingerprint_version: Literal["ohlcv-content-sha256-v1"] = OHLCV_FINGERPRINT_VERSION
     role: str = Field(min_length=1)
     exchange_id: str = Field(min_length=1)
     market_type: str = Field(min_length=1)
@@ -115,7 +115,9 @@ class BacktestInputFingerprint(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    fingerprint_version: str = OHLCV_AGGREGATE_FINGERPRINT_VERSION
+    fingerprint_version: Literal["ohlcv-input-aggregate-sha256-v1"] = (
+        OHLCV_AGGREGATE_FINGERPRINT_VERSION
+    )
     source_identity: str = Field(min_length=1)
     input_data_fingerprint: str
     streams: tuple[InputDataStreamFingerprint, ...] = Field(min_length=1)

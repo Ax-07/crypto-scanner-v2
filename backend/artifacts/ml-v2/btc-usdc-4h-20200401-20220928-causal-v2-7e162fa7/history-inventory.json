@@ -1,0 +1,253 @@
+{
+  "foreign_key_violation_count": 0,
+  "integrity_check": "ok",
+  "inventory_version": "ml-v2-history-inventory-v1",
+  "schema_version": 10,
+  "streams": [
+    {
+      "candle_count": 3533,
+      "candles_by_year": {
+        "2026": 3533
+      },
+      "duplicate_count": 0,
+      "exchange_id": "binance",
+      "first_open_time": "2026-06-27T02:45:00Z",
+      "first_open_time_ms": 1782528300000,
+      "gap_count": 0,
+      "gap_examples_ms": [],
+      "inconsistent_ohlc_count": 0,
+      "last_open_time": "2026-08-02T21:45:00Z",
+      "last_open_time_ms": 1785707100000,
+      "market_type": "spot",
+      "negative_ohlcv_count": 0,
+      "non_finite_count": 0,
+      "non_monotone_count": 0,
+      "open_candle_count": 1,
+      "symbol": "BTC/USDC",
+      "timeframe": "15m"
+    },
+    {
+      "candle_count": 2625,
+      "candles_by_year": {
+        "2018": 17,
+        "2019": 365,
+        "2020": 366,
+        "2021": 365,
+        "2022": 272,
+        "2023": 295,
+        "2024": 366,
+        "2025": 365,
+        "2026": 214
+      },
+      "duplicate_count": 0,
+      "exchange_id": "binance",
+      "first_open_time": "2018-12-15T00:00:00Z",
+      "first_open_time_ms": 1544832000000,
+      "gap_count": 1,
+      "gap_examples_ms": [
+        [
+          1664496000000,
+          1678579200000
+        ]
+      ],
+      "inconsistent_ohlc_count": 0,
+      "last_open_time": "2026-08-02T00:00:00Z",
+      "last_open_time_ms": 1785628800000,
+      "market_type": "spot",
+      "negative_ohlcv_count": 0,
+      "non_finite_count": 0,
+      "non_monotone_count": 0,
+      "open_candle_count": 1,
+      "symbol": "BTC/USDC",
+      "timeframe": "1d"
+    },
+    {
+      "candle_count": 4837,
+      "candles_by_year": {
+        "2026": 4837
+      },
+      "duplicate_count": 0,
+      "exchange_id": "binance",
+      "first_open_time": "2026-01-16T18:00:00Z",
+      "first_open_time_ms": 1768586400000,
+      "gap_count": 0,
+      "gap_examples_ms": [],
+      "inconsistent_ohlc_count": 0,
+      "last_open_time": "2026-08-06T06:00:00Z",
+      "last_open_time_ms": 1785996000000,
+      "market_type": "spot",
+      "negative_ohlcv_count": 0,
+      "non_finite_count": 0,
+      "non_monotone_count": 0,
+      "open_candle_count": 1,
+      "symbol": "BTC/USDC",
+      "timeframe": "1h"
+    },
+    {
+      "candle_count": 3584,
+      "candles_by_year": {
+        "2026": 3584
+      },
+      "duplicate_count": 0,
+      "exchange_id": "binance",
+      "first_open_time": "2026-07-21T01:30:00Z",
+      "first_open_time_ms": 1784597400000,
+      "gap_count": 0,
+      "gap_examples_ms": [],
+      "inconsistent_ohlc_count": 0,
+      "last_open_time": "2026-07-23T13:13:00Z",
+      "last_open_time_ms": 1784812380000,
+      "market_type": "spot",
+      "negative_ohlcv_count": 0,
+      "non_finite_count": 0,
+      "non_monotone_count": 0,
+      "open_candle_count": 1,
+      "symbol": "BTC/USDC",
+      "timeframe": "1m"
+    },
+    {
+      "candle_count": 377,
+      "candles_by_year": {
+        "2018": 4,
+        "2019": 52,
+        "2020": 52,
+        "2021": 52,
+        "2022": 39,
+        "2023": 43,
+        "2024": 53,
+        "2025": 52,
+        "2026": 30
+      },
+      "duplicate_count": 0,
+      "exchange_id": "binance",
+      "first_open_time": "2018-12-10T00:00:00Z",
+      "first_open_time_ms": 1544400000000,
+      "gap_count": 1,
+      "gap_examples_ms": [
+        [
+          1664755200000,
+          1678060800000
+        ]
+      ],
+      "inconsistent_ohlc_count": 0,
+      "last_open_time": "2026-07-27T00:00:00Z",
+      "last_open_time_ms": 1785110400000,
+      "market_type": "spot",
+      "negative_ohlcv_count": 0,
+      "non_finite_count": 0,
+      "non_monotone_count": 0,
+      "open_candle_count": 1,
+      "symbol": "BTC/USDC",
+      "timeframe": "1w"
+    },
+    {
+      "candle_count": 876,
+      "candles_by_year": {
+        "2018": 6,
+        "2019": 122,
+        "2020": 122,
+        "2021": 121,
+        "2022": 91,
+        "2023": 99,
+        "2024": 122,
+        "2025": 121,
+        "2026": 72
+      },
+      "duplicate_count": 0,
+      "exchange_id": "binance",
+      "first_open_time": "2018-12-15T00:00:00Z",
+      "first_open_time_ms": 1544832000000,
+      "gap_count": 1,
+      "gap_examples_ms": [
+        [
+          1664582400000,
+          1678579200000
+        ]
+      ],
+      "inconsistent_ohlc_count": 0,
+      "last_open_time": "2026-08-02T00:00:00Z",
+      "last_open_time_ms": 1785628800000,
+      "market_type": "spot",
+      "negative_ohlcv_count": 0,
+      "non_finite_count": 0,
+      "non_monotone_count": 0,
+      "open_candle_count": 1,
+      "symbol": "BTC/USDC",
+      "timeframe": "3d"
+    },
+    {
+      "candle_count": 15742,
+      "candles_by_year": {
+        "2018": 102,
+        "2019": 2186,
+        "2020": 2195,
+        "2021": 2190,
+        "2022": 1627,
+        "2023": 1769,
+        "2024": 2196,
+        "2025": 2190,
+        "2026": 1287
+      },
+      "duplicate_count": 0,
+      "exchange_id": "binance",
+      "first_open_time": "2018-12-15T00:00:00Z",
+      "first_open_time_ms": 1544832000000,
+      "gap_count": 5,
+      "gap_examples_ms": [
+        [
+          1552363200000,
+          1552377600000
+        ],
+        [
+          1557892800000,
+          1557921600000
+        ],
+        [
+          1565841600000,
+          1565856000000
+        ],
+        [
+          1582113600000,
+          1582128000000
+        ],
+        [
+          1664424000000,
+          1678593600000
+        ]
+      ],
+      "inconsistent_ohlc_count": 0,
+      "last_open_time": "2026-08-03T08:00:00Z",
+      "last_open_time_ms": 1785744000000,
+      "market_type": "spot",
+      "negative_ohlcv_count": 0,
+      "non_finite_count": 0,
+      "non_monotone_count": 0,
+      "open_candle_count": 1,
+      "symbol": "BTC/USDC",
+      "timeframe": "4h"
+    },
+    {
+      "candle_count": 507,
+      "candles_by_year": {
+        "2026": 507
+      },
+      "duplicate_count": 0,
+      "exchange_id": "binance",
+      "first_open_time": "2026-07-21T18:05:00Z",
+      "first_open_time_ms": 1784657100000,
+      "gap_count": 0,
+      "gap_examples_ms": [],
+      "inconsistent_ohlc_count": 0,
+      "last_open_time": "2026-07-23T12:15:00Z",
+      "last_open_time_ms": 1784808900000,
+      "market_type": "spot",
+      "negative_ohlcv_count": 0,
+      "non_finite_count": 0,
+      "non_monotone_count": 0,
+      "open_candle_count": 1,
+      "symbol": "BTC/USDC",
+      "timeframe": "5m"
+    }
+  ],
+  "symbol": "BTC/USDC"
+}

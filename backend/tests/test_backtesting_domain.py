@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
-from app.core.settings import ScanConfig
+from app.core.settings import AtrIndicatorConfig, ScanConfig
 from app.domain.backtesting import (
     build_analytics,
     calculate_forward_outcomes,
     evaluate_information_set,
 )
 from app.models.backtest import BacktestConfig, ForwardOutcome, SignalObservation
+from app.domain.ohlcv_fingerprint import fingerprint_ohlcv_stream
+from app.ml.domain.ml_dataset import build_ml_dataset_row
 from tests.fixtures.synthetic_backtest_v1 import DATASET_VERSION, candles
 
 
@@ -112,6 +115,69 @@ def test_future_mutation_cannot_change_signal() -> None:
     assert before.model_dump(exclude={"decision_time"}) == after.model_dump(
         exclude={"decision_time"}
     )
+
+
+def test_future_mutation_boundaries_preserve_features_labels_and_source_identity() -> None:
+    rows = candles()
+    index = 90
+    decision = rows[index].close_time
+    assert decision is not None
+    config = backtest_config(horizons=[6])
+    causal_config = signal_config().model_copy(update={"atr": AtrIndicatorConfig(enabled=True)})
+
+    def build(candidate_rows):
+        observation = evaluate_information_set(
+            job_id="mutation-boundaries",
+            symbol="SYN/USDC",
+            decision_time_ms=decision,
+            primary=candidate_rows[index - 59 : index + 1],
+            trend_candles={},
+            config=causal_config,
+            profile_id="ml-dataset-v2",
+        )
+        observation.id = 1
+        outcome = calculate_forward_outcomes(1, candidate_rows, index, config)[0]
+        return build_ml_dataset_row(
+            observation, outcome, feature_schema_version="causal-features-v2"
+        )
+
+    baseline = build(rows)
+    after_horizon = list(rows)
+    after_horizon[index + 7] = replace(
+        after_horizon[index + 7],
+        high=after_horizon[index + 7].high * 2,
+        close=after_horizon[index + 7].close * 2,
+    )
+    assert build(after_horizon) == baseline
+
+    inside_horizon = list(rows)
+    inside_horizon[index + 6] = replace(
+        inside_horizon[index + 6],
+        high=inside_horizon[index + 6].high * 2,
+        close=inside_horizon[index + 6].close * 2,
+    )
+    inside = build(inside_horizon)
+    assert inside.features == baseline.features
+    assert inside.future_return != baseline.future_return
+
+    fingerprint_options = {
+        "role": "primary",
+        "exchange_id": "binance",
+        "market_type": "spot",
+        "symbol": "SYN/USDC",
+        "timeframe": "1m",
+        "requested_start_ms": rows[0].open_time,
+        "requested_end_ms": rows[-1].open_time + 60_000,
+        "closed_only": True,
+        "warmup_bars": 60,
+        "future_bars": 7,
+        "gaps_validated": True,
+    }
+    before_fingerprint = fingerprint_ohlcv_stream(rows, **fingerprint_options)
+    past = list(rows)
+    past[index] = replace(past[index], high=past[index].high * 2, close=past[index].close * 2)
+    assert build(past).features != baseline.features
+    assert fingerprint_ohlcv_stream(past, **fingerprint_options) != before_fingerprint
 
 
 def test_future_mutation_cannot_change_indicator_signals() -> None:

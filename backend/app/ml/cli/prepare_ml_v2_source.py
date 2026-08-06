@@ -104,6 +104,8 @@ async def run_cli(args: argparse.Namespace) -> int:
         backtests = BacktestRepository(database)
         candles = CandleRepository(database)
         manager = BacktestManager(backtests, candles)
+        if not args.dry_run:
+            await manager.initialize()
         result = await MLV2SourceService(backtests, candles, manager).prepare(
             config,
             dry_run=bool(args.dry_run),

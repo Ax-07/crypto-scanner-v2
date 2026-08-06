@@ -1,5 +1,8 @@
 # Pipeline de machine learning v1
 
+> La Phase 3 ML v2 ajoute un dataset réel et son audit sans modifier ce pipeline, ses artefacts,
+> ses splits, ses benchmarks ou sa définition historique. Voir `ml-v2-dataset-audit.md`.
+
 ## 1. Statut du document
 
 | Élément                    | Valeur                            |

@@ -22,6 +22,7 @@ from app.ml.domain.ml_dataset_profile import (
 from app.ml.models.ml_dataset import ML_FEATURE_SCHEMA_VERSION_V2
 from app.ml.cli.verify_ml_v2_source import run_cli as run_verify_cli
 from app.ml.services.ml_dataset_builder import MLDatasetBuilder
+from app.ml.services.ml_dataset_auditor import MLDatasetAuditor, audit_json_bytes
 from app.ml.services.ml_dataset_exporter import MLDatasetExporter
 from app.ml.services.ml_dataset_loader import MLDatasetLoader
 from app.ml.services.ml_v2_source import (
@@ -412,6 +413,18 @@ async def test_end_to_end_source_reuse_export_and_loader() -> None:
         second_loaded = MLDatasetLoader().load(second_export.manifest_path)
         verifier = MLV2SourceVerifier(backtests, candles)
         verified = await verifier.verify(first_loaded.manifest)
+        first_audit = await MLDatasetAuditor(minimum_rows=1, recommended_source_rows=1).audit(
+            first_loaded,
+            verification=verified,
+            backtests=backtests,
+            candles=candles,
+        )
+        second_audit = await MLDatasetAuditor(minimum_rows=1, recommended_source_rows=1).audit(
+            first_loaded,
+            verification=verified,
+            backtests=backtests,
+            candles=candles,
+        )
         absent = await verifier.verify(
             first_loaded.manifest.model_copy(update={"source_job_id": "missing-source"})
         )
@@ -438,6 +451,8 @@ async def test_end_to_end_source_reuse_export_and_loader() -> None:
         assert first_export.manifest.data_sha256.startswith("sha256:")
         assert first_export.manifest.model_dump_json() == second_export.manifest.model_dump_json()
         assert verified.status == "reproducible"
+        assert first_audit.causal_audit["status"] == "passed"
+        assert audit_json_bytes(first_audit) == audit_json_bytes(second_audit)
         assert absent.status == "absent"
         assert incompatible_profile.status == "incompatible"
         assert legacy_contract.status == "incompatible"

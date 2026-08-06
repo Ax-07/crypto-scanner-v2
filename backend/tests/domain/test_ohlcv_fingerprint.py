@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from app.domain.candles import Candle
 from app.domain.ohlcv_fingerprint import (
@@ -57,6 +61,42 @@ def test_identical_logical_instances_have_identical_hashes_and_negative_zero_is_
     assert first.fingerprint == (
         "sha256:7439f766ad27319ee757422e6c18aad6f386bd9ca2f2d5ac6e9974ee692949b4"
     )
+
+
+def test_two_separate_python_processes_produce_the_same_hash() -> None:
+    script = """
+from app.domain.candles import Candle
+from app.domain.ohlcv_fingerprint import fingerprint_ohlcv_stream
+
+candle = Candle(
+    exchange_id="binance", market_type="spot", symbol="BTC/USDC", timeframe="1m",
+    open_time=1700000000000, open=-0.0, high=102.0, low=99.0, close=101.0,
+    volume=42.0, close_time=1700000060000, is_closed=True,
+)
+print(fingerprint_ohlcv_stream(
+    [candle], role="primary", exchange_id="binance", market_type="spot",
+    symbol="BTC/USDC", timeframe="1m", requested_start_ms=1700000000000,
+    requested_end_ms=1700000180000, closed_only=True, warmup_bars=1,
+    future_bars=1, gaps_validated=True,
+).fingerprint)
+"""
+    backend = Path(__file__).resolve().parents[2]
+    outputs = [
+        subprocess.check_output([sys.executable, "-c", script], cwd=backend, text=True).strip()
+        for _ in range(2)
+    ]
+
+    assert (
+        outputs == ["sha256:7439f766ad27319ee757422e6c18aad6f386bd9ca2f2d5ac6e9974ee692949b4"] * 2
+    )
+
+
+def test_unknown_fingerprint_versions_are_rejected() -> None:
+    current = stream([candle()])
+    payload = current.model_dump()
+    payload["fingerprint_version"] = "ohlcv-content-sha256-v0"
+    with pytest.raises(ValidationError, match="ohlcv-content-sha256-v1"):
+        type(current).model_validate(payload)
 
 
 @pytest.mark.parametrize(

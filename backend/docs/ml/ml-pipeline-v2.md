@@ -1,5 +1,10 @@
 # Source backtest canonique du pipeline ML v2
 
+> Phase 3 : le premier dataset réel audité est documenté dans
+> [ml-v2-dataset-audit.md](ml-v2-dataset-audit.md). Il contient 5 460 lignes `BTC/USDC 4h`
+> et conclut `accepted_with_reservations`. Il ne définit aucun test terminal et aucun modèle
+> n'a été entraîné.
+
 ## Périmètre
 
 Les Phases 1 et 2 fournissent le chemin officiel qui prépare puis prouve le backtest nécessaire à
