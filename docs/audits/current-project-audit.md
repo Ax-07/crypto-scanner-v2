@@ -1,5 +1,14 @@
 # Audit courant de `scanner_binance_v2`
 
+## Ajout Phase 3 ML v2
+
+La base réelle a été sauvegardée puis contrôlée (`integrity_check=ok`, aucune violation de clé
+étrangère). Un source canonique réel `BTC/USDC 4h` a été achevé, exporté deux fois à l'identique et
+audité. Le rapport conclut `accepted_with_reservations` : 5 460 lignes, trois classes, funnel
+réconcilié, recalcul causal 16/16, aucun contrôle bloquant, mais une taille inférieure aux 10 000
+recommandées et des redondances/dérives descriptives. Aucun modèle, benchmark ou test terminal v2
+n'a été utilisé. Détails : `backend/docs/ml/ml-v2-dataset-audit.md`.
+
 Date de l'audit : 5 août 2026 (Europe/Paris).
 
 ## 1. Conclusion exécutive

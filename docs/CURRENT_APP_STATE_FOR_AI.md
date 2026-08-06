@@ -1,5 +1,15 @@
 # État actuel de `scanner_binance_v2` pour reprise IA
 
+## Ajout Phase 3 — dataset ML v2 réel
+
+Le premier dataset `causal-features-v2` réel vient du job
+`ebf1e0328c4346d69b02a0d1de802303` sur `BTC/USDC 4h`, fenêtre UTC
+`2020-04-01T00:00:00Z` à `2022-09-28T00:00:00Z`. Il contient 5 460 lignes et son audit
+`ml-dataset-audit-v1` conclut `accepted_with_reservations`, sans contrôle bloquant ni fuite
+détectée par les contrôles définis. Le JSONL de 220 Mo est local/ignoré ; manifeste, inventaire et
+rapports sont sous `backend/artifacts/ml-v2/`. Aucun entraînement, benchmark v2 ou test terminal
+n'a été commencé. Documentation : `backend/docs/ml/ml-v2-dataset-audit.md`.
+
 Généré le 5 août 2026 après audit du code, des tests, des artefacts et de la base
 locale. Le rapport détaillé et les preuves sont dans
 [`docs/audits/current-project-audit.md`](audits/current-project-audit.md).
